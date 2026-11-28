@@ -32,6 +32,35 @@ test('a refresh waits for every part of the tab, and one asked for meanwhile wai
   expect(asked).toHaveLength(4);
 });
 
+test('the parts that show the middle views on screen are read first, and the rest once they’re in', async () => {
+  const refreshes = new Refreshes(() => {});
+  const asked: string[] = [];
+  const pull = Promise.withResolvers<undefined>();
+  refreshes.listen(
+    (id, front) => {
+      asked.push(`pull ${front.join(' ')}`);
+      return pull.promise;
+    },
+    ['diff', 'timeline'],
+  );
+  refreshes.listen(() => {
+    asked.push('overview');
+    return undefined;
+  }, ['overview']);
+  const refresh = refreshes.refresh('t1', ['timeline']);
+  await Promise.resolve();
+  expect(asked).toEqual(['pull timeline']);
+  pull.resolve(undefined);
+  await refresh;
+  expect(asked).toEqual(['pull timeline', 'overview']);
+  // With the overview on screen, it goes first.
+  asked.length = 0;
+  const overviewFirst = refreshes.refresh('t1', ['overview']);
+  expect(asked).toEqual(['overview']);
+  await overviewFirst;
+  expect(asked).toEqual(['overview', 'pull overview']);
+});
+
 test('a part that fails is logged, and the refresh settles all the same', async () => {
   const logged: string[] = [];
   const refreshes = new Refreshes((line) => logged.push(line));

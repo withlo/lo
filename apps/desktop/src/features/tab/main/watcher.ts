@@ -20,7 +20,14 @@ import {
   type Tabs,
 } from '../contract.ts';
 import type { PullTabInfo } from '../service.ts';
-import { PullTab, type Kept, type Snapshot, type TabGithub, type TabPublish } from './pull.ts';
+import {
+  PullTab,
+  type Kept,
+  type PullRefresh,
+  type Snapshot,
+  type TabGithub,
+  type TabPublish,
+} from './pull.ts';
 
 /**
  * What the watcher keeps with each tab, and reads back as it restores one, by the id of the view
@@ -208,8 +215,8 @@ export class Watcher {
   }
 
   /** Reads view `id`'s pull request again now, as the reader asks: settles once it's all in. */
-  async refresh(id: string): Promise<void> {
-    await this.#tabs.get(id)?.refresh();
+  async refresh(id: string, options?: PullRefresh): Promise<void> {
+    await this.#tabs.get(id)?.refresh(options);
   }
 
   async choose(id: string, login: string): Promise<void> {

@@ -88,6 +88,45 @@ test('a refresh polls the open pull request at once, with its details and reads,
   expect(t.requests()).toEqual(log([25, 'GET /pulls/1 (since)'], [25, 'PullRequestCheck']));
 });
 
+test('a refresh runs the reads of what’s on screen first, in the order it’s given, then the rest by name', async () => {
+  const { t } = await opened();
+  const order: string[] = [];
+  const read = (name: string) =>
+    t.poller.readCached(pr(1), { name, watched: PUSH_HISTORY_WATCHED }, () => {
+      order.push(name);
+      return Promise.resolve(1);
+    });
+  void read('Alpha');
+  void read('Zulu');
+  await t.run();
+  expect(order).toEqual(['Alpha', 'Zulu']);
+  order.length = 0;
+  const refresh = t.poller.refresh(pr(1), { first: ['Zulu', 'Counted'] });
+  await t.run();
+  await refresh;
+  expect(order).toEqual(['Zulu', 'Alpha']);
+  // The next is in the order of their names again.
+  order.length = 0;
+  await t.finish(t.poller.refresh(pr(1)));
+  expect(order).toEqual(['Alpha', 'Zulu']);
+});
+
+test('a refresh reads the repository’s open pull requests too once its reads are in, when asked', async () => {
+  const { t, runs } = await opened();
+  const state = settling(t.poller.refresh(pr(1), { list: true }));
+  await t.run();
+  expect(t.requests()).toEqual(
+    log(
+      [5, 'GET /pulls/1 (since)'],
+      [5, 'PullRequestCheck'],
+      [5, 'PullRequest'],
+      [5, 'GET /pulls?state=open&per_page=100 (etag)'],
+    ),
+  );
+  expect(runs.count).toBe(2);
+  expect(state.done).toBe(true);
+});
+
 test('a refresh asked for during a poll polls again once that one is done', async () => {
   // Each check takes 2 s, so the first poll ended at 2, and the next is at 22.
   const { t, runs } = await opened((what) => (what === 'PullRequestCheck' ? 2000 : undefined));

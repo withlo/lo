@@ -28,6 +28,7 @@ import {
   queueOpening,
   run as runSchema,
   stack as stackSchema,
+  viewIds,
   viewsOnScreen,
   type Tabs,
 } from '../contract.ts';
@@ -148,7 +149,7 @@ export default defineFeature(contract, {
         watcher?.compareFrom(id, commit === undefined ? undefined : oid.parse(commit)),
       clone: (id) => watcher?.clone(id),
       drawn: (id, head) => watcher?.drawn(id, head),
-      onRefresh: (refresher) => refreshes.listen(refresher),
+      onRefresh: (refresher, shows) => refreshes.listen(refresher, shows),
     }),
   ],
   handlers: {
@@ -172,7 +173,7 @@ export default defineFeature(contract, {
     retry({ id }) {
       pullTab(id).retry(id);
     },
-    refresh: ({ id }) => refreshes.refresh(id),
+    refresh: ({ id, front }) => refreshes.refresh(id, front),
     showLocal({ id }) {
       // The clone's folder as main keeps it, shown in its folder and never opened, so nothing in
       // it runs.
@@ -245,7 +246,23 @@ export default defineFeature(contract, {
       for (const listener of following) listener(id);
     });
     const reading = watcher;
-    refreshes.listen((id) => (reading.has(id) ? reading.refresh(id) : undefined));
+    // A pull request's tab reads its pull request, what the diff and the timeline show first while
+    // they're on screen, and the open pull requests its stack's tree is drawn from, if it has one.
+    refreshes.listen(
+      (id, front) =>
+        reading.has(id)
+          ? reading.refresh(id, {
+              front,
+              list: list
+                .list()
+                .tabs.some(
+                  (tab) =>
+                    tab.kind === 'pull' && tab.stack !== undefined && viewIds([tab]).includes(id),
+                ),
+            })
+          : undefined,
+      ['diff', 'timeline'],
+    );
     watcher.follow(list.list());
   },
   stop() {

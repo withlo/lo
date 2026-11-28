@@ -8,10 +8,12 @@ import { refresh, refreshable, refreshingStore } from './refresh.ts';
 import { pullsStore, showTabs } from './store.ts';
 
 const seen = vi.hoisted(() => ({
-  refresh: vi.fn<(input: { id: string }) => Promise<void>>(),
+  refresh: vi.fn<(input: { id: string; front?: string[] }) => Promise<void>>(),
+  shown: [] as string[],
 }));
 
 vi.mock('./main.ts', () => ({ main: () => ({ refresh: seen.refresh }) }));
+vi.mock('./shared.ts', () => ({ viewsShown: () => seen.shown }));
 
 const stack: Tab = {
   id: 'a',
@@ -41,6 +43,7 @@ function onScreen(tab: Tab, connection: Connection = { kind: 'live' }): void {
 }
 
 afterEach(() => {
+  seen.shown = [];
   refreshingStore.setState({ ids: new Set() });
   vi.clearAllMocks();
 });
@@ -66,10 +69,15 @@ describe('refreshing the tab on screen', () => {
 
   it('asks main by the view on screen, and marks the tab until main has read it', async () => {
     onScreen(stack);
+    // The timeline, with the code beside it.
+    seen.shown = ['timeline.view', 'diff.whole'];
     const read = Promise.withResolvers<undefined>();
     seen.refresh.mockReturnValue(read.promise);
     const refreshing = refresh();
-    expect(seen.refresh).toHaveBeenCalledExactlyOnceWith({ id: 'a:83' });
+    expect(seen.refresh).toHaveBeenCalledExactlyOnceWith({
+      id: 'a:83',
+      front: ['timeline', 'diff'],
+    });
     expect(refreshingStore.getState().ids).toEqual(new Set(['a']));
     // Asked again meanwhile, nothing more is asked, and nothing is said.
     expect(refreshable()).toBe('');

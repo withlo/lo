@@ -499,6 +499,14 @@ interface PullState {
   detailsDue?: PullRequestCheck | undefined;
 }
 
+/** What a refresh reads first, and whether it reads its repository's open pull requests too. */
+export interface RefreshOptions {
+  /** The reads to run first, by name, in this order, as those of what's on screen: the rest follow. */
+  readonly first?: readonly string[] | undefined;
+  /** Whether to read the repository's open pull requests again too, once the reads are in. */
+  readonly list?: boolean | undefined;
+}
+
 /** A refresh of the open pull request under way ({@link Poller.refresh}). */
 interface Refresh {
   readonly pull: PullRef;
@@ -506,6 +514,11 @@ interface Refresh {
   readonly ticket: number;
   /** Each read it runs again, by name: which read it is, and the generation a run of it starts at. */
   readonly reads: ReadonlyMap<string, { readonly id: number; readonly generation: number }>;
+  /** The reads it runs first, by name, in order. */
+  readonly first: readonly string[];
+  readonly list: boolean;
+  /** Its repository's schedule's `forced` once the refresh asked for its list, once it has. */
+  listTicket: number | undefined;
   readonly done: Promise<void>;
   readonly settle: () => void;
 }
@@ -1057,8 +1070,12 @@ export class Poller {
    * once when `pull` isn't the open pull request, and as soon as the rest can't go on, with the
    * poller stopped, the account signed out, the rate limit used up or GitHub out of reach. Asked
    * again while one is under way, it waits on that one and asks nothing more.
+   *
+   * The reads `first` names run first, in that order, as those of what's on screen. With `list`,
+   * once the reads are in, the repository's open pull requests are read again too, ahead of every
+   * poll merely due, as for a stack's tree, and it resolves once they're in.
    */
-  refresh(pull: PullRef): Promise<void> {
+  refresh(pull: PullRef, { first = [], list = false }: RefreshOptions = {}): Promise<void> {
     const under = this.#refreshes.get(pull.key);
     if (under) return under.done;
     const state = this.#pulls.get(pull.key);
@@ -1076,6 +1093,9 @@ export class Poller {
       pull,
       ticket: state.schedule.forced,
       reads,
+      first,
+      list,
+      listTicket: undefined,
       done: promise,
       settle: resolve,
     };
@@ -1088,25 +1108,49 @@ export class Poller {
   /** Settles each refresh that's over, or can't go on ({@link Poller.refresh}). */
   #settleRefreshes(): void {
     for (const [key, refresh] of this.#refreshes) {
-      if (!this.#refreshOver(refresh)) continue;
+      const stands = this.#refreshStands(refresh);
+      if (stands === 'reading' || (stands === 'read' && !this.#listRead(refresh))) continue;
       this.#refreshes.delete(key);
       refresh.settle();
     }
   }
 
-  #refreshOver(refresh: Refresh): boolean {
+  /** Whether `refresh`'s poll and reads are still to come, are in, or can't go on. */
+  #refreshStands(refresh: Refresh): 'reading' | 'read' | 'stopped' {
     const state = this.#pulls.get(refresh.pull.key);
-    if (this.#stopped || !this.#looping || this.#signedOut || !state) return true;
-    if (!this.#open?.equals(refresh.pull) || this.#status.rateLimit.kind === 'paused') return true;
-    if (state.schedule.served < refresh.ticket || state.detailsDue !== undefined) return false;
+    if (this.#stopped || !this.#looping || this.#signedOut || !state) return 'stopped';
+    if (!this.#open?.equals(refresh.pull) || this.#status.rateLimit.kind === 'paused') {
+      return 'stopped';
+    }
+    if (state.schedule.served < refresh.ticket || state.detailsDue !== undefined) return 'reading';
     // Out of reach, the reads wait out the backoff, and without a check, they don't run at all.
-    if (this.#offline || state.latestCheck === undefined) return true;
+    if (this.#offline || state.latestCheck === undefined) return 'stopped';
     for (const [name, mark] of refresh.reads) {
       const read = state.reads.get(name);
       // One let go of isn't waited for.
-      if (read?.id === mark.id && (read.tried ?? -1) < mark.generation) return false;
+      if (read?.id === mark.id && (read.tried ?? -1) < mark.generation) return 'reading';
     }
-    return true;
+    return 'read';
+  }
+
+  /**
+   * Whether the open pull requests `refresh` asked for are in: asked for the first time this is
+   * asked, once its reads are, so its repository's poll goes ahead of every poll merely due. True
+   * when it didn't ask for them, or they can't be read now: while the rate limit is so low that
+   * only the open pull request is polled, or GitHub is out of reach.
+   */
+  #listRead(refresh: Refresh): boolean {
+    const repo = this.#repos.get(refresh.pull.repo.key);
+    if (!refresh.list || !repo || this.#offline || this.#status.rateLimit.kind === 'openOnly') {
+      return true;
+    }
+    if (refresh.listTicket === undefined) {
+      repo.schedule.force();
+      refresh.listTicket = repo.schedule.forced;
+      this.#wake();
+      return false;
+    }
+    return repo.schedule.served >= refresh.listTicket;
   }
 
   /**
@@ -2261,8 +2305,8 @@ export class Poller {
 
   /**
    * The open pull request's reads that are due at some point, once its check says what they watch,
-   * in the order of their names: when each is due, and whether someone on screen waits on it for its
-   * first value now.
+   * in the order of their names, but for those a refresh reads first: when each is due, and whether
+   * someone on screen waits on it for its first value now.
    */
   #openReads(
     now: number,
@@ -2283,7 +2327,16 @@ export class Poller {
       return [];
     }
     const check = openState.latestCheck;
-    const reads = sorted(openState.reads, ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    // In the order of their names, but those a refresh reads first come first, in its order.
+    const ahead = this.#refreshes.get(open.key)?.first ?? [];
+    const rank = (name: string) => {
+      const at = ahead.indexOf(name);
+      return at === -1 ? ahead.length : at;
+    };
+    const reads = sorted(
+      openState.reads,
+      ([a], [b]) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0),
+    );
     const due: { at: number; awaited: boolean; job: Extract<Job, { kind: 'read' }> }[] = [];
     for (const [name, read] of reads) {
       // What the cache holds is still loading, or a run of it goes on beside the loop.

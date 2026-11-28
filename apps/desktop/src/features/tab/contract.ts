@@ -598,6 +598,13 @@ export function isGithubPage(address: string): boolean {
  */
 const byId = z.strictObject({ id: tabId });
 
+/**
+ * A middle view of a pull request's tab, by the feature that draws it, as a refresh reads what's
+ * on screen first.
+ */
+export const frontView = z.enum(['overview', 'diff', 'timeline']);
+export type FrontView = z.output<typeof frontView>;
+
 export const contract = defineContract('tab', {
   requests: {
     list: { input: z.undefined(), reply: reply<Tabs>() },
@@ -642,11 +649,15 @@ export const contract = defineContract('tab', {
     retry: { input: byId, reply: reply<void>() },
     /**
      * Reads what tab `id` shows from GitHub again now, as the reader asks, whatever its interval: a
-     * pull request's tab, by its view on screen, its pull request and all the tab shows of it, and
-     * a merge queue's tab its queue. Replies once that's all in, or can't be read now. Asked again
-     * while one is under way, it waits on that one and asks nothing more.
+     * pull request's tab, by its view on screen, its pull request and all the tab shows of it, what
+     * its middle views on screen show (`front`, left to right) first; and a merge queue's tab its
+     * queue. Replies once that's all in, or can't be read now. Asked again while one is under way,
+     * it waits on that one and asks nothing more.
      */
-    refresh: { input: byId, reply: reply<void>() },
+    refresh: {
+      input: z.strictObject({ id: tabId, front: z.array(frontView).max(2).optional() }),
+      reply: reply<void>(),
+    },
     /**
      * Shows a pull request's tab's local copy in Finder, or in the system's file manager: its
      * clone's folder, as main has it. Refused while the copy isn't ready (`notReady`), and once its

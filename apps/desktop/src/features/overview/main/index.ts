@@ -174,7 +174,7 @@ export default defineFeature(contract, {
       }),
       // The reader's refresh of a pull request's tab reads its overview again too, as Try again
       // does, ahead of GitHub's `x-poll-interval`: the reader asked.
-      service.onRefresh((id) => followed.get(id)?.retry()),
+      service.onRefresh((id) => followed.get(id)?.retry(), ['overview']),
       // What was read from GitHub goes with the rest of the cache.
       context.use(clearing).onClear(() => {
         blobs.clear();
