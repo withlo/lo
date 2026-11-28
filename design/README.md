@@ -949,7 +949,8 @@ each picture it has drawn by its address: the empty disc, then the Swap, once.
   comments on that line, as `c` does. It sits over the start of the line's number, clear of the
   overview markers, takes no room and moves nothing, and it's gone over a header, a thread or a box.
   It's an outline until it's pressed, when it fills: the accent is spent on the press, not the
-  hover. On a line that takes no comment it's dimmed from the first frame.
+  hover. On a line that takes no comment it's dimmed from the first frame. A drag from it comments
+  on the lines it crosses, which take the picked ground (`lo-code-line-selected`) as it goes.
 - **What you open is in view when it opens.** A comment box, a thread or a peek that opens scrolls
   its pane the least that shows all of it, at once, with `reveal` (`block: 'nearest'`), and never
   with `scrollIntoView`. One taller than its pane shows from its top. A comment box does this itself

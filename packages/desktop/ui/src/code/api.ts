@@ -1026,6 +1026,22 @@ export interface DiffEvents {
    * the label says the code went or came from.
    */
   moved?(to: Place): void;
+  /**
+   * Which lines of file `file` take a comment, as GitHub says, for a drag from the `+` over lines,
+   * which holds its far end on one and names the lines in its tip as the box will: nothing while
+   * the caller can't tell yet, as it asks. The view asks before a drag needs it, as the `+` comes
+   * to a file's lines. Without it, a drag holds its ends only to lines drawn on its side.
+   */
+  commentLines?(file: string): CommentLines | undefined;
+}
+
+/** Which lines of one file take a comment, as the caller knows: see `DiffEvents.commentLines`. */
+export interface CommentLines {
+  /**
+   * What a comment on `span`'s lines goes on, in the words its box's head says ("Lines 35–38",
+   * "Line 3, removed, to line 5"): nothing where GitHub takes none on one of its ends.
+   */
+  on(span: Span): string | undefined;
 }
 
 /**
