@@ -246,14 +246,6 @@ function read(source: Uint8Array | string): Store {
         : "terms.json isn't JSON.",
     );
   }
-  const repeated = keyedTwice(text);
-  if (repeated) {
-    refuse(
-      'key-twice',
-      undefined,
-      `terms.json has the key ${JSON.stringify(quote(repeated.key))} twice in one object, the second time on line ${repeated.line}.`,
-    );
-  }
   const root = object(value, undefined, 'terms.json');
   if (!Object.hasOwn(root, 'format')) {
     refuse('format', 'format', 'terms.json has no format. It holds "format": 1.');
@@ -267,6 +259,15 @@ function read(source: Uint8Array | string): Store {
       'format-newer',
       'format',
       `terms.json is in format ${format}, and this version of Lo reads format ${STORE_FORMAT}.`,
+    );
+  }
+  // Past the format, which comes first: a newer one may be written otherwise.
+  const repeated = keyedTwice(text);
+  if (repeated) {
+    refuse(
+      'key-twice',
+      undefined,
+      `terms.json has the key ${JSON.stringify(quote(repeated.key))} twice in one object, the second time on line ${repeated.line}.`,
     );
   }
   only(root, ['format', 'terms'], undefined);

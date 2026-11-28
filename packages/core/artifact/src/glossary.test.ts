@@ -32,6 +32,12 @@ function whyNot(item: string): string | undefined {
   return glossary(item)[0]!.unstorable;
 }
 
+/** Why the repository's definitions can't hold `item`'s, in an overview defining `[t]`. */
+function withReference(item: string): string | undefined {
+  const source = text([item]).replace('## Glossary', '[t]: code:src/a.ts\n\n## Glossary');
+  return parseArtifact(source).glossary[0]?.unstorable;
+}
+
 /** The entries' definitions, as written. */
 function written(...items: string[]): (string | undefined)[] {
   return glossary(...items).map(({ definition }) => definition);
@@ -113,9 +119,26 @@ describe('a glossary entry', () => {
     expect(whyNot('- **A**: ![image](figures/a.png).')).toBe('holds an image');
     expect(whyNot('- **A**: <b>html</b>.')).toBe('holds HTML');
     expect(whyNot('- **A**: a hard\\\n  break.')).toBe('holds a hard line break');
+    // What the store refuses as written, though Markdown shows it.
+    for (const character of ['\t', '\u00AD', '\u200D', '\u202E']) {
+      expect(whyNot(`- **A**: a${character}b.`)).toBe('holds a control or invisible character');
+    }
+    expect(whyNot('- **A**: a 🧑\u200D💻 b.')).toBe('holds a control or invisible character');
     const most = `- **A**: ${'a'.repeat(STORE_LIMITS.definition)}`;
     expect(whyNot(most)).toBe(undefined);
     expect(whyNot(`${most}a`)).toBe('is 2,049 bytes');
+  });
+
+  test('with a reference-style link may not go into the repository’s definitions', () => {
+    for (const item of [
+      '- **A**: the [tokens][t].',
+      '- **A**: the [t][].',
+      '- **A**: the [t].',
+      '- **A**: the [undefined][u], as text here.',
+    ]) {
+      expect(withReference(item)).toBe('holds a reference-style link');
+    }
+    expect(withReference('- **A**: the \\[t\\], as text.')).toBe(undefined);
   });
 
   test('whose definition is storable reads as storable from the store', () => {

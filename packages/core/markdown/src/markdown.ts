@@ -122,16 +122,34 @@ export function markdownTree<X extends Extension = Plain>(
 }
 
 /**
+ * The address a reference-style link reads as when {@link inlineTokens} is told every label is
+ * defined. No text holds it, since a NUL in text reads as U+FFFD.
+ */
+export const ANY_REFERENCE = '\0reference';
+
+/**
  * `text`, Markdown read as part of a paragraph, as {@link markdownTree} reads a paragraph's text in
  * a tree that may nest `depth` deep: markdown-it's inline tokens, with no syntax added and nothing
- * built. For telling what a piece of text holds. Never throws on any text: undefined for one that
- * overflows the stack anyway.
+ * built. For telling what a piece of text holds. With `references: 'any'`, every label is read as
+ * defined, so each reference-style link, `[a][b]`, `[a][]` or `[a]`, reads as a link to
+ * {@link ANY_REFERENCE}. Never throws on any text: undefined for one that overflows the stack
+ * anyway.
  */
-export function inlineTokens(text: string, depth?: number): Token[] | undefined {
+export function inlineTokens(
+  text: string,
+  options: { depth?: number; references?: 'none' | 'any' } = {},
+): Token[] | undefined {
   const source = text.toWellFormed().replace(/\r\n?/g, '\n').replaceAll('\0', '\uFFFD');
+  const { depth } = options;
   const nesting = resolveLimits(depth === undefined ? undefined : { depth }).depth + SLACK + 2;
+  const env = environment(undefined);
+  if (options.references === 'any') {
+    env['references'] = new Proxy(Object.create(null), {
+      get: () => ({ href: ANY_REFERENCE, title: '' }),
+    });
+  }
   try {
-    const [inline] = parser(nesting, undefined).parseInline(source, environment(undefined));
+    const [inline] = parser(nesting, undefined).parseInline(source, env);
     return inline?.children ?? [];
   } catch (error) {
     if (!(error instanceof RangeError)) throw error;

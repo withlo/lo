@@ -280,6 +280,11 @@ describe('what the store refuses', () => {
       'shape@terms["b"].definition',
     ],
     ['a link to a section', { definition: 'A [b](#b).' }, 'shape@terms["b"].definition'],
+    ['a reference-style link', { definition: 'A [b][c].' }, 'shape@terms["b"].definition'],
+    ['a collapsed reference', { definition: 'A [b][].' }, 'shape@terms["b"].definition'],
+    ['a shortcut reference', { definition: 'A [b].' }, 'shape@terms["b"].definition'],
+    ['a soft hyphen', { definition: 'A b\u00ADc.' }, 'shape@terms["b"].definition'],
+    ['a zero-width joiner', { definition: 'A 🧑\u200D💻.' }, 'shape@terms["b"].definition'],
     [
       'a change missing who wrote it',
       { changes: [{ definition: 'A.', by: { login: 'a' }, from: 'lo', at: AT }] },
@@ -357,6 +362,11 @@ describe('what the store refuses', () => {
     expect(!read.ok && read.problem.message).toBe(
       'terms["b"].definition holds bold text. A definition holds only text, inline code, and links to code and terms.',
     );
+    const reference = parseStore(store({ b: entry('b', { definition: 'A [b][c].' }) }));
+    expect(!reference.ok && reference.problem.message).toBe(
+      'terms["b"].definition holds a reference-style link. A definition is read alone, where no reference is defined: write the link inline, as [label](code:path), or put a backslash before its brackets.',
+    );
+    expect(at('A \\[b\\] in brackets.')).toBe('read');
     const wrong = parseStore(store({ b: entry('b', { definition: 'A [b](code:/b.ts).' }) }));
     expect(!wrong.ok && wrong.problem.message).toMatch(
       /^terms\["b"\]\.definition holds a link whose address is wrong\. ./,
@@ -366,6 +376,8 @@ describe('what the store refuses', () => {
   test('a key twice in one object, as JSON would keep only the last', () => {
     const one = JSON.stringify(entry('b'));
     expect(problem('{"format": 1, "format": 1, "terms": {}}')).toBe('key-twice');
+    // A newer format says so first: it may be written otherwise.
+    expect(problem('{"format": 2, "terms": {}, "terms": {}}')).toBe('format-newer@format');
     expect(problem(`{"format": 1, "terms": {"b": ${one}, "b": ${one}}}`)).toBe('key-twice');
     // However the key is written.
     expect(problem(`{"format": 1, "terms": {"b": ${one}, "\\u0062": ${one}}}`)).toBe('key-twice');
