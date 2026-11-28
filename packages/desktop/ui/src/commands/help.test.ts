@@ -494,6 +494,30 @@ describe('the palette', () => {
     expect(items.map((item) => item.id)).toEqual(['keys.install']);
     expect(filterPalette(items, 'lo c')[0]?.marks).toEqual([8, 9, 11]);
   });
+
+  it('marks what’s typed unbroken where the label has it, unless the starts of words match better', () => {
+    const own = new Registry({
+      system: 'mac',
+      commands: handlers(
+        defineCommands('menu', {
+          add: { label: 'Add account…', group: 'App', keys: [] },
+          read: { label: 'Mark all read', group: 'App', keys: [] },
+          reload: { label: 'Reload all', group: 'App', keys: [] },
+        }),
+        { add: run, read: run, reload: run },
+      ),
+    });
+    const items = paletteItems(own, 'window', NO_TARGET);
+    const marked = (query: string) =>
+      filterPalette(items, query).map(({ item, marks }) => [item.label, marks.join(',')]);
+    // "account" itself, not the A of "Add" and the rest of the word.
+    expect(marked('account')).toEqual([['Add account…', '4,5,6,7,8,9,10']]);
+    expect(marked('add acc')).toEqual([['Add account…', '0,1,2,4,5,6']]);
+    // The starts of two words beat two letters in the middle of one.
+    expect(marked('ar')[0]).toEqual(['Mark all read', '5,9']);
+    // Letters picked one by one, the A of "all" first, would miss the run that's there.
+    expect(marked('ad')).toContainEqual(['Reload all', '4,5']);
+  });
 });
 
 /** Tabs 1 to 3 by their places, a series, each running only while `on` holds it. */

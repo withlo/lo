@@ -144,7 +144,7 @@ describe('the sign-in dialog', () => {
     await settle();
     const shown = dialog('sign-in');
     expect(shown?.textContent).toContain('FAKE-1234');
-    expect(shown?.textContent).toContain('Enter this code at github.com/login/device');
+    expect(shown?.textContent).toContain('Enter this code at github.com/login/device.');
     // How long the code has left is beside the line, not in what a screen reader has read out.
     expect(status()).toBe('Waiting for approval…');
     // 14 min 59 s, rounded down, as a deadline is: it never says more time than is left.
@@ -398,7 +398,7 @@ describe('the sign-in dialog', () => {
     expect(title()).toBe('Add account');
     // GitHub's page signs in whichever account it's signed in to, so the line says which to be.
     expect(dialog('sign-in')?.textContent).toContain(
-      'Enter this code at github.com/login/device, signed in as the account to add',
+      'Enter this code at github.com/login/device. Sign in there as the account to add.',
     );
     await add('octo-cat');
     expect(status()).toBe('Added octo-cat (Octo Cat)');
@@ -879,10 +879,13 @@ describe('Accounts in Settings', () => {
     // The first is a sign-in; the palette names it as the button does.
     expect(button(page, 'Sign in with GitHub…')).toBeDefined();
     expect(registry().labelled('accounts.addAccount', NO_TARGET)).toBe(undefined);
+    // Signing in again is offered only while an account is signed out.
+    expect(registry().enabled('accounts.signInAgain', NO_TARGET)).toBe('No account is signed out');
     act(() => showAccounts([account('rozed-bot', { signedOut: 'refused' })]));
     expect(button(page, 'Add account…')).toBeDefined();
     expect(page.textContent).not.toContain('Sign in with GitHub');
     expect(registry().labelled('accounts.addAccount', NO_TARGET)).toBe('Add account…');
+    expect(registry().enabled('accounts.signInAgain', NO_TARGET)).toBe(true);
     click(button(page, 'Sign in again'));
     await settle();
     expect(title()).toBe('Sign in with GitHub');

@@ -200,11 +200,15 @@
 
 /*
  * A quote's or an alert's blocks in a comment's prose (`lo-prose--comment`): 16 px apart, as GitHub
- * spaces them, over the tighter spacing they have elsewhere.
+ * spaces them, over the tighter spacing they have elsewhere. An alert's title (`role="note"`'s first
+ * block) is 8 px over the block after it, the title of what follows rather than a block of its own.
  */
 @utility comment-blocks {
   :where(.lo-prose--comment) & > :not(:last-child) {
     margin-block-end: var(--lo-sp-16);
+  }
+  :where(.lo-prose--comment) &[role='note'] > :first-child:not(:last-child) {
+    margin-block-end: var(--lo-sp-8);
   }
 }
 

@@ -352,16 +352,33 @@ export interface PaletteMatch {
 
 /**
  * The letters of `query` (spaces aside) in `label` in order, preferring the starts of words and
- * runs of letters, and a score for how well they match: none when they don't all appear.
+ * runs of letters, and a score for how well they match: none when they don't all appear. Where the
+ * label has what's typed unbroken, as "Add account…" has "account", that run is marked, rather
+ * than letters picked one by one, the A of "Add" and the rest of "account", unless those match
+ * better, as the starts of words "ar" picks in "Mark all read".
  */
 function matchLabel(label: string, query: string): { marks: number[]; score: number } | undefined {
   const text = label.toLowerCase();
-  const letters = query.toLowerCase().replace(/\s+/g, '');
+  const typed = query.toLowerCase();
+  const found = [pickLetters(text, typed.replace(/\s+/g, '')), ...runsOf(text, typed)];
+  let best: { marks: number[]; score: number } | undefined;
+  for (const marks of found) {
+    if (marks === undefined) continue;
+    const score = scoreOf(text, marks);
+    if (best === undefined || score > best.score) best = { marks, score };
+  }
+  return best;
+}
+
+/**
+ * The places of `letters` in `text`, in order, one by one: each at the next start of a word with
+ * it, or else where it next appears, keeping a run going rather than jumping to a later word. None
+ * when they don't all appear that way.
+ */
+function pickLetters(text: string, letters: string): number[] | undefined {
   const marks: number[] = [];
-  let score = 0;
   let from = 0;
-  for (let position = 0; position < letters.length; position++) {
-    const letter = letters[position];
+  for (const letter of letters) {
     // The next start of a word with the letter, or else the next place it appears at all.
     let at = -1;
     for (let index = from; index < text.length; index++) {
@@ -375,14 +392,44 @@ function matchLabel(label: string, query: string): { marks: number[]; score: num
     // Keep a run going rather than jump to a later word.
     if (text[from] === letter && marks.at(-1) === from - 1) at = from;
     if (at === -1) return undefined;
-    const previous = marks.at(-1);
-    if (previous !== undefined && at === previous + 1) score += 3;
-    if (at === 0 || text[at - 1] === ' ') score += 2;
-    score -= (at - from) * 0.01;
     marks.push(at);
     from = at + 1;
   }
-  return { marks, score };
+  return marks;
+}
+
+/**
+ * Each place `typed` is in `text` unbroken, its spaces as one, as the places of its letters: "lo c"
+ * in "install lo command".
+ */
+function runsOf(text: string, typed: string): number[][] {
+  const run = typed.trim().replace(/\s+/g, ' ');
+  if (run === '') return [];
+  const runs: number[][] = [];
+  for (let at = text.indexOf(run); at !== -1; at = text.indexOf(run, at + 1)) {
+    const marks: number[] = [];
+    for (let offset = 0; offset < run.length; offset++) {
+      if (run[offset] !== ' ') marks.push(at + offset);
+    }
+    runs.push(marks);
+  }
+  return runs;
+}
+
+/**
+ * How well letters at `marks` match `text`: more for each that follows the one before and each at
+ * the start of a word, and a little less the further each is from the one before.
+ */
+function scoreOf(text: string, marks: readonly number[]): number {
+  let score = 0;
+  let from = 0;
+  for (const [index, at] of marks.entries()) {
+    if (index > 0 && at === (marks[index - 1] ?? -2) + 1) score += 3;
+    if (at === 0 || text[at - 1] === ' ') score += 2;
+    score -= (at - from) * 0.01;
+    from = at + 1;
+  }
+  return score;
 }
 
 /**

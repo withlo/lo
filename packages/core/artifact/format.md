@@ -341,6 +341,12 @@ A [tenant](term:tenant) spends [tokens](term:token) from its [bucket](term:bucke
 A mark is written exactly so: one space after the term, then `(new)` or `(changed)` in lower case,
 then the colon, with no escape or entity in place of any of them.
 
+The checker checks the marks against the repository's definitions in the clone it runs in, at
+`refs/lo/terms`: an unmarked entry must be there, under its term or an alias, with the same
+definition, but for runs of spaces; a `(new)` one must not be there; and a `(changed)` one must be
+there with another definition. Without that ref, the marks aren't checked against them, and when it
+can't read them, it warns.
+
 A marked entry's definition goes into the repository's definitions when the pull request merges, so
 it's held to their rules: one paragraph of at most 2,048 bytes, with no control or invisible
 character, holding only text, inline code, links into the code and links to terms, as Markdown reads

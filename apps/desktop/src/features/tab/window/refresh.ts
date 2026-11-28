@@ -1,7 +1,8 @@
 // The reader's refresh: `⌘R` or `F5` reads what the tab on screen shows from GitHub again, at once. Main
 // reads a pull request's tab's pull request and all it shows of it, what its middle views on
 // screen show first, and a merge queue's tab's queue. The tab's mark in the strip turns until
-// that's in, and asking again meanwhile asks nothing more. Nothing here draws.
+// that's in, and for 400 ms at least, so a quick answer still shows it; asking again meanwhile asks
+// nothing more. Nothing here draws.
 
 import { createStore } from 'zustand/vanilla';
 
@@ -62,12 +63,22 @@ function frontOf(tab: string): FrontView[] {
   });
 }
 
-/** Reads the tab on screen again from GitHub, its mark turning in the strip until that's in. */
+/**
+ * How long the tab's mark turns at least, from the press: an answer that's in at once would
+ * otherwise show it for a frame, a flicker the reader can't read as the refresh they asked for.
+ */
+export const MARKED_MS = 400;
+
+/**
+ * Reads the tab on screen again from GitHub, its mark turning in the strip until that's in, and
+ * for `MARKED_MS` at least.
+ */
 export async function refresh(): Promise<void> {
   const state = tabsStore.getState();
   const tab = activeOf(state);
   const { active } = state;
   if (!tab || active === undefined || refreshable() !== true) return;
+  const pressed = Date.now();
   mark(active, true);
   try {
     // A pull request's tab by its view on screen, which main reads, what's on screen first.
@@ -77,6 +88,8 @@ export async function refresh(): Promise<void> {
   } catch (error) {
     console.error("Lo couldn't read the tab again:", error);
   } finally {
+    const left = pressed + MARKED_MS - Date.now();
+    if (left > 0) await new Promise((resolve) => setTimeout(resolve, left));
     mark(active, false);
   }
 }

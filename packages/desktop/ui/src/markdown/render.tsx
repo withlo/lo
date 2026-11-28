@@ -459,8 +459,8 @@ function alertTone(kind: Alert['type']): AlertTone {
       return {
         label: 'Important',
         icon: 'message-square-exclamation-point',
-        box: 'border-info-border bg-info-bg',
-        word: 'text-info',
+        box: 'border-important-border bg-important-bg',
+        word: 'text-important',
       };
     case 'warning':
       return {

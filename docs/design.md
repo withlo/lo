@@ -235,7 +235,7 @@ and the whole-file view.
   details and checks, then what its view on screen shows, then the rest of what the tab shows, its
   stack's list included, and it shows the newest push; a merge queue's tab reads its queue. Its
   requests wait their turn and for the rate limit as polls do, and the tab's mark in the strip turns
-  until they're in.
+  until they're in, and for 400 ms at least, so a quick answer still shows it.
 
 ### The local copy
 

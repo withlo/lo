@@ -52,14 +52,15 @@ import { Checking, type CheckedOverview } from './window/checking.ts';
 const GROUPS = ['valid', 'invalid', 'hostile'] as const;
 
 /**
- * Each fixture on a pull request's ref. The app checks the overview on a pull request's ref, so one
- * on a stack's is left to `@lo/artifact`'s and the checker's tests.
+ * Each fixture on a pull request's ref, in a repository without definitions. The app checks the
+ * overview on a pull request's ref, and doesn't read the repository's definitions, so one on a
+ * stack's ref, or checked against definitions, is left to `@lo/artifact`'s and the checker's tests.
  */
 const fixtures = GROUPS.flatMap((group) =>
   readdirSync(join(FIXTURES, group))
     .toSorted()
     .map((name) => ({ group, name, dir: join(FIXTURES, group, name) }))
-    .filter(({ dir }) => inputOf(dir).stack === undefined),
+    .filter(({ dir }) => inputOf(dir).stack === undefined && !existsSync(join(dir, 'terms.json'))),
 );
 
 /** What the fixture in `dir` says in its `fixture.json`. */

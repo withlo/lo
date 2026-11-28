@@ -14,7 +14,7 @@ import { ARTIFACT_READ, CHECK_TIMEOUT, FORMAT, LIMITS } from './limits.ts';
 import { tooLong, type ParsedArtifact } from './parse.ts';
 import type { GlossaryEntry } from './reading.ts';
 import type { CodeReader, OverviewFiles } from './readers.ts';
-import { STORE_LIMITS } from './store.ts';
+import { STORE_LIMITS, STORE_REF, type StoreRead } from './store.ts';
 
 /**
  * What Lo does with an overview.
@@ -50,6 +50,13 @@ export type CheckOptions = {
   timeout?: number | undefined;
   /** Stops reading its code and figures: what isn't read by then is left unread. */
   signal?: AbortSignal | undefined;
+  /**
+   * The repository's definitions, as read from {@link STORE_REF}, which the glossary's marks are
+   * checked against: each term it doesn't mark must be there with the same definition, each it
+   * marks new must not be there, and each it marks changed must be there with another. Without
+   * them, the marks aren't checked.
+   */
+  store?: StoreRead | undefined;
 } & OnRef;
 
 /**
@@ -185,7 +192,7 @@ async function check(
       : [],
   }));
   // Like the code, the marks are the overview's to get right, but Lo shows it all the same.
-  checkMarks(parsed.glossary, findings);
+  checkMarks(parsed.glossary, options.store, findings);
   if (invalid || mismatch || !header) {
     return { outcome: { kind: 'invalid' }, findings: findings.list() };
   }
@@ -193,10 +200,15 @@ async function check(
 }
 
 /**
- * Adds each term `glossary`, the overview's, marks whose definition the repository's definitions
- * can't hold, which merging the pull request would put there.
+ * Adds what's wrong with the marks of `glossary`, the overview's: a marked term's definition that
+ * the repository's definitions can't hold, and, given `store`, each mark that doesn't say how the
+ * term stands to them.
  */
-function checkMarks(glossary: readonly GlossaryEntry[], findings: Findings): void {
+function checkMarks(
+  glossary: readonly GlossaryEntry[],
+  store: StoreRead | undefined,
+  findings: Findings,
+): void {
   for (const { name, mark, line, unstorable } of glossary) {
     if (mark === undefined || unstorable === undefined) continue;
     findings.add(
@@ -205,6 +217,70 @@ function checkMarks(glossary: readonly GlossaryEntry[], findings: Findings): voi
       `"${quote(name)}" is marked (${mark}), so its definition goes into the repository's definitions, and it ${unstorable}. They hold one paragraph of text, inline code and links to code and terms, in at most ${STORE_LIMITS.definition.toLocaleString('en-US')} bytes: write it so, or take the mark off.`,
     );
   }
+  if (store === undefined || glossary.length === 0) return;
+  if (!store.ok) {
+    findings.add(
+      'store-unread',
+      undefined,
+      `The repository's definitions, at ${STORE_REF}, can't be read, so the glossary's marks weren't checked. ${store.problem.message}`,
+    );
+    return;
+  }
+  const { names, terms } = store.store;
+  for (const { name, key, mark, line, definition } of glossary) {
+    const owner = names.get(key);
+    const stored = owner === undefined ? undefined : terms.get(owner);
+    const term = `"${quote(name)}"`;
+    if (stored === undefined) {
+      if (mark === 'new') continue;
+      findings.add(
+        'term-not-stored',
+        line,
+        mark === 'changed'
+          ? `${term} is marked (changed), and the repository's definitions don't have it. Mark it (new).`
+          : `The repository's definitions don't have ${term}. Mark it (new): **${quote(name)}** (new): definition.`,
+      );
+      continue;
+    }
+    const same = definition !== undefined && sameDefinition(definition, stored.definition);
+    // A term may be in them as another's alias.
+    const as = stored.key === key ? '' : `, as another name for "${quote(stored.term)}"`;
+    if (mark === 'new') {
+      findings.add(
+        'term-stored',
+        line,
+        same
+          ? `${term} is marked (new), and the repository's definitions have it${as}, with this definition. Take the mark off.`
+          : `${term} is marked (new), and the repository's definitions have it${as}. Mark it (changed) to change its definition.`,
+      );
+    } else if (mark === 'changed') {
+      // A definition they can't hold is a finding of its own, above.
+      if (same) {
+        findings.add(
+          'term-unchanged',
+          line,
+          `${term} is marked (changed), and its definition is the repository's${as} already. Take the mark off.`,
+        );
+      }
+    } else if (!same) {
+      // Whole, to be copied: the store holds it on one line, with nothing unsafe, in 2,048 bytes.
+      findings.add(
+        'term-differs',
+        line,
+        `${term}'s definition isn't the one in the repository's definitions${as}. Write theirs, or mark it (changed): **${quote(name)}** (changed): definition. Theirs reads: ${stored.definition}`,
+      );
+    }
+  }
+}
+
+/** Whether two definitions, as written, are the same, but for the runs of spaces in them. */
+function sameDefinition(a: string, b: string): boolean {
+  return squeezed(a) === squeezed(b);
+}
+
+/** `text` with each run of spaces as one, and none at either end. */
+function squeezed(text: string): string {
+  return text.replace(/[ \t]+/g, ' ').trim();
 }
 
 /** What's wrong with `header` for the ref `options` say the overview is on: a code and a message. */

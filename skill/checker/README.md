@@ -29,9 +29,10 @@ Then ask your agent to write a Lo overview for a pull request, such as
 `Write a Lo overview of https://github.com/<owner>/<repo>/pull/<n>`.
 
 The skill runs the checker's other commands itself, by the exact version it was installed with:
-`check` checks an overview as Lo would, against the code at the commit it describes, and `commit`
-checks it, then writes it as a commit to push to the pull request's ref. `lo-overview --help` lists
-every command and option (`npx @withlo/overview --help` runs it).
+`check` checks an overview as Lo would, against the code at the commit it describes, and its
+glossary's marks against the repository's definitions at `refs/lo/terms`, when it has them. `commit`
+checks it, then writes it as a commit to push to the pull request's ref, or the stack's.
+`lo-overview --help` lists every command and option (`npx @withlo/overview --help` runs it).
 
 ## Needs
 

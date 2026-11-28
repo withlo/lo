@@ -59,6 +59,9 @@
   --lo-info: #a5c5e9; /* Information banners and notes, overview explanations in the diff: text and icons. */
   --lo-info-bg: #182431; /* Information banners and notes, overview explanations in the diff: fills behind info text. */
   --lo-info-border: #2e445c; /* Information banners and notes, overview explanations in the diff: outlines of info tags, banners and chips. */
+  --lo-important: #b38bdd; /* GitHub's Important alerts (GitHub purple): text and icons. */
+  --lo-important-bg: #251d33; /* GitHub's Important alerts (GitHub purple): fills behind important text. */
+  --lo-important-border: #43335c; /* GitHub's Important alerts (GitHub purple): outlines of important alerts. */
   --lo-state-open: #51c672; /* Open PRs (GitHub green): pill text, tab dots, icons. */
   --lo-state-open-bg: #132419; /* Open PRs (GitHub green): pill fill. */
   --lo-state-open-border: #24462c; /* Open PRs (GitHub green): pill outline. */
@@ -228,6 +231,9 @@
   --lo-info: #0664b2;
   --lo-info-bg: #e3ecf7;
   --lo-info-border: #bad4f2;
+  --lo-important: #6c329f;
+  --lo-important-bg: #efe6f8;
+  --lo-important-border: #d6c2ec;
   --lo-state-open: #0a7e3a;
   --lo-state-open-bg: #dff8e6;
   --lo-state-open-border: #b1dfb9;
