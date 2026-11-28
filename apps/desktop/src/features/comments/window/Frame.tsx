@@ -229,12 +229,18 @@ function Preview({ box }: { box: Box }): ReactNode {
 
 /**
  * The comment as its card will draw it, from the moment it's sent until GitHub answers: the text
- * rendered, under who sent it, with "Sending…" where its time will be. The box shows only this
- * meanwhile (`Composer.hold`), and is the open box again, with its text, if the send fails.
+ * rendered, under who sent it, with "Sending…" where its time will be, under its thread's head row
+ * for a new thread's and over the row that offers a reply for a new thread's and a reply. The box
+ * shows only this meanwhile (`Composer.hold`), and is the open box again, with its text, if the send
+ * fails. An edit in the timeline is its text alone, in the comment's card, whose head says it's
+ * being saved. The pull request's own box gives its comment to the timeline's last row meanwhile,
+ * which draws it with the same text and tree.
  */
 function Sent({ box }: { box: Box }): ReactNode {
   const state = useBox(box);
-  const acting = usePull(box.view)?.acting;
+  const pullView = usePull(box.view);
+  const acting = pullView?.acting;
+  const opener = pullView?.header?.author ?? undefined;
   const pull = pullIn(box.view);
   // Its card, once GitHub's is drawn, shows this text until GitHub's rendering of it is in, as the
   // box did, rather than wait for that rendering: the text never leaves the screen.
@@ -244,33 +250,34 @@ function Sent({ box }: { box: Box }): ReactNode {
   }, [box.view, sent]);
   if (!sendingNow(state)) return null;
   const login = acting?.kind === 'account' ? acting.login : undefined;
+  const { kind } = state.place;
+  const body = pull ? (
+    <Rendering
+      view={box.view}
+      text={state.text}
+      pull={pull}
+      replaced={replacedOf(box)}
+      flush
+      sent
+    />
+  ) : (
+    <p className="whitespace-pre-wrap">{state.text}</p>
+  );
+  if (box.drawnIn === 'timeline') {
+    return kind === 'edit' ? <SentPost bare body={body} /> : null;
+  }
   return (
     <SentPost
-      // A new thread's comment draws under the head row its thread will have: nothing moves as the
-      // thread takes the card's place.
-      state={
-        state.place.kind === 'thread'
-          ? box.lastHow === 'review'
-            ? 'Pending'
-            : 'Unresolved'
-          : undefined
-      }
+      // A new thread's comment draws under the head row its thread will have, and a reply under
+      // the thread's comments, each over the row that offers a reply: nothing moves as the thread
+      // takes the card's place.
+      state={kind === 'thread' ? (box.lastHow === 'review' ? 'Pending' : 'Unresolved') : undefined}
+      reply={kind === 'thread' || kind === 'reply'}
       author={login}
+      byAuthor={login !== undefined && login.toLowerCase() === opener?.toLowerCase()}
       image={login === undefined ? undefined : avatarImage({ login, type: 'User' }, AVATAR)}
-      label={sentLabel(state.sending, state.place.kind === 'edit')}
-      body={
-        pull ? (
-          <Rendering
-            view={box.view}
-            text={state.text}
-            pull={pull}
-            replaced={replacedOf(box)}
-            flush
-          />
-        ) : (
-          <p className="whitespace-pre-wrap">{state.text}</p>
-        )
-      }
+      label={sentLabel(state.sending, kind === 'edit')}
+      body={body}
     />
   );
 }

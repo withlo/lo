@@ -502,12 +502,19 @@ export interface TimelineCommentProps extends TimelineRowAttributes, PostMenu {
   editing?: ReactNode;
   hidden?: TimelineHidden | undefined;
   focused?: boolean | undefined;
+  /**
+   * What's being done with it, in its time's place, while GitHub hasn't answered: "Sending…" for
+   * one just sent from the box at the timeline's end, "Saving…" for an edit. Its `⋯` waits
+   * meanwhile.
+   */
+  sending?: string | undefined;
 }
 
 /**
  * A comment on the pull request, as a card beside its author's avatar. One of yours says so, and
  * its menu, from its `⋯` or a right-click, has Edit and Delete with their keys, which another
- * person's never has.
+ * person's never has. One being sent or saved says so where its time goes, drawn as it will be
+ * once GitHub has it, so nothing moves as it does.
  */
 export function TimelineComment({
   author,
@@ -520,9 +527,10 @@ export function TimelineComment({
   hidden,
   focused,
   menu = false,
+  sending,
   ...row
 }: TimelineCommentProps) {
-  const more = menu && editing === undefined;
+  const more = menu && editing === undefined && sending === undefined;
   // An option's content is read as its name alone, so while an edit box shows, the row isn't one:
   // the box is read as the text box it is.
   const role = editing === undefined ? {} : { role: 'none', 'aria-selected': undefined };
@@ -542,7 +550,14 @@ export function TimelineComment({
           </span>
           {byAuthor && <Tag>Author</Tag>}
           <span className="ms-auto flex flex-wrap items-center justify-end gap-x-8">
-            <time>{when}</time>
+            {sending === undefined ? (
+              <time>{when}</time>
+            ) : (
+              <span className="inline-flex items-center gap-6 whitespace-nowrap">
+                <Spinner />
+                {sending}
+              </span>
+            )}
             {more && <MoreButton shy />}
           </span>
         </div>

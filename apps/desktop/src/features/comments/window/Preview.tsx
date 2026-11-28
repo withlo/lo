@@ -8,9 +8,9 @@ import { useEffect, useState, type ReactNode } from 'react';
 
 import { postImage } from '../../../window/images.ts';
 import { followLink } from '../../open/window/shared.ts';
-import { MARKDOWN_LIMIT, type Rendered } from '../jobs.ts';
-import { commentsJobs } from './main.ts';
+import type { Rendered } from '../jobs.ts';
 import type { PostPull } from './Post.tsx';
+import { drawWritten, treeOf, writtenDrawn } from './store.ts';
 
 export interface PreviewProps {
   /** The view of a pull request's tab the box is in, whose account loads its images. */
@@ -23,6 +23,11 @@ export interface PreviewProps {
   readonly flush?: boolean | undefined;
   /** The lines a suggested change in it replaces, as the diff shows them, where known. */
   readonly replaced?: string | undefined;
+  /**
+   * It's the text as sent or saved, which the comment's card from GitHub then draws from the tree
+   * made here, from its first frame: it's kept, and one kept before is drawn at once.
+   */
+  readonly sent?: boolean | undefined;
 }
 
 /** Opens a link followed in the preview: an `https` page, through main. */
@@ -32,25 +37,38 @@ function follow(target: Followed): void {
   if (url !== undefined) void followLink(url);
 }
 
-export function Preview({ view, text, pull, flush = false, replaced }: PreviewProps): ReactNode {
-  const [rendered, setRendered] = useState<{ text: string; rendered: Rendered }>();
+export function Preview({
+  view,
+  text,
+  pull,
+  flush = false,
+  replaced,
+  sent = false,
+}: PreviewProps): ReactNode {
+  const [rendered, setRendered] = useState<{ text: string; rendered: Rendered } | undefined>(() => {
+    const kept = sent ? writtenDrawn(view, text) : undefined;
+    return kept && { text, rendered: kept.rendered };
+  });
   const { owner, repo, number } = pull;
   useEffect(() => {
     const stop = new AbortController();
-    const page = `https://github.com/${owner}/${repo}/pull/${number}`;
-    commentsJobs()
-      .render(
-        { html: null, markdown: text.slice(0, MARKDOWN_LIMIT), repo: { owner, name: repo }, page },
-        { signal: stop.signal },
-      )
-      .then((made: Rendered) => {
-        if (!stop.signal.aborted) setRendered({ text, rendered: made });
+    const at = { owner, repo, number };
+    // As sent, its tree is the one kept for its card from GitHub, made unless it was as it went.
+    const made = sent
+      ? drawWritten(view, text, at).then(() => writtenDrawn(view, text)?.rendered)
+      : treeOf(text, at, stop.signal);
+    made
+      .then((tree) => {
+        if (stop.signal.aborted || !tree) return;
+        setRendered((was) =>
+          was?.text === text && was.rendered === tree ? was : { text, rendered: tree },
+        );
       })
       .catch((error: unknown) => {
         if (!stop.signal.aborted) console.error("Lo couldn't draw a preview:", error);
       });
     return () => stop.abort();
-  }, [text, owner, repo, number]);
+  }, [view, text, sent, owner, repo, number]);
   if (text.trim() === '') {
     return (
       <div className="px-12 py-8">

@@ -12,6 +12,7 @@ import { tabState } from '../../tab/window/shared.ts';
 import type { Sidebar, SidebarView, TimelineView } from '../contract.ts';
 import { atOnce, CLAIM_FOR, type Claim, holding, stillToCome } from './holding.ts';
 import { main, revisions } from './main.ts';
+import { loginOf } from './yours.ts';
 
 /** What main last sent of each view's timeline. */
 export const timelines = tabState<TimelineView | undefined>(() => undefined);
@@ -101,11 +102,12 @@ export function setLooked(id: string, on: boolean): void {
  */
 export function claim(view: string, write: PullWrite): void {
   const shown = shownTimelines.get(view)?.timeline;
-  const had = write.kind === 'posted' ? holding(shown, write.text) : 0;
+  const by = loginOf(view);
+  const had = write.kind === 'posted' ? holding(shown, write.text, by) : 0;
   const after = shown?.items.at(-1)?.cursor;
   claims.update(view, (waiting) => [
     ...waiting,
-    { write, until: Date.now() + CLAIM_FOR, had, after },
+    { write, until: Date.now() + CLAIM_FOR, had, after, by },
   ]);
   // It may be here already, held.
   show(view);
