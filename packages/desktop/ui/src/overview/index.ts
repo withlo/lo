@@ -45,6 +45,7 @@ export {
   TermByline,
   type TermBylineFacts,
   type TermBylineProps,
+  type TermBylineShown,
   type TermWriter,
   type TermWritten,
 } from './TermByline.tsx';

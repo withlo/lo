@@ -150,7 +150,7 @@ export function StackLayers({ layers, current, onShow }: StackLayersProps) {
                           : 'rest',
                 })}
               />
-              <span className="flex min-w-0 flex-col gap-2">
+              <span className="flex min-w-0 flex-col gap-2 wrap-anywhere">
                 <span className="text-ui">
                   <span className="text-fg text-ui-strong">{withoutBidi(layer.title)}</span>
                   <span className="lo-num ms-8 text-fg-muted">#{layer.number}</span>

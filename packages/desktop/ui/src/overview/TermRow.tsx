@@ -5,7 +5,16 @@
 // suggestions waiting on it and its earlier definitions. In its own box under 420 px wide it's one
 // column: the term and its tags, the end controls on the term's line, then the definition.
 
-import { useId, useState, type HTMLAttributes, type ReactNode, type Ref } from 'react';
+import {
+  useCallback,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type HTMLAttributes,
+  type ReactNode,
+  type Ref,
+} from 'react';
 
 import { Button } from '../Button.tsx';
 import { Collapse } from '../Collapse.tsx';
@@ -109,7 +118,9 @@ export interface TermRowProps extends Omit<HTMLAttributes<HTMLDivElement>, 'chil
 /**
  * A term's row in a glossary. It draws what it's given. Its end controls show on the row under the
  * pointer or with focus, and keep their room otherwise; neither is a stop for `Tab`, since the
- * term's own keys do what they do: `⏎` expands, `Menu` opens its menu.
+ * term's own keys do what they do: `⏎` expands, `Menu` opens its menu. So the term is a button that
+ * says whether the row is expanded, and focus in what the row holds expanded goes back to it as
+ * the row collapses.
  */
 export function TermRow({
   term,
@@ -135,6 +146,23 @@ export function TermRow({
   const held = useId();
   const name = withoutBidi(term);
   const open = expanded && details !== undefined;
+  const own = useRef<HTMLSpanElement | null>(null);
+  const shown = useRef<HTMLDivElement>(null);
+  // The term is the caller's too, as `termRef`.
+  const termElement = useCallback(
+    (element: HTMLSpanElement | null) => {
+      own.current = element;
+      if (typeof termRef === 'function') termRef(element);
+      else if (termRef) termRef.current = element;
+    },
+    [termRef],
+  );
+  // What's leaving takes no focus: focus in it would fall out of the page, so it goes to the term.
+  useLayoutEffect(() => {
+    if (open) return;
+    const box = shown.current;
+    if (box?.contains(box.ownerDocument.activeElement) === true) own.current?.focus();
+  }, [open]);
   const tags = <TermTags {...marks} />;
   const tagged =
     marks !== undefined &&
@@ -156,7 +184,16 @@ export function TermRow({
         ].join(' ')}
       >
         <div className="lo-term-row__head">
-          <span ref={termRef} id={termId} tabIndex={stop ? 0 : -1} className="lo-term-row__term">
+          <span
+            ref={termElement}
+            id={termId}
+            tabIndex={stop ? 0 : -1}
+            // `⏎` on it expands the row, as its chevron does.
+            role={expand === undefined ? undefined : 'button'}
+            aria-expanded={expand === undefined ? undefined : expanded}
+            aria-controls={expand !== undefined && open ? held : undefined}
+            className="lo-term-row__term"
+          >
             {name}
           </span>
           {tagged && <div className="flex flex-wrap gap-6">{tags}</div>}
@@ -165,7 +202,7 @@ export function TermRow({
           {definition}
           {before !== undefined && <TermBefore>{before}</TermBefore>}
           <Collapse open={open}>
-            {details !== undefined && <Details id={held} details={details} />}
+            {details !== undefined && <Details id={held} details={details} box={shown} />}
           </Collapse>
         </div>
         <div className="lo-term-row__end invisible group-focus-within/row:visible group-hover/row:visible group-data-focused/row:visible">
@@ -194,10 +231,18 @@ export function TermRow({
 }
 
 /** What a term's row holds expanded, `lo-sp-8` apart, under its definition. */
-function Details({ id, details }: { id: string; details: TermDetails }) {
+function Details({
+  id,
+  details,
+  box,
+}: {
+  id: string;
+  details: TermDetails;
+  box: Ref<HTMLDivElement>;
+}) {
   const { byline, locked, aliases = [], suggestions = [], earlier, capped = false } = details;
   return (
-    <div id={id} className="flex flex-col gap-8 pt-8">
+    <div ref={box} id={id} className="flex flex-col gap-8 pt-8">
       {byline}
       {locked !== undefined && (
         <div className="text-fg-muted text-small">
@@ -271,27 +316,48 @@ function Suggested({ suggestion }: { suggestion: TermSuggestion }) {
   );
 }
 
-/** A term's earlier definitions: five, then the rest on asking, or none. */
+/**
+ * A term's earlier definitions: five, then the rest on asking, or none. "Show 12 more" goes once
+ * it's pressed, and focus goes on to the first of the rest, where reading goes on.
+ */
 function Earlier({ earlier, capped }: { earlier: readonly TermEarlier[]; capped: boolean }) {
   const [all, setAll] = useState(false);
   const shown = all ? earlier : earlier.slice(0, EARLIER_SHOWN);
   const rest = earlier.length - shown.length;
+  const firstOfRest = useRef<HTMLDivElement>(null);
+  const handOn = useRef(false);
+  useLayoutEffect(() => {
+    if (!handOn.current) return;
+    handOn.current = false;
+    firstOfRest.current?.focus();
+  }, [all]);
   return (
     <Part label="History">
       {earlier.length === 0 ? (
         <EmptyState fit="row" icon="history" title="No earlier definitions" />
       ) : (
-        shown.map((entry) => (
-          <div key={entry.key} className="flex min-w-0 flex-col gap-4">
-            <div className="text-fg-muted read-comment">{entry.definition}</div>
-            {entry.byline}
-          </div>
-        ))
+        shown.map((entry, at) => {
+          const first = all && at === EARLIER_SHOWN;
+          return (
+            <div
+              key={entry.key}
+              ref={first ? firstOfRest : undefined}
+              tabIndex={first ? -1 : undefined}
+              className="flex min-w-0 flex-col gap-4 rounded-xs"
+            >
+              <div className="text-fg-muted read-comment">{entry.definition}</div>
+              {entry.byline}
+            </div>
+          );
+        })
       )}
       {rest > 0 && (
         <div>
           <LinkButton
-            onClick={() => setAll(true)}
+            onClick={() => {
+              handOn.current = true;
+              setAll(true);
+            }}
           >{`Show ${rest.toLocaleString('en-US')} more`}</LinkButton>
         </div>
       )}

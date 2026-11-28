@@ -14,6 +14,7 @@ import { HintRow } from '../HintRow.tsx';
 import { LinkButton } from '../LinkButton.tsx';
 import { MoreButton } from '../MoreButton.tsx';
 import { useControl } from '../useControl.ts';
+import { TermByline, type TermBylineShown } from './TermByline.tsx';
 import { suggestionsCount, TermBefore, TermTags, type TermMarks } from './TermTags.tsx';
 
 /** A hint in a card's foot: a command, by its id, what it runs on, and its words in the foot. */
@@ -41,8 +42,11 @@ export interface TermCardProps extends Omit<ComponentPropsWithRef<'div'>, 'child
   more?: boolean | undefined;
   /** On a Changed term, the definition it replaces, under the "Before" tag. */
   before?: ReactNode;
-  /** Who the definition is by: a `TermByline`, not focusable. None for a term the store doesn't hold. */
-  byline?: ReactNode;
+  /**
+   * Who the definition is by, which the card draws as a `TermByline` that takes no focus. None for
+   * a term the store doesn't hold.
+   */
+  byline?: TermBylineShown | undefined;
   /**
    * On a locked term with suggestions: how many, as a link under the byline that runs `command`
    * (Show history) on `target`, the term.
@@ -110,7 +114,11 @@ export function TermCard({
         </div>
       )}
       {before !== undefined && <TermBefore>{before}</TermBefore>}
-      {byline !== undefined && <div className="mt-8">{byline}</div>}
+      {byline !== undefined && (
+        <div className="mt-8">
+          <TermByline {...byline} focusable={false} />
+        </div>
+      )}
       {suggestions !== undefined && suggestions.count > 0 && (
         <div className="mt-4">
           <LinkButton

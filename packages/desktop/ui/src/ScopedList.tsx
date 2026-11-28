@@ -113,6 +113,14 @@ function buttonOf(element: HTMLElement | undefined): HTMLElement | null | undefi
 }
 
 /**
+ * An entry's own Remove or Stop ignoring, where focus goes in it once the entry before it has gone,
+ * so a second `⏎` does what the first did, never "… in every repo".
+ */
+function removeOf(entry: HTMLElement | undefined): HTMLElement | null | undefined {
+  return entry?.querySelector<HTMLElement>('[data-remove]');
+}
+
+/**
  * Scopes of a list kept per repo, each a head row (30 px, `text-small`, `lo-fg-muted`, a hairline
  * over each but the first) then its entries: "Every repo", then each repo as "rozed-dev/e2e ·
  * replaces every repo’s list" with "Reset" at its end. A press that takes away the button it was
@@ -153,8 +161,8 @@ export function ScopedList({
           leaving.current = {
             gone: (root) => entryIn(root, scope, entry.key) === undefined,
             next: (root) => [
-              after === undefined ? undefined : buttonOf(entryIn(root, scope, after)),
-              before === undefined ? undefined : buttonOf(entryIn(root, scope, before)),
+              after === undefined ? undefined : removeOf(entryIn(root, scope, after)),
+              before === undefined ? undefined : removeOf(entryIn(root, scope, before)),
               buttonOf(scopeIn(root, scope)),
             ],
           };
@@ -165,7 +173,7 @@ export function ScopedList({
             gone: (root) =>
               entryIn(root, scope, entry.key)?.querySelector('[data-everywhere]') == null,
             next: (root) => [
-              buttonOf(entryIn(root, scope, entry.key)),
+              removeOf(entryIn(root, scope, entry.key)),
               buttonOf(scopeIn(root, scope)),
             ],
           };
@@ -193,7 +201,13 @@ export function ScopedList({
                 {words.everywhere}
               </Button>
             )}
-            <Button variant="ghost" size="sm" aria-label={words.removeOf(name)} onClick={remove}>
+            <Button
+              variant="ghost"
+              size="sm"
+              data-remove=""
+              aria-label={words.removeOf(name)}
+              onClick={remove}
+            >
               {words.remove}
             </Button>
           </SettingsListItem>

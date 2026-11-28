@@ -81,6 +81,12 @@ describe('TermByline', () => {
     expect(host.querySelector('button')).toBeNull();
   });
 
+  it('says only “not verified” for a name with nothing left once it’s plain', () => {
+    const host = render(<TermByline by={{ name: '“·”' }} written="agent" when="now" />);
+    expect(host.textContent).toBe('not verified · agent-written · now');
+    expect(host.querySelector('[data-lo-commit-name]')).toBeNull();
+  });
+
   it('holds its place with a skeleton while the store is read', () => {
     const host = render(<TermByline reading />);
     expect(host.textContent).toBe('');
@@ -112,7 +118,13 @@ describe('TermCard', () => {
         marks={{ mark: 'changed', locked: true }}
         definition="A token pool that refills at a fixed rate."
         before="A queue of waiting requests."
-        byline={<TermByline by={{ login: 'ravi-k' }} written="agent" when="3 d ago" />}
+        // The card's byline takes no focus, though nothing here asks.
+        byline={{
+          by: { login: 'ravi-k' },
+          written: 'agent',
+          pull: { number: 264 },
+          when: '3 d ago',
+        }}
         suggestions={{ count: 2, command: 'terms.history', target: BUCKET }}
         hints={[
           { command: 'terms.edit', target: BUCKET, label: 'Edit…' },
@@ -135,6 +147,7 @@ describe('TermCard', () => {
     const buttons = [...card.querySelectorAll('button')];
     expect(buttons.map((button) => button.textContent)).toEqual([
       '',
+      '#264',
       '2 suggestions',
       'Edit…',
       'History',
@@ -144,8 +157,8 @@ describe('TermCard', () => {
       expect(button.tabIndex).toBe(-1);
       expect(takesFocus(button)).toBe(false);
     }
-    click(buttons[1]!);
     click(buttons[2]!);
+    click(buttons[3]!);
     expect(ran).toEqual([
       ['terms.history', BUCKET],
       ['terms.edit', BUCKET],
@@ -199,9 +212,7 @@ describe('TermCard', () => {
         marks={{ mark: 'new', locked: true }}
         definition="A pool."
         before="A queue."
-        byline={
-          <TermByline by={{ name: 'Ravi K' }} written="agent" pull={{ number: 2 }} when="now" />
-        }
+        byline={{ by: { name: 'Ravi K' }, written: 'agent', pull: { number: 2 }, when: 'now' }}
         suggestions={{ count: 1, command: 'terms.history', target: BUCKET }}
         hints={[{ command: 'terms.edit', target: BUCKET }]}
         menu

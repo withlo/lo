@@ -19,6 +19,8 @@
   max-width: calc(100vw - var(--lo-sp-32));
   padding: 12px 14px 10px;
   font: 400 13px/20px var(--lo-font-ui);
+  /* A word longer than the card is, such as a path, breaks where it must. */
+  overflow-wrap: anywhere;
 }
 .lo-hovercard__term {
   font: 700 13.5px/18px var(--lo-font-ui);
@@ -83,6 +85,8 @@
   min-width: 0;
   font: 400 14px/21px var(--lo-font-ui);
   color: var(--lo-fg);
+  /* What it holds keeps to its column, a word longer than it is and all: an alias, a path. */
+  overflow-wrap: anywhere;
 }
 /* Its buttons, 22 px, on the definition's first line, the term's on a narrow row. */
 .lo-term-row__end {

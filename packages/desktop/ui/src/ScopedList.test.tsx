@@ -161,6 +161,17 @@ describe('ScopedList', () => {
     expect(document.activeElement).toBe(button(host, 'Remove Why'));
   });
 
+  it('hands focus to the next entry’s own Remove, never its “Collapse in every repo”', () => {
+    const host = render(<Held />);
+    // Risks, after Why in the repo's list, isn't in every repo's: its first button widens it.
+    const why = button(scopeOf(host, 'rozed-dev/e2e')!, 'Remove Why')!;
+    focus(why);
+    click(why);
+    const risks = scopeOf(host, 'rozed-dev/e2e')!;
+    expect(document.activeElement).toBe(button(risks, 'Remove Risks'));
+    expect(button(risks, 'Collapse Risks in every repo')).toBeDefined();
+  });
+
   it('keeps focus on the entry made every repo’s, and hands it on as a repo is reset', () => {
     const host = render(<Held />);
     focus(button(host, 'Collapse Risks in every repo')!);

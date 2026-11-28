@@ -229,6 +229,51 @@ const LAYERS: StackLayer[] = [
   },
 ];
 
+/** A word longer than any column it's in: a path, as a definition may hold one. */
+const LONG =
+  'packages/desktop/ui/src/overview/limits/per-tenant-request-admission-controller/token-bucket-refill-timer.ts';
+
+/** A card, a row and a layer holding words longer than their columns, which break to fit. */
+function Long() {
+  return (
+    <>
+      <TermCard
+        term={LONG}
+        definition={`Lives in ${LONG}, which the limiter reads.`}
+        before={LONG}
+        byline={{ by: { login: 'ravi-k' }, written: 'agent', when: 'now' }}
+      />
+      <div data-rows="">
+        <TermRow
+          data-term="long-word"
+          term="refill"
+          definition={`Lives in ${LONG}.`}
+          before={LONG}
+          expand={expand('long-word')}
+          expanded
+          details={{
+            aliases: [LONG, 'refills'],
+            suggestions: [{ key: 's', definition: LONG, byline: ravi('now') }],
+            earlier: [{ key: 'e', definition: LONG, byline: ravi('now') }],
+          }}
+        />
+      </div>
+      <StackLayers
+        layers={[
+          {
+            key: '90',
+            number: 90,
+            title: LONG,
+            state: 'open',
+            review: 'required',
+            summary: { kind: 'tldr', text: LONG },
+          },
+        ]}
+      />
+    </>
+  );
+}
+
 function Sheet() {
   return (
     <div className="flex flex-wrap items-start gap-24 bg-bg-chrome p-24 text-fg">
@@ -238,7 +283,12 @@ function Sheet() {
           marks={{ mark: 'changed', locked: true }}
           definition="A pool of tokens per tenant, which the limiter takes one from for each request."
           before="A queue of requests waiting for a slot."
-          byline={ravi('3 d ago', 264)}
+          byline={{
+            by: { login: 'ravi-k' },
+            written: 'agent',
+            pull: { number: 264 },
+            when: '3 d ago',
+          }}
           suggestions={{ count: 2, command: 'terms.history', target: BUCKET }}
           hints={[
             { command: 'terms.edit', target: BUCKET, label: 'Edit…' },
@@ -256,14 +306,12 @@ function Sheet() {
           term="refill"
           marks={{ mark: 'new' }}
           definition="Tokens added back to a bucket on a timer, up to its size."
-          byline={
-            <TermByline
-              by={{ name: '"Ravi Kumar" <ravi@example.com> · maintainer' }}
-              written="agent"
-              pull={{ number: 268 }}
-              when="5 h ago"
-            />
-          }
+          byline={{
+            by: { name: '"Ravi Kumar" <ravi@example.com> · maintainer' },
+            written: 'agent',
+            pull: { number: 268 },
+            when: '5 h ago',
+          }}
           hints={[
             { command: 'terms.edit', target: { kind: 'row', row: 'refill' }, label: 'Edit…' },
           ]}
@@ -271,11 +319,7 @@ function Sheet() {
         />
       </Box>
       <Box name="card-reading" width={320} ground="bg-bg-chrome">
-        <TermCard
-          term="limiter"
-          definition="What hands out tokens."
-          byline={<TermByline reading />}
-        />
+        <TermCard term="limiter" definition="What hands out tokens." byline={{ reading: true }} />
       </Box>
       <Box name="article" width={760}>
         <article className="lo-ov__article lo-prose pb-24">
@@ -333,6 +377,11 @@ function Sheet() {
           </SectionHead>
           <StackLayers layers={LAYERS} current="82" />
         </article>
+      </Box>
+      <Box name="long" width={640}>
+        <div className="flex flex-col gap-24 p-12">
+          <Long />
+        </div>
       </Box>
       <Box name="scoped" width={640}>
         <div className="px-24 py-12">

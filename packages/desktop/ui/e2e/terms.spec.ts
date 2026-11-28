@@ -114,3 +114,28 @@ test('under 420 px, a layer’s state goes under its title and an entry’s butt
   expect(await under('scoped', 'Why')).toBe(false);
   expect(await under('scoped-narrow', 'bucket')).toBe(true);
 });
+
+test('a word longer than its column breaks to fit it, in a card, a row and a layer', async () => {
+  const page = await open();
+  const long = box(page, 'long');
+  const fits = (selector: string) =>
+    long
+      .locator(selector)
+      .first()
+      .evaluate((element) => element.scrollWidth <= element.clientWidth);
+  for (const selector of [
+    '.lo-hovercard',
+    '.lo-hovercard__body',
+    '[data-lo-before]',
+    '.lo-term-row__head',
+    '.lo-term-row__definition',
+    '.stack-layers button',
+  ]) {
+    expect(await fits(selector), selector).toBe(true);
+  }
+  // The definition keeps clear of the row's end controls.
+  const row = long.locator('[data-term="long-word"]');
+  const definition = await rect(row.locator('.lo-term-row__definition'));
+  const end = await rect(row.locator('.lo-term-row__end'));
+  expect(definition.x + definition.width).toBeLessThanOrEqual(end.x);
+});

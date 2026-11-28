@@ -5,7 +5,7 @@
 
 import { Avatar } from '../Avatar.tsx';
 import { Swap } from '../Collapse.tsx';
-import { CommitName } from '../CommitName.tsx';
+import { CommitName, plainName } from '../CommitName.tsx';
 import { withoutBidi } from '../controls.ts';
 import { Icon } from '../Icon.tsx';
 import { LinkButton } from '../LinkButton.tsx';
@@ -34,11 +34,13 @@ export interface TermBylineFacts {
   when: string;
 }
 
-export type TermBylineProps = (
+/** What a byline says: who and how, or that the store is still being read. */
+export type TermBylineShown =
   | ({ reading?: false | undefined } & TermBylineFacts)
   /** The store is still being read: a skeleton in the byline's place, which it then Swaps over. */
-  | { reading: true }
-) & {
+  | { reading: true };
+
+export type TermBylineProps = TermBylineShown & {
   /**
    * `false` on a surface that takes no focus, as a term's card: its pull request's link is out of
    * the tab order, and a click on it leaves focus where it was.
@@ -80,9 +82,15 @@ export function TermByline(props: TermBylineProps) {
       )}
       <span className="min-w-0">
         {named ? (
-          <>
-            <CommitName name={by.name} /> · not verified
-          </>
+          // A name with nothing left once it's plain, such as "·", is no name: only that it's not
+          // verified.
+          plainName(withoutBidi(by.name)) === '' ? (
+            'not verified'
+          ) : (
+            <>
+              <CommitName name={by.name} /> · not verified
+            </>
+          )
         ) : (
           <span className="font-semibold text-fg">{withoutBidi(by.login)}</span>
         )}

@@ -6,7 +6,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { missingRules } from '../../test/classes.ts';
 import { terms, testCommands, type Ran } from '../../test/commands.ts';
-import { cleanUp, click, render, rerender } from '../../test/dom.ts';
+import { cleanUp, click, focus, render, rerender } from '../../test/dom.ts';
 import { holdRegistry } from '../commands/control.ts';
 import { Registry } from '../commands/registry.ts';
 import type { RowTarget } from '../commands/targets.ts';
@@ -78,6 +78,10 @@ describe('TermRow', () => {
     expect(term.id).toBe('term');
     expect(term.textContent).toBe('bucket');
     expect(term.tabIndex).toBe(-1);
+    // `⏎` on the term expands the row, so it says whether the row is expanded.
+    expect(term.getAttribute('role')).toBe('button');
+    expect(term.getAttribute('aria-expanded')).toBe('false');
+    expect(term.hasAttribute('aria-controls')).toBe(false);
     expect(row.querySelector('.lo-term-row__head')?.textContent).toBe(
       'bucketChangedLocked2 suggestions',
     );
@@ -94,7 +98,11 @@ describe('TermRow', () => {
 
   it('is a stop for Tab on its term, where it’s asked to be', () => {
     const host = render(<TermRow term="bucket" definition="A pool." stop />);
-    expect(host.querySelector<HTMLElement>('.lo-term-row__term')?.tabIndex).toBe(0);
+    const term = host.querySelector<HTMLElement>('.lo-term-row__term')!;
+    expect(term.tabIndex).toBe(0);
+    // A term that doesn't expand isn't a button.
+    expect(term.hasAttribute('role')).toBe(false);
+    expect(term.hasAttribute('aria-expanded')).toBe(false);
     expect(host.querySelector('.lo-term-row__head')?.textContent).toBe('bucket');
     expect(host.querySelector('.lo-term-row__end button')).toBeNull();
   });
@@ -119,6 +127,9 @@ describe('TermRow', () => {
     expect(chevron().getAttribute('aria-expanded')).toBe('true');
     const shown = document.getElementById(chevron().getAttribute('aria-controls')!);
     expect(shown?.textContent).toContain('No earlier definitions');
+    const term = host.querySelector('.lo-term-row__term')!;
+    expect(term.getAttribute('aria-expanded')).toBe('true');
+    expect(term.getAttribute('aria-controls')).toBe(chevron().getAttribute('aria-controls'));
   });
 
   it('holds its byline, lock, other names, suggestions and history, expanded', () => {
@@ -188,6 +199,52 @@ describe('TermRow', () => {
     click(more);
     expect(history().textContent).toContain('Definition 16');
     expect(history().textContent).toContain('Earlier changes aren’t listed.');
+  });
+
+  it('gives focus in what it holds back to the term as it collapses', () => {
+    held();
+    const details: TermDetails = {
+      suggestions: [
+        {
+          key: 's',
+          definition: 'A pool that refills.',
+          byline: byline('now'),
+          accept: { command: 'terms.accept', target: BUCKET },
+        },
+      ],
+      earlier: [],
+    };
+    const row = (expanded: boolean) => (
+      <TermRow
+        term="bucket"
+        definition="A pool."
+        expand={EXPAND}
+        expanded={expanded}
+        details={details}
+        stop
+      />
+    );
+    const host = render(row(true));
+    const accept = [...host.querySelectorAll('button')].find((button) =>
+      button.textContent.includes('Accept'),
+    )!;
+    focus(accept);
+    rerender(host, row(false));
+    expect(document.activeElement).toBe(host.querySelector('.lo-term-row__term'));
+  });
+
+  it('hands focus from “Show 12 more” to the first earlier definition it shows', () => {
+    held();
+    const host = render(
+      <TermRow term="bucket" definition="A pool." expanded details={{ earlier: earlier(9) }} />,
+    );
+    const more = [...host.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Show 4 more',
+    )!;
+    focus(more);
+    click(more);
+    expect(more.isConnected).toBe(false);
+    expect(document.activeElement?.textContent).toMatch(/^Definition 5/);
   });
 
   it('puts “Stop ignoring” in its chevron’s place while it’s ignored', () => {
