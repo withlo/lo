@@ -6,10 +6,11 @@
 // read; opens its links to web pages in the browser; fills in its code blocks and walkthrough from
 // the local copy; and never moves what's on screen without the reader: not as banners come and
 // go, as it's checked again, as its code fills in, as a newer one is offered at any width, or as
-// what's above the line being read changes size; and shows its terms with the repo's definitions,
-// or says why it can't. A server in front of the replay server answers for the overview's ref as
-// each test says: with the overview `testing/fixtures/app.sh` wrote, none, one made here, or a
-// failure; and for the repo's definitions with none, or with those made here. It fails the
+// what's above the line being read changes size; shows its terms with the repo's definitions, or
+// says why it can't; and edits one of them. A server in front of the replay server answers for the
+// overview's ref as each test says: with the overview `testing/fixtures/app.sh` wrote, none, one
+// made here, or a failure; and for the repo's definitions with none, or with those made here,
+// which it writes as GitHub would, moving their ref only from the commit it holds. It fails the
 // timeline's reads itself, which the cassette doesn't hold: these tests need only that a tab is on
 // the timeline, not what it shows. The local copy comes from a folder, or from a git server that
 // holds it until the test lets it come.
@@ -23,6 +24,7 @@ import { crc32, deflateSync } from 'node:zlib';
 import { APP_PULL, GitHttpServer, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
+import { z as zod } from 'zod';
 
 import { promptOf } from '../src/features/overview/window/prompts.ts';
 import { HOLD_LIMIT } from '../src/features/revisions/contract.ts';
@@ -81,6 +83,12 @@ const REFS = `/repos/rozed-dev/e2e/git/matching-refs/lo/pr/${APP_PULL.number}`;
 /** Where the repo's definitions' ref is read, past GitHub's origin. */
 const TERMS = '/repos/rozed-dev/e2e/git/matching-refs/lo/terms';
 
+/** The repo's node ID, which moving the definitions' ref names it by. */
+const REPO_ID = 'R_kgDOe2e';
+
+/** What `updateRefs` takes for a ref that isn't there. */
+const NONE = '0'.repeat(40);
+
 /** The timeline's reads, which the cassettes here don't hold. */
 const TIMELINE = /\bquery (Timeline|PullRequestSidebar)\b/;
 
@@ -120,7 +128,8 @@ const SPOOF: Writer = {
 /**
  * What the ref holds as the test goes: the overview the cassette recorded, none, one made here, or
  * a failure GitHub answers; and how long it takes to answer. And the repo's definitions, `terms`: a
- * commit made here that holds `terms.json`, else none, as the cassette recorded.
+ * commit made here that holds `terms.json`, else none, as the cassette recorded; each move Lo made
+ * of their ref, `moves`; and what a move waits for, `moving`, as GitHub takes its time.
  */
 interface Ref {
   holds:
@@ -130,6 +139,15 @@ interface Ref {
     | { kind: 'made'; overview: Overview };
   delay: number;
   terms?: Overview | undefined;
+  moves?: Move[];
+  moving?: Promise<void> | undefined;
+}
+
+/** A move of the definitions' ref Lo made: to a commit it wrote, from the one the ref held. */
+interface Move {
+  from: string | undefined;
+  to: Overview;
+  message: string;
 }
 
 /** A blob's ID: what git names its bytes by. */
@@ -265,6 +283,104 @@ function answerFor(overview: Overview, path: string, outgoing: ServerResponse): 
   return false;
 }
 
+/** A tree or a commit of the definitions Lo wrote here, by its ID. */
+interface Written {
+  trees: Map<string, { blob: string; bytes: Uint8Array }>;
+  commits: Map<string, { parent: string | undefined; message: string; overview: Overview }>;
+}
+
+/**
+ * Answers a write of the repo's definitions as GitHub would, as `ref` holds them: a tree of
+ * `terms.json`, a commit of one, whether the account may write, or a move of their ref, only from
+ * the commit it holds and only forward; false for the rest.
+ */
+async function wroteTerms(
+  ref: Ref,
+  written: Written,
+  incoming: { method: string; path: string; body: Buffer },
+  outgoing: ServerResponse,
+): Promise<boolean> {
+  const repo = '/repos/rozed-dev/e2e';
+  const { method, path, body } = incoming;
+  if (method === 'POST' && path === `${repo}/git/trees`) {
+    const { tree } = zod
+      .object({
+        tree: zod.tuple([zod.object({ path: zod.literal('terms.json'), content: zod.string() })]),
+      })
+      .parse(JSON.parse(body.toString()));
+    const bytes = new TextEncoder().encode(tree[0].content);
+    const blob = blobId(bytes);
+    const sha = createHash('sha1').update(`tree ${blob}`).digest('hex');
+    written.trees.set(sha, { blob, bytes });
+    json(outgoing, 201, {
+      sha,
+      tree: [{ path: 'terms.json', mode: '100644', type: 'blob', sha: blob, size: bytes.length }],
+      truncated: false,
+    });
+    return true;
+  }
+  if (method === 'POST' && path === `${repo}/git/commits`) {
+    const asked = zod
+      .object({
+        message: zod.string(),
+        tree: zod.string(),
+        parents: zod.array(zod.string()).max(1),
+      })
+      .parse(JSON.parse(body.toString()));
+    const tree = written.trees.get(asked.tree);
+    if (!tree) return false;
+    const sha = createHash('sha1').update(`commit ${body.toString()}`).digest('hex');
+    const overview: Overview = {
+      sha,
+      tree: asked.tree,
+      writer: BOT,
+      entries: [{ path: 'terms.json', type: 'blob', sha: tree.blob, size: tree.bytes.length }],
+      blobs: new Map([[tree.blob, tree.bytes]]),
+    };
+    written.commits.set(sha, { parent: asked.parents[0], message: asked.message, overview });
+    json(outgoing, 201, { sha, tree: { sha: asked.tree }, message: asked.message });
+    return true;
+  }
+  if (path !== '/graphql') return false;
+  const asked = zod
+    .object({ query: zod.string(), variables: zod.unknown() })
+    .parse(JSON.parse(body.toString()));
+  if (/\bquery TermsAccess\b/.test(asked.query)) {
+    json(outgoing, 200, { data: { repository: { id: REPO_ID, viewerPermission: 'ADMIN' } } });
+    return true;
+  }
+  if (!/\bmutation MoveTerms\b/.test(asked.query)) return false;
+  const { before, after } = zod
+    .object({ repositoryId: zod.literal(REPO_ID), before: zod.string(), after: zod.string() })
+    .parse(asked.variables);
+  await ref.moving;
+  const commit = written.commits.get(after);
+  if (before !== (ref.terms?.sha ?? NONE) || !commit) {
+    json(outgoing, 200, {
+      data: { updateRefs: null },
+      errors: [{ message: 'Something went wrong while executing your query.' }],
+    });
+    return true;
+  }
+  if (commit.parent !== ref.terms?.sha) {
+    json(outgoing, 200, {
+      data: { updateRefs: null },
+      errors: [
+        {
+          type: 'UNPROCESSABLE',
+          path: ['updateRefs'],
+          message: 'refs/lo/terms: rejecting non-fast forward update',
+        },
+      ],
+    });
+    return true;
+  }
+  (ref.moves ??= []).push({ from: commit.parent, to: commit.overview, message: commit.message });
+  ref.terms = commit.overview;
+  json(outgoing, 200, { data: { updateRefs: { clientMutationId: null } } });
+  return true;
+}
+
 /**
  * A server in front of `github` that answers for the overview's ref as `ref` says, fails the
  * timeline's reads, and passes the rest on: where Lo finds GitHub, and what closes it.
@@ -276,6 +392,7 @@ async function frontOf(
   const origin = new URL(github.urls.api).origin;
   // Every overview made here this test, so a commit once named is still read after the ref moves.
   const overviews: Overview[] = [];
+  const written: Written = { trees: new Map(), commits: new Map() };
   const front = createServer((incoming, outgoing) => {
     void (async () => {
       const body = await buffer(incoming);
@@ -305,6 +422,8 @@ async function frontOf(
         }
       }
       if (overviews.some((overview) => answerFor(overview, path, outgoing))) return;
+      const method = incoming.method ?? 'GET';
+      if (await wroteTerms(ref, written, { method, path, body }, outgoing)) return;
       if (path === '/graphql' && TIMELINE.test(body.toString())) {
         return json(outgoing, 502, { message: 'Server Error' });
       }
@@ -315,7 +434,6 @@ async function frontOf(
       // The cassette has only the ref's read made again with its ETag: anything else read again,
       // such as the open pull requests as a tab opens a second time, it answers whole.
       if (path !== REFS) headers.delete('if-none-match');
-      const method = incoming.method ?? 'GET';
       const response = await fetch(`${origin}${incoming.url ?? '/'}`, {
         method,
         headers,
@@ -1305,6 +1423,116 @@ test('ignores a term from its menu, in this repo or every repo: plain text at on
       .click();
     const list = page.getByRole('group', { name: 'Ignored terms' }).last();
     await expect(list.locator('[data-scope]')).toHaveText([/^Every repoLeaseStop ignoring$/]);
+  });
+});
+
+/** What a term of the repo's definitions says, in the `terms.json` the ref holds now. */
+function storedOf(ref: Ref, key: string): unknown {
+  const [bytes] = ref.terms?.blobs.values() ?? [];
+  if (!bytes) return undefined;
+  const store = zod
+    .object({ terms: zod.record(zod.string(), zod.unknown()) })
+    .parse(JSON.parse(new TextDecoder().decode(bytes)));
+  return store.terms[key];
+}
+
+test('edits a term of the repo’s definitions from its menu, its card and i, keeping a draft; an edit of it made meanwhile comes back over the field, theirs as it reads, and Save mine writes over it', async ({
+  page,
+  ref,
+}) => {
+  ref.holds = { kind: 'made', overview: overviewOf({ 'artifact.md': DEFINING }) };
+  ref.terms = overviewOf({ 'terms.json': DEFINED });
+  await open(page);
+  await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
+  await overviewTab(page).click();
+  const shown = overview(page, 'shown');
+  const line = shown.getByRole('note').filter({ hasText: 'definitions' });
+  await expect(line).toContainText('Adds 2 definitions · changes 1', { timeout: 20_000 });
+  const tenant = shown.locator('.lo-ov__article p .lo-term', { hasText: 'tenant' });
+  const row = shown
+    .locator('[data-lo-glossary] [data-lo-term-row]')
+    .filter({ has: page.locator('.lo-term-row__term', { hasText: 'Tenant' }) });
+  const dialog = page.getByRole('dialog', { name: 'Edit term' });
+  const field = dialog.getByRole('textbox', { name: 'Definition' });
+  // Busy, it's named for what it does meanwhile.
+  const save = dialog.getByRole('button', { name: /^(Save|Saving…)/ });
+  const card = page.locator('.lo-hovercard');
+  const ours = 'the accounts whose requests a quota counts.';
+  const theirs = 'the accounts one quota covers.';
+
+  await test.step('opens from the term’s menu on the repo’s definition, Save dimmed until it changes; Esc keeps a draft', async () => {
+    await tenant.click({ button: 'right' });
+    await page
+      .getByRole('menu')
+      .getByRole('menuitem', { name: /^Edit term…/ })
+      .click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: 'Tenant' })).toBeVisible();
+    await expect(field).toBeFocused();
+    await expect(field).toHaveValue('the accounts a quota is counted for.');
+    await expect(save).toHaveAttribute('aria-disabled', 'true');
+    await expect(save).toHaveAttribute('aria-description', 'Nothing changed');
+    await field.fill(ours);
+    await expect(save).not.toHaveAttribute('aria-disabled');
+    await expect(dialog.getByRole('region', { name: 'Preview' })).toContainText(ours);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    // Focus goes back to the term, which shows its card.
+    await expect(tenant).toBeFocused();
+  });
+
+  await test.step('opens again from its card’s Edit… with the draft, and by i on its row', async () => {
+    // The card is hidden from a screen reader, which has the menu.
+    await tenant.hover();
+    await card.locator('button', { hasText: 'Edit…' }).click();
+    await expect(field).toHaveValue(ours);
+    await expect(dialog).toContainText(/Draft from /);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await line.getByRole('button', { name: 'Go to glossary' }).click();
+    await row.locator('.lo-term-row__term').focus();
+    await page.keyboard.press('i');
+    await expect(field).toBeFocused();
+    await expect(field).toHaveValue(ours);
+  });
+
+  await test.step('an edit of it made meanwhile comes back over the field, with Save mine, and nothing written', async () => {
+    ref.terms = overviewOf(
+      { 'terms.json': DEFINED.replace('the accounts a quota is counted for.', theirs) },
+      { name: 'mona', login: 'mona' },
+    );
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter');
+    const conflict = dialog.getByRole('status').filter({ hasText: 'Changed by mona' });
+    await expect(conflict).toContainText(theirs, { timeout: 20_000 });
+    await expect(field).toHaveValue(ours);
+    await expect(save).toHaveText(/^Save mine/);
+    expect(ref.moves).toBeUndefined();
+  });
+
+  await test.step('Save mine says Saving… while it’s written, with nothing leaving, then closes, and the row reads it', async () => {
+    const answer = Promise.withResolvers<void>();
+    ref.moving = answer.promise;
+    const before = ref.terms?.sha;
+    await save.click();
+    await expect(save).toHaveAttribute('aria-busy', 'true');
+    await expect(save).toContainText('Saving…');
+    await expect(field).toHaveAttribute('readonly');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+    answer.resolve();
+    await expect(dialog).toHaveCount(0);
+    expect(ref.moves?.map(({ from, message }) => ({ from, message }))).toEqual([
+      { from: before, message: 'Edit "Tenant"' },
+    ]);
+    expect(storedOf(ref, 'tenant')).toMatchObject({
+      term: 'Tenant',
+      definition: ours,
+      written: 'human',
+      by: { login: 'rozed-bot' },
+      from: 'lo',
+    });
+    expect(storedOf(ref, 'credit')).toMatchObject({ definition: 'what a request spends.' });
+    await expect(row).toContainText(ours);
   });
 });
 

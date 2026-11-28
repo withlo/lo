@@ -3,9 +3,9 @@
 // discarded; and what saving came to: closed, the conflict with theirs for "Save mine", a failure
 // with why, and an answer lost, which "Check again" settles. And why it can't open.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { pullsStore } from '../../tab/window/store.ts';
+import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab, PullView } from '../../tab/window/shared.ts';
 import { readDraft, readTerms } from '../background/index.ts';
 import type { EditOutcome, StoreState, TermEdit, TermNow } from '../contract.ts';
@@ -31,9 +31,9 @@ import { storeStates, terms } from './terms.ts';
 const TAB: PullTab = { id: 't1', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 };
 const REPO = { owner: 'rozed-dev', name: 'e2e' };
 
-/** `terms.json` of `bucket` and `tenant`, as agents defined them. */
-function storeBytes(): Uint8Array {
-  const term = (name: string, definition: string, aliases: string[] = []) => ({
+/** A term of `terms.json`, as an agent defined it. */
+function agents(name: string, definition: string, aliases: string[] = []) {
+  return {
     term: name,
     definition,
     ...(aliases.length > 0 ? { aliases } : {}),
@@ -41,13 +41,17 @@ function storeBytes(): Uint8Array {
     by: { login: 'elle-kzn' },
     from: '#80',
     at: '2026-11-11T09:30:00Z',
-  });
+  };
+}
+
+/** `terms.json` of `bucket` and `tenant`, as agents defined them. */
+function storeBytes(): Uint8Array {
   return new TextEncoder().encode(
     JSON.stringify({
       format: 1,
       terms: {
-        bucket: term('bucket', 'The tokens a tenant has.', ['buckets']),
-        tenant: term('tenant', 'Who pays.'),
+        bucket: agents('bucket', 'The tokens a tenant has.', ['buckets']),
+        tenant: agents('tenant', 'Who pays.'),
       },
     }),
   );
@@ -81,14 +85,20 @@ function given(state: Partial<StoreState> = {}): void {
   });
 }
 
+/** The tab's pull request as the window has it: only who it acts as is read. */
+const said = vi.hoisted(() => ({ pull: undefined as unknown }));
+vi.mock('../../tab/window/shared.ts', async (original) => ({
+  ...(await original<typeof TabShared>()),
+  pullOf: () => said.pull,
+}));
+
 /** The tab acting as `login`, or as nobody. */
 function acting(login: string | undefined): void {
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only who it acts as is read.
-  const view = {
+  const view: Pick<PullView, 'id' | 'acting'> = {
     id: TAB.id,
     acting: login === undefined ? { kind: 'anonymous' } : { kind: 'account', login },
-  } as PullView;
-  pullsStore.setState({ views: new Map([[TAB.id, view]]) });
+  };
+  said.pull = view;
 }
 
 /** What main is asked, and answers each edit and check with. */
@@ -299,13 +309,10 @@ describe('Edit term', () => {
   });
 
   it('stays open while it saves', async () => {
-    let answer: (outcome: EditOutcome) => void = () => {};
+    const answer = Promise.withResolvers<EditOutcome>();
     undo();
     undo = editWith({
-      edit: () =>
-        new Promise((resolve) => {
-          answer = resolve;
-        }),
+      edit: () => answer.promise,
       check: async () => ({ kind: 'saved' }),
       draft: async (input) => readDraft(input),
     });
@@ -315,7 +322,7 @@ describe('Edit term', () => {
     closeEdit();
     expect(open().step).toEqual({ kind: 'working' });
     expect(editRefusal(TAB, 'bucket')).toBe('Saving…');
-    answer({ kind: 'saved' });
+    answer.resolve({ kind: 'saved' });
     await saving;
     expect(editStore.getState().open).toBeUndefined();
   });
