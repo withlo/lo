@@ -71,8 +71,8 @@ function indexOfBlank(bytes: Uint8Array): number {
 
 /**
  * Every entry in the tree `id` and the trees inside it, with its path from there: one past `most`
- * at most, where listing stops, so a listing past it says so. Throws {@link NotOverview} for an entry of a mode no overview's commit
- * holds, or a tree larger than one could be.
+ * at most, where listing stops, so a listing past it says so. Throws {@link NotOverview} for an
+ * entry of a mode no overview's commit holds, or a tree larger than one could be.
  */
 export async function listTree(objects: Objects, id: string, most: number): Promise<TreeEntry[]> {
   const listed: TreeEntry[] = [];

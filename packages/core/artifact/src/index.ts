@@ -77,5 +77,5 @@ export {
   withDefinition,
   withSuggestion,
   withTerm,
-  type Definition,
+  type StoreDefinition,
 } from './edits.ts';

@@ -1,8 +1,8 @@
 /**
  * Running in GitHub Actions: what the workflow's environment says, and the log its commands write,
  * where a line that needs a maintainer's eye is an annotation. Each line is one line: what it
- * quotes, from a fork or anywhere else, can't start a line of its own, so it can't be read as one of
- * the runner's commands.
+ * quotes, from a fork or anywhere else, can't start a line of its own, so it can't be read as one
+ * of the runner's commands.
  */
 
 import { isRepositoryName } from './github.ts';
@@ -49,7 +49,7 @@ export function actionsContext(env: NodeJS.ProcessEnv): ActionsContext {
   return { repository, server: server.replace(/\/$/, ''), api: api.replace(/\/$/, ''), token };
 }
 
-/** `given`, `name`'s value, when it's an HTTPS address with no name, password, query or fragment. */
+/** `given`, `name`'s value, when it's an HTTPS address with no name, password, query or hash. */
 function address(given: string, name: string): string {
   let url: URL;
   try {

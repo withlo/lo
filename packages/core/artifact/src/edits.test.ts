@@ -10,7 +10,7 @@ import {
   withDefinition,
   withSuggestion,
   withTerm,
-  type Definition,
+  type StoreDefinition,
   type Store,
 } from './index.ts';
 import { utf8Length } from './source.ts';
@@ -19,7 +19,7 @@ const AT = '2026-11-27T10:30:00Z';
 const LATER = '2026-11-28T09:00:00Z';
 
 /** A definition from pull request `from`, by octocat. */
-function definition(text: string, from: number | 'lo' = 4797, at = AT): Definition {
+function definition(text: string, from: number | 'lo' = 4797, at = AT): StoreDefinition {
   return { definition: text, written: 'agent', by: { login: 'octocat' }, from, at };
 }
 

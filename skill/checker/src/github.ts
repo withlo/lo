@@ -42,7 +42,7 @@ export interface GitHub {
 /** A repository's name, `owner/repo`, as GitHub allows them. */
 const REPOSITORY = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/;
 
-/** Whether `name` is a repository's name, `owner/repo`, and not one of the names git treats as paths. */
+/** Whether `name` is a repository's name, `owner/repo`, and not one git treats as a path. */
 export function isRepositoryName(name: string): boolean {
   if (!REPOSITORY.test(name)) return false;
   const repo = name.slice(name.indexOf('/') + 1);

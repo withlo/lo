@@ -1,9 +1,9 @@
 /**
  * `fold`: a merged pull request's definitions, into the repository's definitions, the store at
  * `refs/lo/terms`. Its overview is read from the base repository's `refs/lo/pr/<n>`, else its
- * fork's, else the base repository's copy of the fork's, and checked as Lo checks one. Each term its
- * glossary marks `(new)` or `(changed)` is added, or its definition replaced, the one it had kept
- * in its changes; a locked term gets a suggestion instead. Each is written by an agent, by the
+ * fork's, else the base repository's copy of the fork's, and checked as Lo checks one. Each term
+ * its glossary marks `(new)` or `(changed)` is added, or its definition replaced, the one it had
+ * kept in its changes; a locked term gets a suggestion instead. Each is written by an agent, by the
  * account the overview's commit maps to, or the commit's git name when GitHub maps it to none, from
  * the pull request, when it merged. Unmarked entries change nothing. A repository's first merged
  * pull request with a marked term makes the store.
@@ -28,7 +28,7 @@ import {
   withSuggestion,
   withTerm,
   type Account,
-  type Definition,
+  type StoreDefinition,
   type GlossaryEntry,
   type Store,
   type StoreTerm,
@@ -202,8 +202,8 @@ const NAME_LIMIT = STORE_LIMITS.name;
 
 /**
  * `name`, a commit's author's, as the store may hold it: with no invisible or control character,
- * each run of spaces as one and none at either end, in at most {@link NAME_LIMIT} bytes, or "unknown" when that leaves
- * nothing.
+ * each run of spaces as one and none at either end, in at most {@link NAME_LIMIT} bytes, or
+ * "unknown" when that leaves nothing.
  */
 export function gitName(name: string): string {
   const plainName = name
@@ -244,13 +244,13 @@ async function storeAt(git: Git, id: string): Promise<Store> {
 export function foldInto(
   store: Store,
   marked: readonly GlossaryEntry[],
-  given: Omit<Definition, 'definition' | 'written'> & { from: number },
+  given: Omit<StoreDefinition, 'definition' | 'written'> & { from: number },
 ): { next: Store; folded: Folded[] } {
   let next = store;
   const folded: Folded[] = [];
   for (const { name, key, definition: text } of marked) {
     if (text === undefined) continue;
-    const definition: Definition = { definition: text, written: 'agent', ...given };
+    const definition: StoreDefinition = { definition: text, written: 'agent', ...given };
     const owner = next.names.get(key);
     const current = owner === undefined ? undefined : next.terms.get(owner);
     if (!current) {

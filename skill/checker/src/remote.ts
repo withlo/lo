@@ -48,7 +48,7 @@ export interface Walked {
   parents: string[];
 }
 
-/** The `Authorization` header that signs git in to GitHub with `token`, as `actions/checkout` does. */
+/** The `Authorization` header that signs git in to GitHub with `token`, as checkout's does. */
 export function tokenHeader(token: string): string {
   return `basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
 }

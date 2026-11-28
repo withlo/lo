@@ -15,18 +15,14 @@ import {
   type Store,
   type StoreTerm,
   type Suggestion,
-  type Written,
 } from './store.ts';
 import { termKey } from './targets.ts';
 
-/** A definition as a term holds it: its text, and who wrote it, where it came from and when. */
-export interface Definition {
-  definition: string;
-  written: Written;
-  by: Account;
-  from: Origin;
-  at: string;
-}
+/**
+ * A definition as a term holds it: its text, and who wrote it, where it came from and when, as a
+ * {@link Change}, one it had before, holds it too.
+ */
+export type StoreDefinition = Change;
 
 /** A store with no terms, as a repository's first one starts. */
 export function emptyStore(): Store {
@@ -50,7 +46,7 @@ function squeezed(text: string): string {
  * `store` with `term`, as written, added, defined as `given`, with no aliases. Throws when a term
  * already goes by its name, its own or an alias's.
  */
-export function withTerm(store: Store, term: string, given: Definition): Store {
+export function withTerm(store: Store, term: string, given: StoreDefinition): Store {
   const key = termKey(term);
   if (store.names.has(key)) throw new Error(`The store has a term named ${JSON.stringify(key)}.`);
   const terms = new Map(store.terms);
@@ -65,7 +61,7 @@ export function withTerm(store: Store, term: string, given: Definition): Store {
  * changes, of which it keeps the newest {@link STORE_LIMITS.changes}. Throws when there's no such
  * term.
  */
-export function withDefinition(store: Store, key: string, next: Definition): Store {
+export function withDefinition(store: Store, key: string, next: StoreDefinition): Store {
   const current = termOf(store, key);
   const previous: Change = definitionOf(current);
   const terms = new Map(store.terms);
@@ -79,7 +75,8 @@ export function withDefinition(store: Store, key: string, next: Definition): Sto
 
 /**
  * `store` with `suggestion` first among the suggestions of the locked term `key`, of which it keeps
- * the newest {@link STORE_LIMITS.suggestions}. Throws when there's no such term, or it isn't locked.
+ * the newest {@link STORE_LIMITS.suggestions}. Throws when there's no such term, or it isn't
+ * locked.
  */
 export function withSuggestion(store: Store, key: string, suggestion: Suggestion): Store {
   const current = termOf(store, key);
@@ -107,7 +104,7 @@ function termOf(store: Store, key: string): StoreTerm {
 }
 
 /** Only the fields of a definition, from anything holding one. */
-function definitionOf({ definition, written, by, from, at }: Definition): Definition {
+function definitionOf({ definition, written, by, from, at }: StoreDefinition): StoreDefinition {
   return { definition, written, by, from, at };
 }
 
