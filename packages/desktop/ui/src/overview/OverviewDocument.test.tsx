@@ -851,7 +851,7 @@ describe('glossary', () => {
 });
 
 /** A paragraph of `value`, as a definition's blocks. */
-const words = (value: string): OverviewBlock[] => [
+const paragraph = (value: string): OverviewBlock[] => [
   { kind: 'paragraph', children: [{ kind: 'text', value }] },
 ];
 
@@ -874,14 +874,17 @@ function defining(...names: string[]): OverviewTree {
   );
 }
 
-describe('with the repo’s definitions', () => {
-  const rowOf = (page: HTMLElement, name: string) =>
-    [...page.querySelectorAll<HTMLElement>('[data-lo-term-row]')].find(
-      (row) => row.querySelector('.lo-term-row__term')?.textContent === name,
-    )!;
-  const names = (rows: Element | null | undefined) =>
-    [...(rows?.querySelectorAll('.lo-term-row__term') ?? [])].map((name) => name.textContent);
+/** The glossary's row for the term `name`. */
+const rowOf = (page: HTMLElement, name: string) =>
+  [...page.querySelectorAll<HTMLElement>('[data-lo-term-row]')].find(
+    (row) => row.querySelector('.lo-term-row__term')?.textContent === name,
+  )!;
 
+/** The terms of the rows in `rows`, in order. */
+const names = (rows: Element | null | undefined) =>
+  [...(rows?.querySelectorAll('.lo-term-row__term') ?? [])].map((name) => name.textContent);
+
+describe('with the repo’s definitions', () => {
   it('lists the terms the pull request adds or changes first, by name, then a hairline and the rest', () => {
     const page = render(
       <OverviewDocument
@@ -890,20 +893,20 @@ describe('with the repo’s definitions', () => {
           limit: {
             source: 'store',
             name: 'limit',
-            blocks: words('the repo’s limit.'),
+            blocks: paragraph('the repo’s limit.'),
             marks: { mark: 'changed', locked: false, suggestions: 0 },
-            before: words('the limit as it was.'),
+            before: paragraph('the limit as it was.'),
           },
           bucket: {
             source: 'overview',
             name: 'bucket',
-            blocks: words('own bucket.'),
+            blocks: paragraph('own bucket.'),
             marks: { mark: 'new', locked: false, suggestions: 0 },
           },
           lease: {
             source: 'store',
             name: 'lease',
-            blocks: words('the repo’s lease.'),
+            blocks: paragraph('the repo’s lease.'),
             marks: { locked: true, suggestions: 2 },
           },
         })}
@@ -942,9 +945,9 @@ describe('with the repo’s definitions', () => {
           limit: {
             source: 'store',
             name: 'limit',
-            blocks: words('the repo’s limit.'),
+            blocks: paragraph('the repo’s limit.'),
             marks: { mark: 'changed', locked: true, suggestions: 2 },
-            before: words('the limit as it was.'),
+            before: paragraph('the limit as it was.'),
             byline: {
               by: { login: 'ravi-k' },
               written: 'agent',
@@ -982,7 +985,7 @@ describe('with the repo’s definitions', () => {
 
   it('shows the overview’s own definition in a card as it does without them, untagged and with no byline where nothing tags it', () => {
     const tree = defining('cost');
-    glossaryOf(tree).terms[0]!.children.push(...words('More of it.'));
+    glossaryOf(tree).terms[0]!.children.push(...paragraph('More of it.'));
     const page = render(<OverviewDocument tree={tree} terms={shownTerms({})} />);
     focus(term(page));
     expect(card()?.textContent).toBe('costown cost. More in the glossary.');
@@ -997,7 +1000,7 @@ describe('with the repo’s definitions', () => {
           cost: {
             source: 'overview',
             name: 'cost',
-            blocks: words('own cost.'),
+            blocks: paragraph('own cost.'),
             marks: { mark: 'new' },
             byline: { reading: true },
           },
@@ -1029,7 +1032,7 @@ describe('with the repo’s definitions', () => {
           weight: {
             source: 'overview',
             name: 'weight',
-            blocks: words('own weight.'),
+            blocks: paragraph('own weight.'),
             marks: { mark: 'new' },
           },
         })}
