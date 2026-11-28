@@ -658,6 +658,22 @@ the same parser Lo uses, so an artifact that passes will render. It checks that:
 - every figure exists, is a supported type and contains no scripts;
 - the artifact is under the size cap.
 
+### The workflow
+
+A repository with the skill installed has a workflow, `.github/workflows/lo-overview.yml`, that runs
+the checker on GitHub for each pull request, by the skill's version. It runs on
+`pull_request_target`, so it runs for pull requests from forks, and it never checks out or runs a
+pull request's code: it fetches git data alone, into an empty repository, as data.
+
+- **`keep`:** for a PR from a fork, copies the fork's overview, and the stack overview it names, to
+  `refs/lo/kept/pr/<number>` and `refs/lo/kept/stack/<id>` in the base repo, when it's one Lo shows.
+  A copy only moves forward. Lo reads it when the base repo and the fork have none.
+- **`fold`:** when a PR merges, adds the terms its overview marks new or changed to the repo's
+  definitions, `refs/lo/terms`, or suggests the change for a locked term, once per PR. Each is by
+  the account GitHub maps the overview's commit to. A fork's commit can give anyone's address, so
+  for an overview from a fork, that account counts only when it opened the PR; otherwise the term is
+  by the commit's git name, marked not verified.
+
 ### Customization
 
 - **Two files.** `.lo/overview.md`, committed to the repo, holds the team's conventions.

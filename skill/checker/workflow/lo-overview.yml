@@ -1,0 +1,76 @@
+# Lo's overview workflow, written by `npx @withlo/overview install --repo`, which updates it with
+# the skill. Lo (https://github.com/withlo/lo) shows a pull request's overview, at refs/lo/pr/<n>,
+# beside its diff. This workflow does two things a writer's agent can't:
+#
+# - keep: when a pull request comes from a fork, copies the fork's overview, and the stack overview
+#   it names, to refs/lo/kept/pr/<n> and refs/lo/kept/stack/<id> here, so it outlives the fork.
+#   A copy only moves forward.
+# - fold: when a pull request merges, adds the terms its overview's glossary marks (new) or
+#   (changed) to this repository's definitions, refs/lo/terms, which Lo shows in every overview.
+#
+# It runs on pull_request_target, so it runs for pull requests from forks with a token that can
+# write to this repository. It never checks out the pull request or runs its code: it fetches git
+# data alone, as data, into an empty repository of its own, checks everything it fetched as Lo
+# checks an overview, and pushes only overviews' commits and the definitions. The token can write
+# contents, which refs need, and read pull requests, to find a pull request's fork.
+#
+# Run it by hand with a pull request's number to catch one up: Actions › lo-overview › Run
+# workflow.
+name: lo-overview
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, closed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: The pull request's number
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  pull-requests: read
+
+# One run at a time for each pull request. Each run looks at the pull request as it is now, so a
+# run waiting behind another replaces any that waited before it.
+concurrency:
+  group: lo-overview-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: false
+
+jobs:
+  overview:
+    name: overview
+    # A pull request from this repository has no fork to copy, so its runs skip until it merges.
+    if: >-
+      github.event_name == 'workflow_dispatch' || github.event.pull_request.merged ||
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PR: ${{ github.event.pull_request.number || inputs.pr }}
+    steps:
+      - name: Keep a copy of the fork's overview
+        if:
+          github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name
+          != github.repository
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        # The checker runs from a new, empty folder, pinned to the skill's version.
+        run: |
+          tools=$(mktemp -d)
+          cd "$tools"
+          npx --prefix "$tools" --yes @withlo/overview@{version} keep --pr "$PR"
+
+      - name: Add the merged pull request's definitions
+        if:
+          ${{ !cancelled() && (github.event_name == 'workflow_dispatch' ||
+          github.event.pull_request.merged) }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tools=$(mktemp -d)
+          cd "$tools"
+          npx --prefix "$tools" --yes @withlo/overview@{version} fold --pr "$PR"
