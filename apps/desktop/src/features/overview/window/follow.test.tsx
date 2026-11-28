@@ -26,8 +26,10 @@ import {
   looseControl,
   nextBlock,
   nextLink,
+  reveals,
   scroll,
   stepName,
+  takeReveal,
   targetOf,
   type DrawnOverview,
   type Scroll,
@@ -354,6 +356,16 @@ describe('a section’s heading', () => {
     head.querySelector<HTMLElement>('button')!.focus();
     const next = nextLink(overview, 1);
     expect(next instanceof HTMLElement && kindOf(tree, next)).toBe('tabs');
+  });
+
+  it('kept as a block while collapsed, has focus on its words as history comes back to it open', () => {
+    const { overview } = drawn(foldsOf());
+    const head = headOf(overview, 'Where to look');
+    const heading = sectionsOf(overview.tree.blocks).find((each) => each.name === 'Where to look');
+    reveals.set(overview.tab, { block: heading!.heading, count: 1 });
+    expect(takeReveal(overview)).toBe(true);
+    expect(document.activeElement).toBe(head.querySelector('h2'));
+    expect(reveals.get(overview.tab)).toBeUndefined();
   });
 
   it('has a chevron Tab doesn’t stop at on the way from the overview to the first block', () => {

@@ -594,14 +594,21 @@ type Part = { kind: 'block'; block: number } | { kind: 'section'; section: Overv
 
 /**
  * The article's parts, in order: the blocks before the first section, then each section, its
- * heading with the blocks under it.
+ * heading with the blocks under it, then what's after the last, its footnotes.
  */
 function sectioned(blocks: readonly OverviewBlock[], sections: readonly OverviewSection[]): Part[] {
   const first = sections[0]?.heading ?? blocks.length;
+  const last = sections.at(-1)?.to ?? blocks.length;
   return [
-    ...range(0, first).map((block): Part => ({ kind: 'block', block })),
+    ...range(0, first).map(blockPart),
     ...sections.map((section): Part => ({ kind: 'section', section })),
+    ...range(last, blocks.length).map(blockPart),
   ];
+}
+
+/** Block `block` as a part of the article of its own. */
+function blockPart(block: number): Part {
+  return { kind: 'block', block };
 }
 
 /** The numbers from `from` up to, not including, `to`. */

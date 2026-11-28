@@ -81,20 +81,15 @@ export function drawnIn(tab: string): DrawnOverview | undefined {
 export const trees = tabState<number | undefined>(() => undefined);
 
 /**
- * How each tab's overview expands the collapsed section a block is in, by the block's number, so
- * it's drawn for history or a marker to go to: at once, as anything going into one does.
+ * How a tab's overview expands the collapsed section a block is in, by the tab and the block's
+ * number, so it's drawn for history or a note to go to: at once, as anything going into one does.
+ * The sections' own, from the overview main last said the tab has, whether it's drawn yet or not.
  */
-const openers = new Map<string, (block: number) => void>();
+let opener: ((tab: string, block: number) => void) | undefined;
 
-/**
- * Has tab `tab`'s overview expand a collapsed section with `open` before a block in it is
- * revealed. Returns a function that stops it.
- */
-export function setOpener(tab: string, open: (block: number) => void): () => void {
-  openers.set(tab, open);
-  return () => {
-    if (openers.get(tab) === open) openers.delete(tab);
-  };
+/** Has `open` expand a collapsed section before a block in it is revealed, in any tab. */
+export function setOpener(open: (tab: string, block: number) => void): void {
+  opener = open;
 }
 
 /** A block to show once the tab's overview is drawn, as `⌃o` back to it asks, counted so each is once. */
@@ -111,6 +106,18 @@ function articleOf(overview: DrawnOverview): HTMLElement | null {
 export function blockElement(overview: DrawnOverview, index: number): HTMLElement | undefined {
   const article = articleOf(overview);
   return article ? blockStops(article).find((block) => blockNumber(block) === index) : undefined;
+}
+
+/**
+ * Where block `index`, a place history kept, is in the overview as drawn: the block, or the
+ * heading of a section that's opened since its heading was kept as a block.
+ */
+function placeElement(overview: DrawnOverview, index: number): HTMLElement | undefined {
+  return (
+    blockElement(overview, index) ??
+    articleOf(overview)?.querySelector<HTMLElement>(`[data-lo-section="${index}"]`) ??
+    undefined
+  );
 }
 
 /** The block that has focus, or that holds what has focus, if any. */
@@ -692,8 +699,8 @@ export function placesFor(tab: string): void {
  */
 export function revealBlock(tab: string, index: number): void {
   revealCount += 1;
-  const open = openers.get(tab);
-  if (open) flushSync(() => open(index));
+  const open = opener;
+  if (open) flushSync(() => open(tab, index));
   reveals.set(tab, { block: index, count: revealCount });
   showMiddle(tab, OVERVIEW_VIEW);
   const overview = drawn.get(tab);
@@ -716,7 +723,7 @@ export function keepPlaces(open: ReadonlySet<string>): void {
 export function takeReveal(overview: DrawnOverview): boolean {
   const waiting = reveals.get(overview.tab);
   if (!waiting) return false;
-  const block = blockElement(overview, waiting.block);
+  const block = placeElement(overview, waiting.block);
   if (!block) return false;
   reveals.set(overview.tab, undefined);
   const top = left.get(overview.tab)?.get(blockId(overview.generation, waiting.block));

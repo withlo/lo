@@ -36,12 +36,14 @@ const known = new WeakMap<readonly OverviewBlock[], readonly OverviewSection[]>(
 
 /**
  * The sections of `blocks`, an overview's, in the order they're written: one for each of its own
- * second-level headings. What comes before the first isn't in one. The same list for the same
- * blocks.
+ * second-level headings. What comes before the first isn't in one, nor are the footnotes, which
+ * the overview gathers at its end, outside every section, so a section collapsing never takes
+ * them. The same list for the same blocks.
  */
 export function sectionsOf(blocks: readonly OverviewBlock[]): readonly OverviewSection[] {
   const kept = known.get(blocks);
   if (kept) return kept;
+  const end = blocks.at(-1)?.kind === 'footnotes' ? blocks.length - 1 : blocks.length;
   const headings: { at: number; anchor: string; node: OverviewBlock }[] = [];
   for (const [at, block] of blocks.entries()) {
     if (block.kind === 'heading' && block.level === 2) {
@@ -53,7 +55,7 @@ export function sectionsOf(blocks: readonly OverviewBlock[]): readonly OverviewS
     name: headingName(node),
     anchor,
     from: at + 1,
-    to: headings[index + 1]?.at ?? blocks.length,
+    to: headings[index + 1]?.at ?? end,
     folds: anchor !== TLDR_ANCHOR,
   }));
   known.set(blocks, sections);

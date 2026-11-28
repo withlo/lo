@@ -55,23 +55,21 @@ describe('the sections collapsed', () => {
     ]);
   });
 
-  it('follow a fold by hand over the list, each section of one heading apart', () => {
+  it('follow a fold by hand over the list, by heading, for every section with it', () => {
     const tree = overview('tl;dr', 'Notes', 'Testing', 'Notes');
     const hand = new Map([
-      ['notes\n1', true],
-      ['testing\n0', false],
+      ['notes', true],
+      ['testing', false],
     ]);
-    expect(shut(tree, { '*': ['Testing'] }, hand)).toEqual(['Notes']);
-    expect(
-      collapsedIn(tree, hand, scoped({}), 'rozed-dev/e2e').has(sectionsOf(tree.blocks)[3]!.heading),
-    ).toBe(true);
-    // In a newer revision, by heading, wherever the section has moved.
-    const newer = overview('tl;dr', 'Testing', 'Notes', 'More', 'Notes');
-    expect(shut(newer, { '*': ['Testing'] }, hand)).toEqual(['Notes']);
-    expect(
-      collapsedIn(newer, hand, scoped({}), 'rozed-dev/e2e').has(
-        sectionsOf(newer.blocks)[4]!.heading,
-      ),
-    ).toBe(true);
+    expect(shut(tree, { '*': ['Testing'] }, hand)).toEqual(['Notes', 'Notes']);
+    // In a newer revision, every section with that heading follows it, wherever it is and however
+    // many there are, so no fold lands on a section of another heading.
+    const newer = overview('tl;dr', 'Notes', 'Testing', 'More', 'Notes', 'Notes');
+    expect(shut(newer, { '*': ['Testing'] }, hand)).toEqual(['Notes', 'Notes', 'Notes']);
+    expect(shut(overview('tl;dr', 'Testing', 'Notes'), { '*': ['Testing'] }, hand)).toEqual([
+      'Notes',
+    ]);
+    // A heading the reader folded open stays open there, though the list has it.
+    expect(shut(overview('tl;dr', 'Testing'), { '*': ['testing'] }, hand)).toEqual([]);
   });
 });

@@ -20,7 +20,7 @@ import { useCallback, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 
 import { changeSetting, settingNow, useSetting } from '../../settings/window/shared.ts';
-import { tabState, useTabState, type PullTab } from '../../tab/window/shared.ts';
+import { activeTab, tabState, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import {
   collapsed,
   entryKey,
@@ -35,14 +35,17 @@ import {
   type ScopedValue,
 } from '../settings.ts';
 import { blockId, blockIn } from './blocks.ts';
+import { standingOf } from './facts.ts';
 import { focusedBlock, type DrawnOverview } from './follow.ts';
+import { checked, states } from './store.ts';
 
 /** The tl;dr, as a heading in the setting is matched: it never collapses, whatever the setting says. */
 const TLDR = entryKey('tl;dr');
 
 /**
- * Each tab's sections folded by hand, by the key of their heading (`foldKey`): `true` collapsed,
- * `false` expanded. A section with none follows the setting.
+ * Each tab's sections folded by hand, by their heading as it's matched: `true` collapsed, `false`
+ * expanded. A section with none follows the setting. Every section with that heading follows the
+ * fold, in this revision and a newer one, wherever it is.
  */
 export const folds = tabState<ReadonlyMap<string, boolean>>(() => new Map());
 
@@ -54,21 +57,11 @@ const opened = tabState<ReadonlyMap<number, number>>(() => new Map());
 
 const keys = new WeakMap<readonly OverviewSection[], ReadonlyMap<number, string>>();
 
-/**
- * What each section of `sections` is kept by, by its heading's block number: its heading as it's
- * matched, and which of the sections with that heading it is, so two with one heading fold apart.
- */
+/** What each section of `sections` is folded by, by its heading's block number: its heading. */
 function keysOf(sections: readonly OverviewSection[]): ReadonlyMap<number, string> {
   const kept = keys.get(sections);
   if (kept) return kept;
-  const made = new Map<number, string>();
-  const seen = new Map<string, number>();
-  for (const section of sections) {
-    const name = entryKey(section.name);
-    const nth = seen.get(name) ?? 0;
-    seen.set(name, nth + 1);
-    made.set(section.heading, `${name}\n${nth}`);
-  }
+  const made = new Map(sections.map((section) => [section.heading, entryKey(section.name)]));
   keys.set(sections, made);
   return made;
 }
@@ -151,13 +144,26 @@ function expandAtOnce(tab: string, tree: OverviewTree, headings: readonly number
 
 /**
  * Expands the collapsed section block `block` of `tree` is in at once, in the overview tab `tab`
- * shows, so it's drawn for something to go to it, as `⌃o` back to it, or a marker in the diff.
- * The caller draws it, in `flushSync`.
+ * shows, so it's drawn for something to go to it, as `⌃o` back to it, or a note in the diff. Its
+ * heading stays collapsed, a block itself. The caller draws it, in `flushSync`.
  */
 export function openTo(tab: PullTab, tree: OverviewTree, block: number): void {
   const section = sectionAt(sectionsOf(tree.blocks), block);
-  if (section?.folds && isCollapsed(tab, tree, section)) {
+  if (section?.folds && section.heading !== block && isCollapsed(tab, tree, section)) {
     expandAtOnce(tab.id, tree, [section.heading]);
+  }
+}
+
+/**
+ * As {@link openTo}, in the overview main last said tab `tab` has, whether it's drawn yet or not:
+ * history and a note's "Show in overview" go there from the diff or the timeline, before the
+ * overview has ever been shown. In the tab on screen, where they are.
+ */
+export function openShown(tab: string, block: number): void {
+  const pull = activeTab();
+  const standing = standingOf(states.get(tab), checked.get(tab));
+  if (pull?.kind === 'pull' && pull.id === tab && standing.kind === 'shown') {
+    openTo(pull, standing.parsed.tree, block);
   }
 }
 

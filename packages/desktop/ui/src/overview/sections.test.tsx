@@ -86,11 +86,10 @@ function Folding({
   return <OverviewDocument tree={tree} folds={folds} />;
 }
 
-function drawn(shut: (tree: OverviewTree) => readonly number[] = () => []) {
+function drawn(shut: (tree: OverviewTree) => readonly number[] = () => [], tree = example()) {
   release = holdRegistry(
     new Registry({ system: 'mac', commands: testCommands([], [sectionCommands]) }),
   );
-  const tree = example();
   const expanded = vi.fn<(headings: readonly number[]) => void>();
   const page = render(<Folding tree={tree} shut={shut(tree)} expanded={expanded} />);
   return { tree, page, expanded };
@@ -115,6 +114,27 @@ describe('an overview’s sections', () => {
     }
     // The same list for the same blocks.
     expect(sectionsOf(tree.blocks)).toBe(sections);
+  });
+
+  it('leave out the footnotes at the end, which stay drawn while the last section is collapsed', () => {
+    const tree = parseArtifact(
+      [
+        `---\nformat: 1\npr: 4797\ncommit: ${'a'.repeat(40)}\n---\n`,
+        '## tl;dr\n\nIt waits.[^1]\n',
+        '## Testing\n\nIt was run.[^2]\n',
+        '[^1]: As a queue does.\n',
+        '[^2]: Twice.\n',
+      ].join('\n'),
+    ).tree;
+    const footnotes = tree.blocks.length - 1;
+    expect(tree.blocks[footnotes]?.kind).toBe('footnotes');
+    const sections = sectionsOf(tree.blocks);
+    expect(sections.at(-1)?.to).toBe(footnotes);
+    expect(sectionAt(sections, footnotes)).toBeUndefined();
+    const { page } = drawn((made) => [headingOf(made, 'Testing')], tree);
+    expect(page.textContent).not.toContain('It was run.');
+    expect(page.textContent).toContain('Twice.');
+    expect(article(page).lastElementChild?.matches('.lo-section')).toBe(false);
   });
 });
 

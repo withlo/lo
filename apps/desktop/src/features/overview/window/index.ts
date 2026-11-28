@@ -47,6 +47,7 @@ import {
   inThisRepo,
   isCollapsed,
   isHeading,
+  openShown,
   sectionFor,
 } from './sections.ts';
 import { followOverviews, overviews } from './shared.ts';
@@ -65,6 +66,7 @@ import {
   nextBlock,
   nextLink,
   scroll,
+  setOpener,
   step,
   stepName,
   stepsIn,
@@ -142,7 +144,9 @@ function blockOf(target: Target): { overview: DrawnOverview; block: HTMLElement 
   if (typeof overview === 'string') return overview;
   if (target.kind === 'none') return 'Go to a block first';
   const block = blockAt(overview, target);
-  return block ? { overview, block } : 'That block isn’t in this overview';
+  if (block) return { overview, block };
+  // An open section's heading isn't a block: what's under it is.
+  return isHeading(overview, target) ? 'Go to a block first' : 'That block isn’t in this overview';
 }
 
 /** Whether a block's command can run on `target`, as `check` says of it. */
@@ -311,13 +315,15 @@ export default {
     nextStep: { ...stepping(1), named: naming((_overview, block) => stepName(block)) },
     previousStep: stepping(-1),
     follow: {
+      // A control outside the blocks with focus, an open heading's chevron or `⋯` among them,
+      // takes `⏎` as a click.
       run: (target) => {
-        const loose = target.kind === 'none' ? looseOnScreen() : undefined;
+        const loose = target.kind === 'none' || onHeading(target) ? looseOnScreen() : undefined;
         if (loose) loose.click();
         else withBlock(follow)(target);
       },
       enabled: (target) => {
-        if (target.kind === 'none' && looseOnScreen()) return true;
+        if ((target.kind === 'none' || onHeading(target)) && looseOnScreen()) return true;
         return onBlock((overview, block) => {
           const found = followOf(overview, block);
           return typeof found === 'string' ? found : true;
@@ -446,6 +452,8 @@ export default {
   start() {
     followSkill();
     followMarkers();
+    // History and a note going into a collapsed section expand it first, drawn or not.
+    setOpener(openShown);
     // `yy` in a block's code copies from it, as in the diff.
     setCodeElsewhere(blockCode);
     // Off, the overview's commands go with its views, and what main said of each tab's overview;

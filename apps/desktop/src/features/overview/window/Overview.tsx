@@ -48,7 +48,6 @@ import {
   placeIn,
   placesFor,
   setDrawn,
-  setOpener,
   takeReveal,
   targetOf,
   trees,
@@ -57,7 +56,7 @@ import {
 import { useStanding } from './hooks.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import { openingOf, openings } from './opening.ts';
-import { folds, headTarget, openTo } from './sections.ts';
+import { folds, headTarget } from './sections.ts';
 import { Shown } from './Shown.tsx';
 import { CantShow, NoneInRun, NoOverview, ReadFailed } from './States.tsx';
 import { blockPinned } from './threaded.ts';
@@ -221,13 +220,8 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
   // The block with focus, for its ring.
   const [focused, setFocused] = useState<number | undefined>(undefined);
 
-  // The tab's places in the overview, for `⌃o` and `⌃i`, and a collapsed section expanding as
-  // one of them in it is revealed.
+  // The tab's places in the overview, for `⌃o` and `⌃i`.
   useEffect(() => placesFor(tab.id), [tab.id]);
-  useEffect(
-    () => (tree ? setOpener(tab.id, (block) => openTo(tab, tree, block)) : undefined),
-    [tab, tree],
-  );
 
   // Seen on screen as it shows, it's no longer offered.
   useEffect(() => {
@@ -303,15 +297,20 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
     return stop;
   }, [tab.id, shown, waiting, tree, generation]);
 
-  // What a key acts on: the block with focus.
+  // What a key acts on: a section's heading with focus on it, its chevron or `⋯`, open or
+  // collapsed, so the menu key opens the heading's menu; else the block with focus.
   useEffect(() => {
     const element = root.current;
     if (!element) return undefined;
     return setScopeSource(element, {
       target: () => {
         const drawn = drawnIn(tab.id);
-        const block = drawn && focusedBlock(drawn);
-        return (drawn && block && targetOf(drawn, block)) ?? NO_TARGET;
+        if (!drawn) return NO_TARGET;
+        const active = document.activeElement;
+        const heading = active ? headTarget(drawn, active) : undefined;
+        if (heading) return heading;
+        const block = focusedBlock(drawn);
+        return (block && targetOf(drawn, block)) ?? NO_TARGET;
       },
     });
   }, [tab.id, waiting]);
