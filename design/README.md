@@ -400,11 +400,11 @@ work where it says so (a `Spinner` in its bar), and takes no input; then the new
 place in one Swap, over it, and whatever else says what it shows (a bar's line, a list beside it)
 changes in the same frame.
 
-| When                                 | What shows                                                                                                                                        | Component                        |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| A whole view has nothing to draw yet | The meld loop over one line that names the wait. Nothing for the first 300 ms, so a quick load shows nothing. After 8 s, what's slow, and Cancel. | `Loading`                        |
-| The view's shape is known            | Blocks laid out as the content will be, which the content replaces in one Swap.                                                                   | `Skeleton`, inside a `Swap`      |
-| A control is doing its work          | The control keeps its width, its fill and focus, and reads its verb beside a turning ring: "Merging…".                                            | `busy` and `working` on `Button` |
+| When                                 | What shows                                                                                                                                        | Component                               |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| A whole view has nothing to draw yet | The meld loop over one line that names the wait. Nothing for the first 300 ms, so a quick load shows nothing. After 8 s, what's slow, and Cancel. | `Loading`                               |
+| The view's shape is known            | Blocks laid out as the content will be, which the content replaces in one Swap. Nothing for the first 300 ms, as for `Loading`.                   | `Skeleton`s in `Skeletons`, in a `Swap` |
+| A control is doing its work          | The control keeps its width, its fill and focus, and reads its verb beside a turning ring: "Merging…".                                            | `busy` and `working` on `Button`        |
 
 - `Loading` takes `status` ("Fetching diff…"), and optionally `slow`, `onCancel` and `cancelKeys`.
   It fills the view it's in. A wait that several views draw in turn, as a tab's opening is, looks
@@ -415,7 +415,12 @@ changes in the same frame.
   `Loading` centers its mark in its box; where the box moves under the wait, as a view's bar or a
   banner comes above it, the caller holds the mark where it came on screen (a tab's placeholder
   does).
-- `Skeleton` is the `skeleton` utility on a block. Give each the size of what it stands for.
+- `Skeleton` is the `skeleton` utility on a block. Give each the size of what it stands for, and lay
+  them out as the content will be, at its heights, with its rows' insets, markers and frames
+  (`TimelineSkeleton`, `ThreadListSkeleton`). Put them in `Skeletons`, which names the wait to a
+  screen reader and shows nothing for the wait's first 300 ms, then the skeletons in one Swap; a
+  switch to a view showing it holds what that view replaces, as for `Loading`. In a tab's middle,
+  give them to `MiddlePlaceholder` as its `skeleton`, which carries the tab's wait.
 - A view that shows `Loading` or skeletons sets `aria-busy` on its own box until its content is in,
   so a screen reader waits for the content rather than reading the wait.
 - Pass `busy={false}` to a button that can be busy, not nothing, and its `working` too, so it holds

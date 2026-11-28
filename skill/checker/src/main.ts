@@ -12,7 +12,7 @@
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { ARTIFACT, type Finding } from '@lo/artifact';
+import { ARTIFACT, type Finding, type OnRef } from '@lo/artifact';
 
 import { checkFolder, type FolderCheck } from './check.ts';
 import { refOf, writeCommit, type CommitFile, type Written } from './commit.ts';
@@ -33,7 +33,7 @@ its pull request.
 
 Usage:
   lo-overview install [--claude] [--codex] [--dir <folder>] [--json]
-  lo-overview check [<dir>] [--pr <number>] [--repo <folder>] [--json]
+  lo-overview check [<dir>] [--pr <number> | --stack <number>] [--repo <folder>] [--json]
   lo-overview commit <dir> --pr <number> [--repo <folder>] [--json]
 
 Commands:
@@ -54,6 +54,9 @@ Options:
   --codex         Install the skill for Codex, in ~/.agents/skills.
   --dir <folder>  Install the skill in the skills folder <folder>, as <folder>/${SKILL_NAME}.
   --pr <number>   The pull request the overview is for. Its header must name the same one.
+  --stack <number>
+                  The stack the overview is for, when it's a stack's. Its header must name the
+                  same one, in place of a pull request.
   --repo <folder> The pull request's repository: the one the current folder is in unless given.
   --json          Print what was found, or installed, as JSON.
   --help          Print this.
@@ -66,7 +69,7 @@ when it can't be checked. install exits 0 once the skill is installed, and 2 whe
 type Command =
   | { kind: 'help' }
   | { kind: 'install'; agents: Agent[]; dir: string | undefined; json: boolean }
-  | { kind: 'check'; dir: string; pr: number | undefined; repo: string | undefined; json: boolean }
+  | { kind: 'check'; dir: string; on: OnRef; repo: string | undefined; json: boolean }
   | { kind: 'commit'; dir: string; pr: number; repo: string | undefined; json: boolean };
 
 /** Where the checker writes. */
@@ -104,7 +107,7 @@ export async function main(args: readonly string[], streams: Streams): Promise<n
           return installed(install(targetsOf(command, process.env)), command.json, streams);
         case 'check': {
           const git = gitIn(repository(command.repo));
-          return report(await checkFolder(command.dir, git, command.pr), command.json, streams);
+          return report(await checkFolder(command.dir, git, command.on), command.json, streams);
         }
         case 'commit':
           return await commit(command, streams);
@@ -135,6 +138,7 @@ function parse(args: readonly string[]): Command {
   const positional: string[] = [];
   let json = false;
   let pr: string | undefined;
+  let stack: string | undefined;
   let help = false;
   const agents: Agent[] = [];
   let dir: string | undefined;
@@ -151,6 +155,10 @@ function parse(args: readonly string[]): Command {
       pr = args[++at];
       if (pr === undefined) throw new Error("--pr takes a pull request's number.");
     } else if (arg.startsWith('--pr=')) pr = arg.slice('--pr='.length);
+    else if (arg === '--stack') {
+      stack = args[++at];
+      if (stack === undefined) throw new Error("--stack takes a stack's number.");
+    } else if (arg.startsWith('--stack=')) stack = arg.slice('--stack='.length);
     else if (arg === '--claude') agents.push('claude');
     else if (arg === '--codex') agents.push('codex');
     else if (arg === '--dir' || arg.startsWith('--dir=')) {
@@ -170,29 +178,36 @@ function parse(args: readonly string[]): Command {
   switch (name) {
     case 'install': {
       if (rest.length > 0) throw new Error('install takes a skills folder with --dir <folder>.');
-      if (pr !== undefined || repo !== undefined)
-        throw new Error('install takes no --pr or --repo.');
+      if (pr !== undefined || stack !== undefined || repo !== undefined)
+        throw new Error('install takes no --pr, --stack or --repo.');
       return { kind: 'install', agents: [...new Set(agents)], dir, json };
     }
     case 'check': {
       if (rest.length > 1) throw new Error('check takes one folder.');
-      return { kind: 'check', dir: rest[0] ?? '.', pr: pullRequest(pr), repo, json };
+      if (pr !== undefined && stack !== undefined) {
+        throw new Error('check takes --pr or --stack, not both.');
+      }
+      const on: OnRef =
+        stack === undefined ? { pr: numberOf(pr, 'pr') } : { stack: numberOf(stack, 'stack') };
+      return { kind: 'check', dir: rest[0] ?? '.', on, repo, json };
     }
     case 'commit': {
       if (rest.length !== 1) throw new Error("commit takes the overview's folder.");
+      if (stack !== undefined) throw new Error('commit takes --pr, not --stack.');
       if (pr === undefined) throw new Error("commit needs --pr, the pull request's number.");
-      return { kind: 'commit', dir: rest[0]!, pr: pullRequest(pr)!, repo, json };
+      return { kind: 'commit', dir: rest[0]!, pr: numberOf(pr, 'pr')!, repo, json };
     }
     default:
       throw new Error(`${JSON.stringify(name)} isn't a command.`);
   }
 }
 
-/** `given`, a pull request's number, as one. Throws for anything else. */
-function pullRequest(given: string | undefined): number | undefined {
+/** `given`, a pull request's or a stack's number, as one. Throws for anything else. */
+function numberOf(given: string | undefined, option: 'pr' | 'stack'): number | undefined {
   if (given === undefined) return undefined;
   if (!/^[1-9]\d{0,15}$/.test(given) || !Number.isSafeInteger(Number(given))) {
-    throw new Error(`--pr takes a pull request's number, not ${JSON.stringify(given)}.`);
+    const what = option === 'pr' ? "a pull request's number" : "a stack's number";
+    throw new Error(`--${option} takes ${what}, not ${JSON.stringify(given)}.`);
   }
   return Number(given);
 }
@@ -230,7 +245,7 @@ async function commit(
   streams: Streams,
 ): Promise<number> {
   const git = gitIn(repository(repo));
-  const found = await checkFolder(dir, git, pr);
+  const found = await checkFolder(dir, git, { pr });
   const status = exitStatus(found);
   const { outcome } = found.checked;
   if (status !== 0 || outcome.kind !== 'shown') {

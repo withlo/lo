@@ -994,9 +994,11 @@ status bar.
   at once, and so does a switch from views that only wait, drawing the tab's placeholder
   (`useWaiting`): there's nothing drawn to keep, and the view coming takes the wait over. A middle
   view with nothing to draw yet draws `Loading` or `MiddlePlaceholder`, never nothing, or a switch
-  to it shows it empty; and one that draws something else as it leaves draws it under the view
-  coming, so a view that gives the middle up as it opens, as the overview does to the timeline,
-  draws its placeholder until it's gone from the screen.
+  to it shows it empty; one whose shape is known gives `MiddlePlaceholder` its `skeleton`, as the
+  timeline does (`TimelineSkeleton`), which waits the same way with that in place of the mark; and
+  one that draws something else as it leaves draws it under the view coming, so a view that gives
+  the middle up as it opens, as the overview does to the timeline, draws its placeholder until it's
+  gone from the screen.
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.

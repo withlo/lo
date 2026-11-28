@@ -14,6 +14,7 @@ import {
   EmptyState,
   Label,
   Problem,
+  Swap,
   Timeline,
   TimelineChecks,
   TimelineComment,
@@ -25,6 +26,7 @@ import {
   TimelinePush,
   TimelineEnd,
   TimelineReview,
+  TimelineSkeleton,
   type ProblemAction,
   type TimelineHidden,
 } from '@lo/ui';
@@ -313,12 +315,26 @@ function TimelineOf({ tab, shown }: { tab: PullTab; shown: boolean }) {
     case 'loading':
     case 'ready':
     case undefined:
-      return rows ? (
-        <Rows tab={tab} shown={shown} rows={rows} />
-      ) : (
-        <Note shown={shown} waiting>
-          <MiddlePlaceholder tab={tab} status="Reading timeline…" />
-        </Note>
+      // Its rows take the skeleton's place in one Swap.
+      return (
+        <Swap id={rows ? 'rows' : 'reading'} className="h-full">
+          {rows ? (
+            <Rows tab={tab} shown={shown} rows={rows} />
+          ) : (
+            <Note shown={shown} waiting>
+              <MiddlePlaceholder
+                tab={tab}
+                status="Reading timeline…"
+                skeleton={
+                  // In line with the rows, whose scrollbar's room is kept whether it shows or not.
+                  <div className="overflow-hidden gutter-stable">
+                    <TimelineSkeleton />
+                  </div>
+                }
+              />
+            </Note>
+          )}
+        </Swap>
       );
     default:
       status satisfies never;
@@ -454,7 +470,12 @@ function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readon
     return { kind: 'row', row: key };
   });
   return (
-    <div ref={root} className="h-full overflow-y-auto" data-lo-scope="timeline" {...menu}>
+    <div
+      ref={root}
+      className="h-full overflow-y-auto gutter-stable"
+      data-lo-scope="timeline"
+      {...menu}
+    >
       <Timeline
         listRef={list}
         tabIndex={0}

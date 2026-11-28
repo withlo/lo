@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { collect, textOf } from '../test/support.ts';
 import { problems, walk } from '../test/walker.ts';
 import { DEFAULT_LIMITS } from './limits.ts';
-import { markdownTree, type MarkdownOptions } from './markdown.ts';
+import { ANY_REFERENCE, inlineTokens, markdownTree, type MarkdownOptions } from './markdown.ts';
 import type { Plugin } from './parser.ts';
 import { plainText } from './text.ts';
 import type { Block, Inline, Tree } from './tree.ts';
@@ -945,5 +945,61 @@ describe('whether it shows raw HTML', () => {
 
   test('a tag shown as its words shows too', () => {
     expect(raw('a <b>b</b>', { html: 'words' })).toBe(true);
+  });
+});
+
+/** The addresses of `source`'s links, with every reference label defined. */
+function hrefs(source: string): (string | number | null)[] {
+  return (inlineTokens(source, { references: 'any' }) ?? [])
+    .filter(({ type }) => type === 'link_open')
+    .map((token) => token.attrGet('href'));
+}
+
+/** The types of `source`'s inline tokens. */
+function types(source: string): string[] | undefined {
+  return inlineTokens(source)?.map(({ type }) => type);
+}
+
+describe('inline tokens', () => {
+  test('are a paragraph’s, read as the tree reads one', () => {
+    expect(types('a **b** `c` [d](code:e)')).toEqual([
+      'text',
+      'strong_open',
+      'text',
+      'strong_close',
+      'text',
+      'code_inline',
+      'text',
+      'link_open',
+      'text',
+      'link_close',
+    ]);
+    // A block's syntax, read inline, is text.
+    expect(types('# a')).toEqual(['text']);
+    expect(types('- a')).toEqual(['text']);
+    // GitHub's strikethrough, and its autolinks but not bare domains.
+    expect(types('~a~')).toEqual(['s_open', 'text', 's_close']);
+    expect(types('www.example.com')).toEqual(['link_open', 'text', 'link_close']);
+    expect(types('example.com')).toEqual(['text']);
+    expect(types('a\nb')).toEqual(['text', 'softbreak', 'text']);
+  });
+
+  test('read #123 as a reference only in a repository', () => {
+    expect(types('#4')).toEqual(['text']);
+    const tokens = inlineTokens('#4', { repo: { owner: 'o', name: 'r' } });
+    expect(tokens?.[0]?.attrGet('href')).toBe('https://github.com/o/r/issues/4');
+  });
+
+  test('read every reference label as defined, when told to', () => {
+    expect(hrefs('[a][b], [c][] and [d], not \\[e\\], and [f](g)')).toEqual([
+      ANY_REFERENCE,
+      ANY_REFERENCE,
+      ANY_REFERENCE,
+      'g',
+    ]);
+    // An empty label is never a link, nor one of spaces.
+    expect(hrefs('a slice ([]T), [ ] and [  ][]')).toEqual([]);
+    // Otherwise, a label no text defines is text.
+    expect(types('[a][b]')).toEqual(['text']);
   });
 });

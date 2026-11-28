@@ -22,6 +22,7 @@ import {
   TimelinePush,
   TimelineReview,
   TimelineRow,
+  TimelineSkeleton,
 } from './Timeline.tsx';
 
 beforeAll(() => {
@@ -516,6 +517,7 @@ describe('Timeline', () => {
     expect(await missingRules(host, ['group-focus-visible/timeline:shadow-ring-inset'])).toEqual(
       [],
     );
+    expect(await missingRules(render(<TimelineSkeleton />))).toEqual([]);
     const css = await buildCss(['tl-row']);
     expect(css).toMatch(/&:first-child::before\s*\{\s*top: calc\(/);
     expect(css).toMatch(/&:last-child::before\s*\{\s*bottom: calc\(/);

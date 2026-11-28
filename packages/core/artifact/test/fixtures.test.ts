@@ -69,7 +69,8 @@ describe.each(fixtures)('$group/$name', ({ group, dir }) => {
     const whole = artifact?.kind === 'file' && artifact.bytes.length === artifact.size;
     const parsed = whole ? parseArtifact(artifact.bytes) : undefined;
     const started = performance.now();
-    const checked = await checkArtifact(parsed, files, readCode, { pr: input.ref ?? PR });
+    const on = input.stack === undefined ? { pr: input.ref ?? PR } : { stack: input.stack };
+    const checked = await checkArtifact(parsed, files, readCode, on);
     expect(performance.now() - started).toBeLessThan(5_000);
 
     expect(expectedOf(checked)).toEqual(expected);

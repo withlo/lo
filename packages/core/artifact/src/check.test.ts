@@ -484,6 +484,40 @@ describe('the outcome', () => {
     expect((await check(text, {}, [], {})).outcome.kind).toBe('shown');
   });
 
+  test('a stack’s overview goes on its stack’s ref, and a pull request’s on its own', async () => {
+    const stack = `---\nformat: 1\nstack: 4790\ncommit: ${COMMIT}\n---\n\n## tl;dr\n\nA stack.\n`;
+    const shown = await check(stack, {}, [], { stack: 4790 });
+    expect(shown.outcome).toMatchObject({
+      kind: 'shown',
+      header: { format: 1, stack: 4790, commit: COMMIT },
+    });
+    expect(shown.findings).toEqual([]);
+
+    const onPull = await check(stack, {}, [], { pr: 4797 });
+    expect(onPull.outcome).toEqual({ kind: 'invalid' });
+    expect(codes(onPull)).toEqual(['pr-mismatch']);
+    expect(onPull.findings[0]?.message).toBe(
+      "This is the overview of stack 4790, and it's on pull request #4797. A pull request's overview says pr: 4797.",
+    );
+
+    const otherStack = await check(stack, {}, [], { stack: 4791 });
+    expect(codes(otherStack)).toEqual(['stack-mismatch']);
+    expect(otherStack.findings[0]?.message).toBe(
+      'The header says stack: 4790, and the overview is on stack 4791.',
+    );
+
+    // A layer's overview names its stack, and is still the pull request's.
+    const layer = overview('').replace('pr: 4797\n', 'pr: 4797\nstack: 4790\n');
+    expect((await check(layer, {}, [], { pr: 4797 })).outcome.kind).toBe('shown');
+    const onStack = await check(layer, {}, [], { stack: 4790 });
+    expect(codes(onStack)).toEqual(['stack-mismatch']);
+    expect(onStack.findings[0]?.message).toBe(
+      "This is the overview of pull request #4797, and it's on stack 4790. A stack's overview says stack: 4790 in place of pr.",
+    );
+    // With no ref to compare, either is taken.
+    expect((await check(stack, {}, [], {})).outcome.kind).toBe('shown');
+  });
+
   test('a shown overview has its header, each target’s code and each figure', async () => {
     const checked = await check(
       overview(

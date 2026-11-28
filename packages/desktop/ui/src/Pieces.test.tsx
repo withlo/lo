@@ -12,12 +12,13 @@ import { cleanUp, click, render, rerender, tipOf } from '../test/dom.ts';
 import { Button } from './Button.tsx';
 import { COPIED_MS, CopyButton, CopyRoute } from './CopyButton.tsx';
 import { Dialog, type DialogState } from './Dialog.tsx';
-import { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS, loadingIn } from './Loading.tsx';
+import { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS, loadingIn, Skeletons } from './Loading.tsx';
 import { LogoMotion } from './LogoMotion.tsx';
 import { logoSeconds } from './logoFrames.ts';
 import { setMotion } from './motion.ts';
 import { Popover } from './Popover.tsx';
 import { Problem } from './Problem.tsx';
+import { Skeleton } from './Spinner.tsx';
 import { StatusItem } from './StatusBar.tsx';
 import { Switch } from './Switch.tsx';
 import { TOAST_LONG_MS, TOAST_MAX, TOAST_MS, ToastStack, type StackedToast } from './Toast.tsx';
@@ -965,6 +966,44 @@ describe('Loading', () => {
     expect(loadingIn(host.querySelector('#waiting')!)).toBe(true);
     expect(loadingIn(host.querySelector('[role="status"]')!)).toBe(true);
     expect(loadingIn(host.querySelector('#drawn')!)).toBe(false);
+  });
+});
+
+describe('Skeletons', () => {
+  it('shows nothing at first, then its skeletons in one Swap, naming the wait to a screen reader', async () => {
+    vi.useFakeTimers();
+    const host = render(
+      <section>
+        <Skeletons status="Reading timeline…">
+          <Skeleton className="w-1/2" />
+        </Skeletons>
+      </section>,
+    );
+    const region = host.querySelector('[role="status"]')!;
+    expect(region.getAttribute('aria-busy')).toBe('true');
+    expect(region.textContent).toBe('Reading timeline…');
+    expect(region.querySelector('.skeleton')).toBeNull();
+    // A view showing it hasn't laid out what it will show, even before it shows.
+    expect(loadingIn(host.querySelector('section')!)).toBe(true);
+    act(() => {
+      vi.advanceTimersByTime(LOADING_DELAY_MS);
+    });
+    const shown = region.querySelector('[aria-hidden="true"]')!;
+    expect(shown.className).toBe('move-swap');
+    expect(shown.querySelector('.skeleton')).not.toBeNull();
+    vi.useRealTimers();
+    expect(await missingRules(host)).toEqual([]);
+  });
+
+  it('shows its skeletons at once, still, in a wait that has run its first moments', () => {
+    const host = render(
+      <Skeletons status="Reading threads…" since={Date.now() - LOADING_DELAY_MS}>
+        <Skeleton className="w-1/2" />
+      </Skeletons>,
+    );
+    const shown = host.querySelector('[aria-hidden="true"]')!;
+    expect(shown.querySelector('.skeleton')).not.toBeNull();
+    expect(shown.className).toBe('');
   });
 });
 

@@ -8,15 +8,25 @@ import {
   EmptyState,
   HintButton,
   HintRow,
-  Loading,
   Problem,
   reveal,
+  Skeletons,
   Swap,
+  swapIn,
   ThreadFilter,
   ThreadList,
+  ThreadListSkeleton,
 } from '@lo/ui';
 import { keyLabels, setScopeSource } from '@lo/ui/commands';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { useAdding } from '../../accounts/window/shared.ts';
@@ -70,20 +80,23 @@ export function UnresolvedCount({ tab }: { tab: PullTab }): ReactNode {
   );
 }
 
+/** The wait for a view's threads: the list's rows as they'll lay out, until the threads come. */
+function Reading(): ReactNode {
+  return (
+    <Skeletons status="Reading threads…">
+      <ThreadListSkeleton />
+    </Skeletons>
+  );
+}
+
 /**
- * Why view `view`'s threads couldn't be read, with a way to read them again. Asked, it waits with
- * `Loading` until main says the new read is on, which draws the panel anew; a read again that
- * couldn't be asked for says so here again, with why behind Details.
+ * Why view `view`'s threads couldn't be read, with a way to read them again. Asked, it waits as
+ * the first read does until main says the new read is on, which draws the panel anew; a read again
+ * that couldn't be asked for says so here again, with why behind Details.
  */
 export function Failed({ view, reason }: { view: string; reason: string | undefined }): ReactNode {
   const [again, setAgain] = useState<'asking' | { details: string } | undefined>(undefined);
-  if (again === 'asking') {
-    return (
-      <div className="py-24">
-        <Loading status="Reading threads…" />
-      </div>
-    );
-  }
+  if (again === 'asking') return <Reading />;
   // Inset as the list's rows are, since the list has no inset of its own while it lists nothing.
   return (
     <div className="px-12 py-8">
@@ -127,11 +140,7 @@ function Empty({ view, empty }: { view: string; empty: PanelEmpty }): ReactNode 
 function EmptyBody({ view, empty }: { view: string; empty: PanelEmpty }): ReactNode {
   switch (empty.kind) {
     case 'reading':
-      return (
-        <div className="py-24">
-          <Loading status="Reading threads…" />
-        </div>
-      );
+      return <Reading />;
     case 'failed':
       return <Failed view={view} reason={empty.reason} />;
     case 'none':
@@ -203,6 +212,19 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
     },
     [view],
   );
+
+  // Its rows, coming after the wait for the first read, take the skeleton's place in one Swap.
+  const reading = empty.kind === 'reading';
+  const waited = useRef(reading);
+  useLayoutEffect(() => {
+    if (reading) {
+      waited.current = true;
+      return undefined;
+    }
+    const came = waited.current && keys.length > 0;
+    waited.current = false;
+    return came && list.current ? swapIn(list.current) : undefined;
+  }, [reading, keys.length]);
 
   // The thread the keyboard is on stays in view as the keyboard moves it, and only then: the list
   // never scrolls by itself, as when the thread it was on leaves it.
