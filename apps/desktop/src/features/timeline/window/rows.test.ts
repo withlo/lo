@@ -108,6 +108,32 @@ function force(before: string, after: string, branch: 'head' | 'base' = 'head'):
   return { kind: 'forcePushed', event: event(), branch, before: head(before), after: head(after) };
 }
 
+/** An event by `login`, `seconds` after `AT`. */
+function eventAt(seconds: number, login = 'ravi-k') {
+  const at = new Date(Date.parse(AT) + seconds * 1000).toISOString().replace('.000Z', 'Z');
+  return { actor: user(login), at };
+}
+
+/** A merge into `main`, `seconds` after `AT`. */
+function merged(seconds: number): Item {
+  return { kind: 'merged', event: eventAt(seconds), commit: head('f'), into: 'main' };
+}
+
+/** A close by `login`, `seconds` after `AT`. */
+function closed(seconds: number, login?: string): Item {
+  return { kind: 'closed', event: eventAt(seconds, login) };
+}
+
+/** A reopen, `seconds` after `AT`. */
+function reopened(seconds: number): Item {
+  return { kind: 'reopened', event: eventAt(seconds) };
+}
+
+/** Each row `items` make past the description, as its sentence or its kind. */
+function shown(items: Item[]): string[] {
+  return rowsAfter(items).map((row) => (row.kind === 'event' ? sentence(row.parts) : row.kind));
+}
+
 describe('rowsOf', () => {
   it('starts with the description, then a note of what was left out', () => {
     const rows = rowsOf(timeline([], { leftOut: 120 }), REPOSITORY, {
@@ -199,6 +225,42 @@ describe('rowsOf', () => {
       ['push', 'c0'],
       ['event', 'c3'],
       ['push', 'c4'],
+    ]);
+  });
+
+  describe('a merge', () => {
+    it('shows once, without the close GitHub records with it a moment later', () => {
+      expect(shown([commit('a'), merged(0), closed(1)])).toEqual([
+        'push',
+        'ravi-k merged fffffff into main',
+      ]);
+    });
+
+    it('shows once when GitHub lists its close first, at the same moment', () => {
+      expect(shown([closed(0), merged(0)])).toEqual(['ravi-k merged fffffff into main']);
+    });
+
+    it('keeps a close that a reopen followed, before the merge', () => {
+      expect(shown([closed(-600), reopened(-300), merged(0), closed(1)])).toEqual([
+        'ravi-k closed this',
+        'ravi-k reopened this',
+        'ravi-k merged fffffff into main',
+      ]);
+    });
+
+    it('keeps a close that isn’t at the merge’s moment', () => {
+      expect(shown([closed(-600, 'mona'), merged(0)])).toEqual([
+        'mona closed this',
+        'ravi-k merged fffffff into main',
+      ]);
+    });
+  });
+
+  it('keeps every close of a pull request that wasn’t merged, closed again after a reopen too', () => {
+    expect(shown([closed(0), reopened(60), closed(120, 'mona')])).toEqual([
+      'ravi-k closed this',
+      'ravi-k reopened this',
+      'mona closed this',
     ]);
   });
 
