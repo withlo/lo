@@ -61,7 +61,14 @@ import type {
   ThreadView,
   VimKey,
 } from './api.ts';
-import { type At, Beside, type BesideHost, type LaneLines, type Pane } from './beside.ts';
+import {
+  type At,
+  Beside,
+  type BesideHost,
+  isDraftKey,
+  type LaneLines,
+  type Pane,
+} from './beside.ts';
 import { CommentBox, placeKey } from './comments.ts';
 import { fileMarks } from './decorations.ts';
 import { askToShowLine, codeEditor } from './editor.ts';
@@ -597,7 +604,8 @@ class Excerpt implements ExcerptView {
     let next: LitRange | undefined;
     const { target } = event;
     if (event.type !== 'pointerleave' && target instanceof Element) {
-      const under = rangeUnder(event);
+      // A thread's stem or mark before a draft's in one cell, as the preview takes it.
+      const under = rangeUnder(event, (key) => !isDraftKey(key)) ?? rangeUnder(event);
       const card = target.closest<HTMLElement>('.lo-diffthread [data-thread-id]')?.dataset.threadId;
       if (under) next = { lane: under.kind, key: under.key };
       else if (card !== undefined) next = { lane: 'threads', key: card };
@@ -1016,11 +1024,17 @@ class Excerpt implements ExcerptView {
     this.#rooms.get(line)?.destroy();
     this.#rooms.delete(line);
     this.#boxes.set(line, box);
-    // A new comment's lines are picked while it has focus, or had it last.
-    if (!('thread' in at)) {
-      const first =
-        'line' in at ? line : (this.#docLine(at.side, Math.min(at.from, at.to)) ?? line);
-      this.#boxSpans.set(box, { from: Math.min(first, line), to: line });
+    // A new comment's lines are picked while it has focus, or had it last, from the top where they
+    // start above the first line shown. A box on a thread's line is a reply.
+    if (thread === undefined && !('thread' in at)) {
+      const span =
+        'line' in at
+          ? undefined
+          : this.#laneRange(
+              { side: at.side, line: Math.min(at.from, at.to) },
+              { side: at.side, line: Math.max(at.from, at.to) },
+            );
+      this.#boxSpans.set(box, { from: Math.min(span?.from ?? line, line), to: line });
     }
     // The lines `v` selected are the box's now.
     if (focus) endSelection(this.#view);

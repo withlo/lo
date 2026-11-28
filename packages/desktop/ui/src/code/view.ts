@@ -110,6 +110,7 @@ import {
   Beside,
   type BesideHost,
   draftKey,
+  isDraftKey,
   type LaneLines,
   listed,
   type Pane,
@@ -2705,7 +2706,9 @@ class View implements DiffView {
     const { target } = event;
     // The popover's cards are its own to follow.
     if (!(target instanceof Element) || this.#beside.cardUnder(target) !== null) return undefined;
-    const under = rangeUnder(event);
+    // A thread's stem or mark before a draft's in one cell, as the preview takes it; a draft's
+    // alone lights the draft.
+    const under = rangeUnder(event, (key) => !isDraftKey(key)) ?? rangeUnder(event);
     if (under) return { lane: under.kind, key: under.key };
     const thread = target.closest<HTMLElement>('.lo-diffthread [data-thread-id]')?.dataset.threadId;
     if (thread !== undefined) return { lane: 'threads', key: thread };

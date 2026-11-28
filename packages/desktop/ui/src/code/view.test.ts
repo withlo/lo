@@ -3871,6 +3871,11 @@ describe('writing beside lines', () => {
       's0 edge-edge amber, s1 mid-edge muted, tick s1 muted',
       's0 under-edge amber, s1 edge-mark muted, muted Draft · lines 5–6',
     ]);
+    // The pointer on it lights the thread, as it previews the thread.
+    laneCells('After')[1]!
+      .querySelector('.lo-stem--muted')!
+      .dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 7 }));
+    expect(litLines('After')).toEqual(['line 4', 'line 5, changed', 'line 6', 'line 7', 'line 8']);
     // On new line 5, nearer the draft's stem than the thread's.
     laneCells('After')[1]!
       .querySelector('.lo-stem--muted')!

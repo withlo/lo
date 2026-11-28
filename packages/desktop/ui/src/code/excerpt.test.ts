@@ -819,6 +819,26 @@ describe('threads and comment boxes', () => {
     expect(picked()).toEqual(added.slice(8, 11));
   });
 
+  test('a box on a thread’s line is a reply, whose line isn’t picked', async () => {
+    const shown = open();
+    shown.setThreads([thread('here', 6)], plain().render);
+    shown.compose(at(6), 'On its line', composerEvents());
+    await Promise.resolve();
+    expect(picked()).toEqual([]);
+  });
+
+  test('a new comment from above the first line shown picks the lines from the top', async () => {
+    const shown = open();
+    // From new line 2, above the excerpt's first, new line 4, to new line 5.
+    shown.compose({ file: 'a', side: 'new', from: 2, to: 5 }, 'New', composerEvents());
+    await Promise.resolve();
+    const { doc } = editor().state;
+    const top: string[] = [];
+    for (let line = 1; top.at(-1) !== added[4]; line++) top.push(doc.line(line).text);
+    expect(picked()).toEqual(top);
+    expect(top.length).toBeGreaterThan(1);
+  });
+
   test('threads that come on a line on screen wait until the reader acts in the excerpt, or it’s off screen', async () => {
     const shown = open();
     await frame();
