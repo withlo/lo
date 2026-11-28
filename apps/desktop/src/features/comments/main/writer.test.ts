@@ -441,12 +441,14 @@ describe('sending', () => {
     const onPull: DraftPlaceRow = { kind: 'conversation' };
     made.save('t1', onPull, 'Looks right to me.');
     expect(last()).toMatchObject([{ place: onPull, text: 'Looks right to me.' }]);
+    // GitHub's copy, as its answer named it.
     expect(await made.send('t1', onPull, 'Looks right to me.', 'now')).toEqual({
       kind: 'sent',
       pending: false,
       joined: false,
       thread: null,
       landedOn: null,
+      comment: 'IC_1',
     });
     expect(fake.posted).toEqual(['PR_94: Looks right to me.']);
     expect(fake.sent).toEqual([]);

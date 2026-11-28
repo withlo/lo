@@ -27,14 +27,18 @@ export function sentKey(sent: OnPull): string {
 }
 
 /**
- * Whether `timeline` shows `login`'s comment `sent`: one more of theirs with its text than the
- * timeline on screen held as it was sent, or, with nothing to go by from then, one of theirs with
- * its text made since it was sent, by GitHub's clock; until main says when that was, none.
+ * Whether `timeline` shows `login`'s comment `sent`: GitHub's copy, as GitHub's answer named it;
+ * before that, one more of theirs with its text than the timeline on screen held as it was sent;
+ * or, with nothing from then, once its answer was lost, one of theirs with its text made since it
+ * was sent, by GitHub's clock, as main says.
  */
 function showsComment(timeline: Timeline, sent: OnPull, login: string): boolean {
-  const { before, sentAt } = sent;
+  const { copy, before, sentAt } = sent;
+  if (copy !== undefined) return pullComment(timeline, copy) !== undefined;
   if (before === undefined) {
-    return sentAt !== undefined && madeSince(timeline, sent.text, login, sentAt, CLOCK_SLACK);
+    // Its answer still to come names its copy.
+    if (sent.state === 'sending' || sentAt === undefined) return false;
+    return madeSince(timeline, sent.text, login, sentAt, CLOCK_SLACK);
   }
   return shows(timeline, {
     write: { kind: 'posted', text: sent.text },
@@ -47,7 +51,8 @@ function showsComment(timeline: Timeline, sent: OnPull, login: string): boolean 
 
 /**
  * Whether `timeline` shows the edit `sent`, which GitHub took: its comment has its text, or was
- * edited since it was sent, by GitHub's clock, as elsewhere after it, or is gone.
+ * edited when GitHub answered it or after, as elsewhere since, by GitHub's clock (or, its answer
+ * lost, since it was sent), or is gone.
  */
 function showsEdit(timeline: Timeline, sent: OnPull): boolean {
   const { comment } = sent;
@@ -56,9 +61,9 @@ function showsEdit(timeline: Timeline, sent: OnPull): boolean {
   if (shown === undefined) return true;
   const edited = { kind: 'edited', comment, text: sent.text } as const;
   if (shows(timeline, { write: edited, until: Number.POSITIVE_INFINITY, had: 0 })) return true;
-  const { sentAt } = sent;
-  if (sentAt === undefined || shown.lastEditedAt === undefined) return false;
-  return Date.parse(shown.lastEditedAt) >= sentAt - CLOCK_SLACK;
+  const since = sent.editedAt ?? sent.sentAt;
+  if (since === undefined || shown.lastEditedAt === undefined) return false;
+  return Date.parse(shown.lastEditedAt) >= since - CLOCK_SLACK;
 }
 
 /** What the reader's writes on the pull request itself add to the timeline's rows. */
@@ -105,7 +110,10 @@ export function sentRows(
     if (author === undefined) continue;
     if (timeline && showsComment(timeline, each, author.login)) {
       shown.add(each.key);
-      const copy = newest(rows, each.text, author.login);
+      const copy =
+        each.copy === undefined
+          ? newest(rows, each.text, author.login)
+          : rows.find((row) => row.kind === 'comment' && row.id === each.copy)?.key;
       if (copy !== undefined) landed.set(sentKey(each), copy);
       continue;
     }

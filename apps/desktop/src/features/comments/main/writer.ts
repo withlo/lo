@@ -131,6 +131,12 @@ export interface WriterOptions {
   readonly readWait?: number;
   /** How long Lo waits to look again when it couldn't read the threads, as while offline. */
   readonly retryAfter?: number;
+  /**
+   * How far GitHub's clock is ahead of this computer's for the account, as its client last heard
+   * it, read from the client itself, waiting on nothing in its queue; without it, it's read
+   * through the poller.
+   */
+  readonly ahead?: (login: string) => Promise<number | undefined>;
 }
 
 /** How long after sending a comment whose answer was lost Lo waits before it looks for it. */
@@ -854,7 +860,15 @@ export class Writer {
       return { kind: 'refused', refusal: writeRefusal(sent) };
     }
     this.#posted(target, key, place, text);
-    return { kind: 'sent', pending: false, joined: false, thread: null, landedOn: null };
+    // GitHub's copy, by its node ID, which the timeline takes for the comment.
+    return {
+      kind: 'sent',
+      pending: false,
+      joined: false,
+      thread: null,
+      landedOn: null,
+      comment: sent,
+    };
   }
 
   /**
@@ -918,8 +932,13 @@ export class Writer {
       this.#unsent(target, key, place);
       return { kind: 'refused', refusal: actRefusal(answer) };
     }
+    // When GitHub answered, by its clock, which its answer just told the account's client: a
+    // comment edited at that time or after shows this edit, or a newer one.
+    const ahead = await this.#aheadNow(login, poller).catch(() => undefined);
     this.#posted(target, key, place, text);
-    return { kind: 'done' };
+    return ahead === undefined
+      ? { kind: 'done' }
+      : { kind: 'done', editedAt: Math.max(0, Math.round(this.#now() + ahead)) };
   }
 
   /**
@@ -1447,11 +1466,7 @@ export class Writer {
     this.#readingAhead.add(key);
     const read = async (): Promise<void> => {
       const poller = await this.#options.poller(login);
-      const ahead = await poller.readOnce(
-        (client) => Promise.resolve(client.githubAhead()),
-        undefined,
-        'foreground',
-      );
+      const ahead = await this.#aheadNow(login, poller);
       if (ahead !== undefined) {
         this.#readingAhead.delete(key);
         this.#knowAhead(login, ahead);
@@ -1468,6 +1483,20 @@ export class Writer {
       this.#readingAhead.delete(key);
       this.#options.log(`reading GitHub's clock: ${describe(error)}`);
     });
+  }
+
+  /**
+   * How far GitHub's clock is ahead of this computer's for account `login` now, as its client last
+   * heard it: from the client itself where Lo can, else through `poller`, after what's in flight.
+   */
+  #aheadNow(login: string, poller: WriterPoller): Promise<number | undefined> {
+    const { ahead } = this.#options;
+    if (ahead) return ahead(login);
+    return poller.readOnce(
+      (client) => Promise.resolve(client.githubAhead()),
+      undefined,
+      'foreground',
+    );
   }
 
   /**

@@ -245,6 +245,49 @@ describe('what the timeline draws of a comment sent', () => {
     expect(onPull.get(VIEW)).toEqual([]);
   });
 
+  test('with nothing from before, as from an overview’s block, GitHub’s answer names its copy, though main’s drafts said it was taken first', async () => {
+    let answer!: (outcome: unknown) => void;
+    answers['comments.send'] = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const box = ownBox();
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
+    const sending = send(box, 'now');
+    await vi.waitFor(() => expect(answer).toBeDefined());
+    expect(onPull.get(VIEW)).toMatchObject([{ before: undefined, sentAt: undefined }]);
+    // Main took it down as posted before its answer came here, not yet knowing GitHub's clock.
+    takeDrafts({
+      id: VIEW,
+      drafts: [draft({ restored: false, sending: 'sending', sent: 'Ship it.' })],
+    });
+    takeDrafts({ id: VIEW, drafts: [] });
+    expect(onPull.get(VIEW)).toMatchObject([{ state: 'sent', copy: undefined }]);
+    answer({
+      kind: 'sent',
+      pending: false,
+      joined: false,
+      thread: null,
+      landedOn: null,
+      comment: 'IC_9',
+    });
+    await sending;
+    expect(onPull.get(VIEW)).toMatchObject([{ state: 'sent', copy: 'IC_9' }]);
+  });
+
+  test('an edit says when GitHub answered it, by GitHub’s clock', async () => {
+    answers['comments.editing'] = () => ({ kind: 'done' });
+    answers['comments.edit'] = () => ({ kind: 'done', editedAt: 9_000 });
+    await editOnPull(tab(), comment());
+    const box = timelineBoxes.get(VIEW).edits.get('IC_1');
+    if (!box) throw new Error('The edit’s box didn’t open.');
+    box.set({ text: 'Looks right to me.' });
+    await send(box, 'review');
+    expect(onPull.get(VIEW)).toMatchObject([
+      { comment: 'IC_1', text: 'Looks right to me.', state: 'sent', editedAt: 9_000 },
+    ]);
+  });
+
   test('one found on its way as Lo starts went when main says, with nothing from before', () => {
     ownBox();
     takeDrafts({

@@ -22,6 +22,8 @@ function box(changes: Partial<BoxSend> = {}): BoxSend {
     send: 1,
     sentAt: 5_000,
     before: { had: 1, after: 'C_9' },
+    copy: undefined,
+    editedAt: undefined,
     ...changes,
   };
 }
@@ -40,6 +42,8 @@ describe('noted', () => {
         send: 1,
         sentAt: 5_000,
         before: { had: 1, after: 'C_9' },
+        copy: undefined,
+        editedAt: undefined,
       },
     ]);
     // The same again changes nothing.
@@ -52,6 +56,19 @@ describe('noted', () => {
     expect(noted(taken, box({ held: false, landing: false, sending: null, text: '' }), 14)).toBe(
       taken,
     );
+  });
+
+  test('what GitHub’s answer says comes to one taken, as after main’s drafts said so', () => {
+    const taken = noted([], box({ landing: true }), 10);
+    const named = noted(taken, box({ held: false, copy: 'IC_9' }), 11);
+    expect(named[0]).toMatchObject({ state: 'sent', at: 10, copy: 'IC_9' });
+    expect(noted(named, box({ held: false, copy: 'IC_9' }), 12)).toBe(named);
+    const place: DraftPlaceRow = { kind: 'edit', thread: null, comment: 'IC_1' };
+    const edited = noted([], box({ place, landing: true }), 10);
+    expect(noted(edited, box({ place, held: false, editedAt: 9_000 }), 11)[0]).toMatchObject({
+      comment: 'IC_1',
+      editedAt: 9_000,
+    });
   });
 
   test('one that fails goes, its text back in the box', () => {

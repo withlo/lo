@@ -397,6 +397,10 @@ export class Box {
   sends = 0;
   /** When its comment on its way was sent, by GitHub's clock, as main says once it knows. */
   sentAt: number | undefined;
+  /** GitHub's copy of its comment on the pull request itself, by its node ID, as its answer said. */
+  copy: string | undefined;
+  /** When GitHub answered its edit, by GitHub's clock, as its answer said. */
+  editedAt: number | undefined;
   /**
    * What its view's timeline on screen held as its comment on the pull request itself was last
    * sent, while it had one, to tell GitHub's copy by.
@@ -452,25 +456,32 @@ export class Box {
   set(change: Partial<BoxState>): void {
     const was = this.#state;
     this.#state = { ...was, ...change };
-    const holding = sendingNow(this.#state);
-    this.composer?.hold(holding);
-    // A comment on the pull request itself, or an edit of one there, is the timeline's to show
-    // from the moment it's sent until the timeline has GitHub's copy.
+    this.composer?.hold(sendingNow(this.#state));
+    this.#notePull();
+    for (const listener of this.#listeners) listener();
+    told(this, was);
+  }
+
+  /**
+   * Says how its comment stands, where it's on the pull request itself, or an edit of one there:
+   * the timeline's to show from the moment it's sent until the timeline has GitHub's copy.
+   */
+  #notePull(): void {
     const { place, text, landing, sending } = this.#state;
     noteOnPull({
       key: this.id,
       view: this.view,
       place,
       text,
-      held: holding,
+      held: sendingNow(this.#state),
       landing,
       sending,
       send: this.sends,
       sentAt: this.sentAt,
       before: this.sentBefore,
+      copy: this.copy,
+      editedAt: this.editedAt,
     });
-    for (const listener of this.#listeners) listener();
-    told(this, was);
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -1668,6 +1679,8 @@ export async function send(box: Box, how: Send): Promise<void> {
   box.before = beforeOf(view, place);
   box.sends += 1;
   box.sentAt = undefined;
+  box.copy = undefined;
+  box.editedAt = undefined;
   box.sentBefore = place.kind === 'conversation' ? beforeOnPull(view, text) : undefined;
   box.set({ busy: true, refusal: undefined });
   try {
@@ -1677,6 +1690,7 @@ export async function send(box: Box, how: Send): Promise<void> {
         : await main().send({ id: view, place, text, how });
     switch (outcome.kind) {
       case 'done':
+        box.editedAt = outcome.editedAt;
         closeOnceLanded(box, null);
         tell(sentWords(place, how));
         if (place.kind === 'edit' && place.thread === null) {
@@ -1687,6 +1701,7 @@ export async function send(box: Box, how: Send): Promise<void> {
         // A comment from a block that won't show under it says where it went, and its box goes.
         const { home } = box;
         const went = home.kind === 'block' ? wentFrom(view, home.block, place, outcome) : undefined;
+        box.copy = outcome.comment;
         if (went) closeSent(box);
         else closeOnceLanded(box, outcome.thread);
         if (place.kind === 'conversation') wrotePull(view, { kind: 'posted', text });
@@ -1715,6 +1730,7 @@ export async function send(box: Box, how: Send): Promise<void> {
       refusal: { kind: 'github', message: error instanceof Error ? error.message : String(error) },
     });
   } finally {
+    // What GitHub's answer said of its comment goes to the timeline with it, closed already or not.
     box.set({ busy: false });
   }
 }

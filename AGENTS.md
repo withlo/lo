@@ -1738,17 +1738,19 @@ your comment there edit and delete it (`window/conversation.ts`, `window/Timelin
   GitHub's copy (`window/onpull.ts`; the timeline's `window/sent.ts`). A comment is the last row,
   drawn as its card from the text sent, with "Sending…" where its time will be until GitHub takes
   it, and its time after. The box stays as it was, empty and inert (`Away`), until GitHub answers,
-  so nothing under the row moves. GitHub's copy is one of your account's comments with its text: one
-  more than the timeline on screen held as it was sent, as a claim's is (`holding.ts`), or, with no
-  timeline on screen then, as from an overview's block or after a restart, one made since it was
-  sent by GitHub's clock, give or take 5 s: main says when in the draft's row (`sentAt`), from how
-  far GitHub's clock is from this computer's, once an answer has said, never by this computer's
-  clock. It takes the row's place in the same frame, the keyboard on it going with it, and once
-  shown it never comes back. An edit shows its text in its comment's card, saying "Saving…", until
-  the timeline has it, or GitHub's copy was edited since, by GitHub's clock, as elsewhere. One
-  GitHub took that the timeline doesn't show within five minutes is let go. A send that fails takes
-  the row away, the text back in the box, and focus the list took as it went with it, unless the
-  reader has moved on since, as with `j`.
+  so nothing under the row moves. GitHub's copy is the comment GitHub's answer named, by its node ID
+  (`SendOutcome.comment`); before the answer, one more of your account's comments with its text than
+  the timeline on screen held as it was sent, as a claim's is (`holding.ts`); and only when the
+  answer was lost, with no timeline on screen as it was sent, one of yours made since it was sent by
+  GitHub's clock, give or take 5 s: main says when in the draft's row (`sentAt`), from how far
+  GitHub's clock is from this computer's as the account's client last heard it, never by this
+  computer's clock. It takes the row's place in the same frame, the keyboard on it going with it,
+  and once shown it never comes back. An edit shows its text in its comment's card, saying
+  "Saving…", until the timeline has it, or GitHub's copy was edited when GitHub answered the edit or
+  after, by GitHub's clock (`ActOutcome.editedAt`; its answer lost, since it was sent), as
+  elsewhere. One GitHub took that the timeline doesn't show within five minutes is let go. A send
+  that fails takes the row away, the text back in the box, and focus the list took as it went with
+  it, unless the reader has moved on since, as with `j`.
 
 ### Submitting a review
 

@@ -45,6 +45,10 @@ export interface OnPull {
    * nothing for one sent before the timeline was read, or found on its way as Lo started.
    */
   readonly before: SentBefore | undefined;
+  /** GitHub's copy of a comment, by its node ID, once GitHub's answer named it. */
+  readonly copy: string | undefined;
+  /** When GitHub answered an edit, by GitHub's clock, once it did. */
+  readonly editedAt: number | undefined;
 }
 
 /** Each view's comments and edits on its pull request that its timeline doesn't show yet. */
@@ -102,6 +106,10 @@ export interface BoxSend {
   readonly sentAt: number | undefined;
   /** What the timeline on screen held as it was sent, when it was sent here with one on screen. */
   readonly before: SentBefore | undefined;
+  /** GitHub's copy of its comment, by its node ID, as GitHub's answer named it. */
+  readonly copy: string | undefined;
+  /** When GitHub answered its edit, by GitHub's clock. */
+  readonly editedAt: number | undefined;
 }
 
 /**
@@ -113,9 +121,15 @@ export function noted(before: readonly OnPull[], box: BoxSend, now: number): rea
   if (!writesOnPull(box.place)) return before;
   const at = before.findIndex((each) => each.key === box.key);
   const was = at === -1 ? undefined : before[at];
-  if (was?.state === 'sent') return before;
+  if (was?.state === 'sent') {
+    // Taken, it stays as it is, but for what GitHub's answer says of it, which may come after.
+    const copy = was.copy ?? box.copy;
+    const editedAt = was.editedAt ?? box.editedAt;
+    if (copy === was.copy && editedAt === was.editedAt) return before;
+    return before.map((each, i) => (i === at ? { ...was, copy, editedAt } : each));
+  }
   const comment = editOf(box.place);
-  const { send, sentAt, before: held } = box;
+  const { send, sentAt, before: held, copy, editedAt } = box;
   const next: OnPull | undefined = !box.held
     ? undefined
     : box.landing
@@ -129,6 +143,8 @@ export function noted(before: readonly OnPull[], box: BoxSend, now: number): rea
           send,
           sentAt,
           before: held,
+          copy,
+          editedAt,
         }
       : {
           key: box.key,
@@ -140,6 +156,8 @@ export function noted(before: readonly OnPull[], box: BoxSend, now: number): rea
           send,
           sentAt,
           before: held,
+          copy,
+          editedAt,
         };
   if (next === undefined) return was === undefined ? before : before.filter((_, i) => i !== at);
   if (
@@ -148,7 +166,9 @@ export function noted(before: readonly OnPull[], box: BoxSend, now: number): rea
     was.text === next.text &&
     was.label === next.label &&
     was.send === next.send &&
-    was.sentAt === next.sentAt
+    was.sentAt === next.sentAt &&
+    was.copy === next.copy &&
+    was.editedAt === next.editedAt
   ) {
     return before;
   }

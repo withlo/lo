@@ -364,8 +364,9 @@ export type SendRefusal =
  * did so though it was asked to post at once (`joined`: Lo planned it so, or, for a reply, GitHub
  * said so of a pending review Lo hadn't read), the thread it added when GitHub named it,
  * and, for a line thread GitHub put on a newer push that couldn't be taken back from it
- * (`landedOn`), that push's head when GitHub named it; `refused`, the draft kept; or `lost`, when
- * GitHub's answer was lost, and Lo checks whether it posted, as its draft says.
+ * (`landedOn`), that push's head when GitHub named it, and, for a comment on the pull request
+ * itself, the comment GitHub made, by its node ID (`comment`); `refused`, the draft kept; or
+ * `lost`, when GitHub's answer was lost, and Lo checks whether it posted, as its draft says.
  */
 export type SendOutcome =
   | {
@@ -374,6 +375,7 @@ export type SendOutcome =
       joined: boolean;
       thread: string | null;
       landedOn: { head: string | null } | null;
+      comment?: string | undefined;
     }
   | { kind: 'refused'; refusal: SendRefusal }
   | { kind: 'lost' };
@@ -469,11 +471,14 @@ export type ActRefusal =
   | { kind: 'github'; message: string };
 
 /**
- * What came of an edit, a resolve or a delete: `done`, `refused`, or `lost`, when GitHub's answer
- * was lost, and Lo looks whether it went.
+ * What came of an edit, a resolve or a delete: `done`, with, for an edit GitHub answered, when it
+ * did, by GitHub's clock, in milliseconds since the Unix epoch (`editedAt`); `refused`; or `lost`,
+ * when GitHub's answer was lost, and Lo looks whether it went.
  */
 export type ActOutcome =
-  { kind: 'done' } | { kind: 'refused'; refusal: ActRefusal } | { kind: 'lost' };
+  | { kind: 'done'; editedAt?: number | undefined }
+  | { kind: 'refused'; refusal: ActRefusal }
+  | { kind: 'lost' };
 
 /** What's done to a thread, or to your comment in it, besides writing one. */
 export const change = z.enum(['resolve', 'unresolve', 'delete']);
