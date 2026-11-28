@@ -63,8 +63,14 @@ const checkings = new Map<string, Checking>();
 const readFor = new Map<string, string>();
 /** Each view's layers whose descriptions were asked for. */
 const linesAsked = new Map<string, Set<number>>();
-/** What each overview's commit says, read once: by the commit, and the layer whose ref held it. */
+/**
+ * What each overview's commit says, read once: by the commit, and the layer whose ref held it. The
+ * last {@link PARSED_LIMIT} read are kept.
+ */
 const parsedAt = new Map<string, Promise<Omit<LayerSaid, 'line'>>>();
+
+/** The most overviews' commits {@link parsedAt} keeps what they say of. */
+const PARSED_LIMIT = 200;
 
 /** Whether the window takes what main says of overviews: not while Settings turns them off. */
 let taking = true;
@@ -196,6 +202,11 @@ function parsedOf(
         return { stack: undefined, tldr: undefined };
       });
     parsedAt.set(key, parsed);
+    // The oldest goes first: a Map keeps the order its keys were set in.
+    for (const old of parsedAt.keys()) {
+      if (parsedAt.size <= PARSED_LIMIT) break;
+      parsedAt.delete(old);
+    }
   }
   return parsed;
 }
@@ -427,6 +438,7 @@ function forget(id: string): void {
   linesAsked.delete(id);
   stackStates.set(id, undefined);
   stackChecked.set(id, undefined);
+  layersSaid.set(id, NOTHING_SAID);
   subjects.set(id, 'pull');
 }
 

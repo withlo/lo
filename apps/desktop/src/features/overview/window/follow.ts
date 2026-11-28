@@ -670,8 +670,8 @@ export function placesFor(tab: string): void {
       // A place in the stack's overview shows it again, while the stack has one.
       const stack = within === IN_STACK;
       if (stack && !hasStackOverview(tab)) return false;
-      subjects.set(tab, stack ? 'stack' : 'pull');
       if (at.kind === 'none') {
+        subjects.set(tab, stack ? 'stack' : 'pull');
         return !stack && overviewPlace(openings.get(tab)) === 'timeline'
           ? showInstead(tab)
           : showMiddle(tab, OVERVIEW_VIEW);
@@ -679,6 +679,7 @@ export function placesFor(tab: string): void {
       const tree = (stack ? stackTrees : trees).get(tab);
       const index = at.kind === 'block' && tree !== undefined ? blockIn(at.block, tree) : undefined;
       if (index === undefined) return false;
+      subjects.set(tab, stack ? 'stack' : 'pull');
       revealBlock(tab, index);
       return true;
     },

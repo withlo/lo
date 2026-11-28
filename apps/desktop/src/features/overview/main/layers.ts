@@ -4,8 +4,9 @@
 //
 // - Only the tab's own repository's pull requests are a stack's layers, so everything is read
 //   there, as the tab's account, behind what the reader waits on.
-// - Every overview's ref is read in one request, with an ETag, so reading them again while none
-//   changed costs nothing; and each description with its own.
+// - Every overview's ref is read in one request, kept for a minute for every view of the
+//   repository's stacks, then read again with an ETag, so reading them again while none changed
+//   costs nothing; and each description with its own.
 // - A commit's listing is kept by its ID, which names the same files for good, and `artifact.md`
 //   with the rest of the overviews' files, so a layer's overview is read once while it's the same.
 //
@@ -37,6 +38,9 @@ export const BODIES = 200;
 /** The most characters of a description's first line that Layers is sent. */
 export const LINE_LIMIT = 300;
 
+/** How long a read of a repository's overviews' refs is used before it's read again, in ms. */
+export const REFS_FRESH = 60_000;
+
 export interface LayerReadsOptions {
   /** Where the overviews' files are kept. */
   blobs: Blobs;
@@ -47,6 +51,14 @@ export interface LayerReadsOptions {
     priority?: ReadPriorityNow,
   ) => Promise<T>;
   log?: ((line: string) => void) | undefined;
+  /** The time now, in milliseconds. */
+  now?: (() => number) | undefined;
+}
+
+/** What every overview's ref in a repository held, and when that was read. */
+interface ReadRefs {
+  readonly refs: OverviewRefCommits;
+  readonly at: number;
 }
 
 const UNREAD: LayerOverview = { kind: 'unread' };
@@ -54,8 +66,10 @@ const UNREAD: LayerOverview = { kind: 'unread' };
 /** The stacks' layers' overviews and descriptions, read as their tabs ask. */
 export class LayerReads {
   readonly #options: LayerReadsOptions;
-  /** What every overview's ref held when each repository's were last read, by its key. */
-  readonly #refs = new Map<string, OverviewRefCommits>();
+  /** What every overview's ref held when each repository's were last read, by who and its key. */
+  readonly #refs = new Map<string, ReadRefs>();
+  /** Each repository's overviews' refs being read now, by who and its key, which views wait on. */
+  readonly #reading = new Map<string, Promise<OverviewRefCommits>>();
   /** Each commit's listing, by its repository's key and its ID. */
   readonly #listings = new Map<string, OverviewCommit>();
   /** Each pull request's description, as last read. */
@@ -79,15 +93,35 @@ export class LayerReads {
     const github: Github = (request) => this.#options.github(acting, request, 'background');
     let refs: OverviewRefCommits;
     try {
-      refs = await github((client) => overviewRefCommits(client, repo, this.#refs.get(repo.key)));
+      refs = await this.#refsOf(github, acting, repo);
     } catch (error) {
       this.#log(`reading ${repo.toString()}'s overviews' refs: ${describe(error)}`);
       return numbers.map(() => UNREAD);
     }
-    this.#refs.set(repo.key, refs);
     return Promise.all(
       numbers.map((number) => this.#overview(github, acting, repo, refs.commits.get(number))),
     );
+  }
+
+  /**
+   * What every overview's ref in `repo` holds, as `acting` reads it: as last read, within
+   * {@link REFS_FRESH} of it, else read again, with the ETag of the read before.
+   */
+  #refsOf(github: Github, acting: Acting, repo: RepoRef): Promise<OverviewRefCommits> {
+    const now = this.#options.now?.() ?? Date.now();
+    const key = `${acting.kind === 'account' ? acting.login : ''} ${repo.key}`;
+    const kept = this.#refs.get(key);
+    if (kept && now - kept.at < REFS_FRESH) return Promise.resolve(kept.refs);
+    const reading = this.#reading.get(key);
+    if (reading) return reading;
+    const read = github((client) => overviewRefCommits(client, repo, kept?.refs))
+      .then((refs) => {
+        this.#refs.set(key, { refs, at: now });
+        return refs;
+      })
+      .finally(() => this.#reading.delete(key));
+    this.#reading.set(key, read);
+    return read;
   }
 
   /**

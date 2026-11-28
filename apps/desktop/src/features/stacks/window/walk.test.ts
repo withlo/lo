@@ -10,7 +10,6 @@ import { installBridge } from '../../../window/test/bridge.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { Row, StackView } from '../contract.ts';
-import { stackStates, subjects } from '../../overview/window/stack.ts';
 import { choosing, focused, OVERVIEW_ROW, OVERVIEW_TARGET, runTrouble, stacks } from './layers.ts';
 import {
   back,
@@ -47,6 +46,26 @@ const diff = vi.hoisted(() => ({
   showPlace: vi.fn<(tab: string, path: string, line?: number, marked?: unknown) => void>(),
 }));
 vi.mock('../../diff/window/shared.ts', () => diff);
+// The overview, as the stack's tree sees it: which views' stacks have an overview, and which views
+// show it.
+const overview = vi.hoisted(() => {
+  const present = new Set<string>();
+  const subjects = new Map<string, 'pull' | 'stack'>();
+  return {
+    present,
+    subjects,
+    hasStackOverview: (id: string) => present.has(id),
+    showStackOverview: (tab: { id: string }) => {
+      if (!present.has(tab.id)) return false;
+      subjects.set(tab.id, 'stack');
+      return true;
+    },
+    showOwnOverview: (id: string) => {
+      subjects.set(id, 'pull');
+    },
+  };
+});
+vi.mock('../../overview/window/shared.ts', () => overview);
 const middle = vi.hoisted(() => {
   const run = vi.fn<(id: string, target: unknown) => void>();
   return {
@@ -129,6 +148,8 @@ beforeEach(() => {
   bridge.calls.length = 0;
   vi.clearAllMocks();
   middle.escapeInMiddle.mockReturnValue(false);
+  overview.present.clear();
+  overview.subjects.clear();
 });
 
 afterEach(() => {
@@ -159,27 +180,9 @@ describe('- in the file tree', () => {
   });
 });
 
-/** What main says of the stack's overview, which Lo has read. */
+/** The stack's overview, which Lo has read. */
 function withOverview(tab: PullTab): void {
-  stackStates.set(tab.id, {
-    id: tab.id,
-    ref: 'refs/lo/stack/82',
-    watching: true,
-    found: 'commit',
-    overview: {
-      id: 'a'.repeat(40),
-      source: 'base',
-      repository: { owner: 'rozed-dev', name: 'e2e' },
-      byline: null,
-      entries: [],
-      truncated: false,
-      read: true,
-    },
-    newer: null,
-    saved: false,
-    problem: null,
-    code: 'ready',
-  });
+  overview.present.add(tab.id);
 }
 
 describe('the stack overview’s row', () => {
@@ -199,7 +202,7 @@ describe('the stack overview’s row', () => {
     expect(showName(OVERVIEW_TARGET)).toBe('Show stack overview');
     expect(showName({ kind: 'layer', layer: 82 })).toBe(undefined);
     showTarget(OVERVIEW_TARGET);
-    expect(subjects.get(tab.id)).toBe('stack');
+    expect(overview.subjects.get(tab.id)).toBe('stack');
     moveFocus(1);
     expect(stackTarget(tab)).toEqual({ kind: 'layer', layer: 82 });
   });
@@ -207,14 +210,14 @@ describe('the stack overview’s row', () => {
   it('gives way to the layer’s own overview as a layer is shown', async () => {
     const tab = showing(82, STACK);
     withOverview(tab);
-    subjects.set(tab.id, 'stack');
+    overview.subjects.set(tab.id, 'stack');
     showTarget({ kind: 'layer', layer: 82 });
-    expect(subjects.get(tab.id)).toBe('pull');
+    expect(overview.subjects.get(tab.id)).toBe('pull');
     // Another layer's view shows that layer's own too.
-    subjects.set('shown', 'stack');
+    overview.subjects.set('shown', 'stack');
     showTarget({ kind: 'layer', layer: 83 });
     await answered();
-    expect(subjects.get('shown')).toBe('pull');
+    expect(overview.subjects.get('shown')).toBe('pull');
   });
 });
 

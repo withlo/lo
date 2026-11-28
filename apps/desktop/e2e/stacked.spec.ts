@@ -110,7 +110,8 @@ async function answerFor(origin: string, url: string): Promise<Response | undefi
   if (path === `${REPO}/pulls/${STACK.d}`) {
     const recorded = await fetch(`${origin}${url}`);
     const pull: unknown = await recorded.json();
-    return Response.json({ ...(pull as object), body: null }, { headers: { etag: '"d"' } });
+    if (typeof pull !== 'object' || pull === null) throw new Error(`#${STACK.d} wasn't recorded`);
+    return Response.json({ ...pull, body: null }, { headers: { etag: '"d"' } });
   }
   return undefined;
 }

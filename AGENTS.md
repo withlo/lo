@@ -1281,6 +1281,16 @@ and nothing while there's no stack.
   not yet in the GitHub stack below them), so dismissing one leaves the other. "For all stacks"
   turns off its setting, `stacks.offerConvert` or `stacks.offerStart`, whose switch in Settings ›
   Pull requests turns it back on; main sends no offer before it has read the file.
+- While the stack has an overview, its row is first in the tree (`StackTree`'s `overview`), `j` and
+  `k` move onto it, and `⏎` on it is `stacks.show` on a `row` target. The overview feature owns the
+  stack's overview (`features/overview/window/stack.ts`): which one a view shows, following it in
+  main beside the layer's own, Layers and the line on each layer's overview. The stacks feature
+  gives it the stack each view is in, a way to show a layer, and a way to show the whole stack as
+  one diff, as it starts (`setStackParts`, from the overview's `window/shared.ts`), so the
+  overview's window code never imports the stacks'. A stack's `start` is where its bottom layer's
+  changes start, which a stack overview's code diffs from. Main reads the layers' overviews for
+  Layers with one request for every ref (`layerOverviews`), and their descriptions' first lines with
+  their ETags (`layerLines`), in the account's queue at background priority.
 - The merge panel makes the tree's offer too, for a chain it merges only once it's a GitHub stack,
   and only while the stack says it's offered (`offered`: on in Settings, and not dismissed for one
   of its layers, by which offer the tree makes, or `convert` where it makes none). It reads that

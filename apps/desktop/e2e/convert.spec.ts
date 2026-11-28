@@ -30,16 +30,25 @@ type Answers =
 const RETARGET = 'PATCH /repos/rozed-dev/e2e/pulls/';
 
 /**
- * `app_stack_convert`'s answers, and GitHub's comparison of #C's head with #B's, from `app_stack`:
- * #C's diff starts at #B's head, and until the local copy is ready it's that comparison, which this
- * cassette was recorded before Lo read. A comparison of two commits doesn't change.
+ * `app_stack_convert`'s answers, and from `app_stack`, what this cassette was recorded before Lo
+ * read: GitHub's comparison of #C's head with #B's, since #C's diff starts at #B's head, and until
+ * the local copy is ready it's that comparison; and #B's overview's commit, its tree and its files,
+ * which the stack's tree reads for the stack overview it names. A comparison of two commits doesn't
+ * change, and nor does what a commit holds.
  */
 function convertAnswers(): Interaction[] {
   const recorded = cassette('app_stack_convert').interactions.map(({ interaction }) => interaction);
-  const compared = cassette('app_stack')
+  const later = cassette('app_stack')
     .interactions.map(({ interaction }) => interaction)
-    .filter(({ request }) => new URL(request.url).pathname.includes('/compare/'));
-  return [...recorded, ...compared];
+    .filter(({ request }) => {
+      const path = new URL(request.url).pathname;
+      return (
+        path.includes('/compare/') ||
+        /\/git\/(trees|blobs)\/[0-9a-f]{40}$/.test(path) ||
+        /\/commits\/[0-9a-f]{40}$/.test(path)
+      );
+    });
+  return [...recorded, ...later];
 }
 
 /**

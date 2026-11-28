@@ -3,7 +3,7 @@
 // description says; and, on a layer's own overview, the line that says it's part of a stack whose
 // overview Lo has, with the way to it.
 
-import type { StackReview } from '@lo/ui';
+import { Collapse, type StackReview } from '@lo/ui';
 import { OverviewLine, StackLayers, type LayerSummary, type StackLayer } from '@lo/ui/overview';
 import { useEffect, useMemo } from 'react';
 
@@ -68,18 +68,23 @@ export function Layers({ tab }: { tab: PullTab }) {
 
 /**
  * On a layer's own overview, which names stack `named`: that the layer is part of a stack of so
- * many layers, with the way to its overview, while Lo has that stack's overview. Nothing otherwise.
+ * many layers, with the way to its overview, while Lo has that stack's overview. It comes and goes
+ * with the Open move; nothing otherwise.
  */
 export function StackNotice({ tab, named }: { tab: PullTab; named: number | undefined }) {
   const view = useStackView(tab.id);
   const present = useTabState(stackStates, tab.id, (state) => (state?.overview ?? null) !== null);
   const layers = view?.kind === 'stack' ? view.rows.length : 0;
-  if (named === undefined || !present || followedStack(tab.id) !== named || layers === 0) {
-    return null;
-  }
+  const shown = named !== undefined && present && followedStack(tab.id) === named && layers > 0;
   return (
-    <OverviewLine icon="layers" action={{ command: SHOW_STACK, label: 'Stack overview' }}>
-      Part of a {layers}-layer stack
-    </OverviewLine>
+    <Collapse open={shown}>
+      {shown && (
+        <div className="pt-8">
+          <OverviewLine icon="layers" action={{ command: SHOW_STACK, label: 'Stack overview' }}>
+            Part of a {layers}-layer stack
+          </OverviewLine>
+        </div>
+      )}
+    </Collapse>
   );
 }

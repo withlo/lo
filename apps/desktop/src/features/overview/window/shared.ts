@@ -28,14 +28,18 @@ import { OVERVIEW_VIEW } from './labels.ts';
 import type { CommentOnHead } from './mapping.ts';
 import { commentLinesOnHead } from './since.ts';
 import {
-  hasStackOverview,
+  hasStackOverview as stackOverviewIn,
   readLayers,
   setSubject,
   stackStates,
   subjectNow,
   subjects,
 } from './stack.ts';
-import { stackViewOf } from './stacked.ts';
+import {
+  setStackParts as takeStackParts,
+  stackViewOf,
+  type StackParts as Parts,
+} from './stacked.ts';
 import { codeBlocksIn, labelOf } from './stale.ts';
 import { checked, revisions, states } from './store.ts';
 import {
@@ -289,8 +293,24 @@ export function commentOnHead(
   return commentLinesOnHead(tab, commit, path, lines);
 }
 
-export { hasStackOverview } from './stack.ts';
-export { setStackParts, type StackParts } from './stacked.ts';
+/**
+ * Whether view `id`'s stack has an overview Lo has read, which its row in the stack's tree then
+ * offers.
+ */
+export function hasStackOverview(id: string): boolean {
+  return stackOverviewIn(id);
+}
+
+/** What the stacks give the overview of the stack each view is in. */
+export type StackParts = Parts;
+
+/**
+ * Takes what the stacks give the overview, as they start, until the function it returns takes it
+ * back: the stack each view is in, the way to show a layer, and the way to show the whole stack.
+ */
+export function setStackParts(given: StackParts): () => void {
+  return takeStackParts(given);
+}
 
 /**
  * The stack overview's row in the stack's tree of view `tab`, while its stack has an overview Lo has
@@ -309,7 +329,7 @@ export function useStackOverviewRow(tab: PullTab): StackTreeOverview | undefined
  * the notice do: a place in its history. Says whether it has one.
  */
 export function showStackOverview(tab: PullTab): boolean {
-  if (!hasStackOverview(tab.id)) return false;
+  if (!stackOverviewIn(tab.id)) return false;
   // What its layers' overviews say is read again, for any pushed since.
   readLayers(tab.id, stackViewOf(tab.id), true);
   setSubject(tab.id, 'stack');
