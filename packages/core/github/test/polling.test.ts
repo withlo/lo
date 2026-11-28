@@ -514,14 +514,14 @@ test('in the background everything polls every five minutes', async () => {
   await t.run();
   await t.runUntil(5);
   t.requests();
-  t.poller.setForeground(false);
+  t.poller.setPresence('away');
   await t.run();
   await t.runUntil(610);
   expect(t.requests()).toEqual([...everything(300), ...everything(600)]);
 
   // Coming back polls the open PR at once, with its details, older than 5 minutes, then every
   // 20 s.
-  t.poller.setForeground(true);
+  t.poller.setPresence('front');
   await t.run();
   await t.runUntil(630);
   expect(t.requests()).toEqual(
@@ -533,6 +533,54 @@ test('in the background everything polls every five minutes', async () => {
       [630, 'PullRequestCheck'],
     ),
   );
+});
+
+/** The open pull request's quiet polls at each of `secs`: a free conditional GET and the check. */
+function openPolls(...secs: number[]): Logged[] {
+  return secs.flatMap((when): Logged[] => [
+    [when, 'GET /pulls/1 (since)'],
+    [when, 'PullRequestCheck'],
+  ]);
+}
+
+test('the open pr polls most often in front and less often behind another window', async () => {
+  const t = await Polling.start('presence', recorded(), { config: { openInterval: 10_000 } });
+  void t.poller.setOpen(pr(1));
+  await t.run();
+  await t.runUntil(5);
+  t.requests();
+  // In front, every 10 s.
+  await t.runUntil(30);
+  expect(t.requests()).toEqual(openPolls(10, 20, 30));
+
+  // On screen behind another window, every 20 s.
+  t.poller.setPresence('shown');
+  await t.run();
+  await t.runUntil(70);
+  expect(t.requests()).toEqual(openPolls(50, 70));
+
+  // Back in front it's due 10 s after the last poll, and not polled again at once.
+  await t.runUntil(75);
+  t.poller.setPresence('front');
+  await t.run();
+  expect(t.requests()).toEqual([]);
+  await t.runUntil(80);
+  expect(t.requests()).toEqual(openPolls(80));
+
+  // Off screen, every 5 minutes; back on screen, even behind another window, polled at once, and
+  // the repository's list, 2 minutes old by then.
+  t.poller.setPresence('away');
+  await t.run();
+  await t.runUntil(200);
+  expect(t.requests()).toEqual([]);
+  t.poller.setPresence('shown');
+  await t.run();
+  await t.runUntil(220);
+  expect(t.requests()).toEqual([
+    ...openPolls(200),
+    [200, 'GET /pulls?state=open&per_page=100 (etag)'],
+    ...openPolls(220),
+  ]);
 });
 
 test('reopening shows the cache at once and its first poll is free', async () => {
@@ -581,12 +629,12 @@ test('the open prs details are fetched in full every five minutes', async () => 
   expect(details).toEqual([300, 600]);
 
   // Not in the background.
-  t.poller.setForeground(false);
+  t.poller.setPresence('away');
   await t.run();
   await t.runUntil(1300);
   expect(t.requests().some(([, what]) => what === 'PullRequest')).toBe(false);
   // Back in the foreground, details older than 5 minutes are fetched at once.
-  t.poller.setForeground(true);
+  t.poller.setPresence('front');
   await t.run();
   expect(t.requests()).toEqual(
     log([1300, 'GET /pulls/1 (since)'], [1300, 'PullRequestCheck'], [1300, 'PullRequest']),

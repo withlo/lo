@@ -8,6 +8,7 @@ import {
   rateLimitState,
   type Cooldown,
   type LowLimit,
+  type Presence,
   type RateLimitState,
   type Tier,
 } from './governor.ts';
@@ -103,35 +104,41 @@ test('a cooldown pauses until it ends', () => {
   });
 });
 
-test('intervals by tier window and rate limit', () => {
+test('intervals by tier presence and rate limit', () => {
   const config = pollConfig();
-  const seconds = (tier: Tier, foreground: boolean, limit: RateLimitState) => {
-    const every = interval(tier, foreground, limit, config);
+  const seconds = (tier: Tier, presence: Presence, limit: RateLimitState) => {
+    const every = interval(tier, presence, limit, config);
     return every === undefined ? undefined : every / 1000;
   };
+  // The open pull request most often in front, less often behind another window, and everything
+  // every 5 minutes off screen.
   const normal: RateLimitState = { kind: 'normal' };
-  expect(seconds('open', true, normal)).toBe(20);
-  expect(seconds('watched', true, normal)).toBe(120);
-  expect(seconds('open', false, normal)).toBe(300);
-  expect(seconds('watched', false, normal)).toBe(300);
+  expect(seconds('open', 'front', normal)).toBe(10);
+  expect(seconds('open', 'shown', normal)).toBe(20);
+  expect(seconds('open', 'away', normal)).toBe(300);
+  expect(seconds('watched', 'front', normal)).toBe(120);
+  expect(seconds('watched', 'shown', normal)).toBe(120);
+  expect(seconds('watched', 'away', normal)).toBe(300);
 
   const slowed: RateLimitState = { kind: 'slowed', low: low('core', 900) };
-  expect(seconds('open', true, slowed)).toBe(40);
-  expect(seconds('watched', true, slowed)).toBe(240);
-  expect(seconds('open', false, slowed)).toBe(600);
+  expect(seconds('open', 'front', slowed)).toBe(20);
+  expect(seconds('open', 'shown', slowed)).toBe(40);
+  expect(seconds('watched', 'front', slowed)).toBe(240);
+  expect(seconds('open', 'away', slowed)).toBe(600);
 
   const openOnly: RateLimitState = { kind: 'openOnly', low: low('core', 100) };
-  expect(seconds('open', true, openOnly)).toBe(120);
-  expect(seconds('open', false, openOnly)).toBe(300);
-  expect(seconds('watched', true, openOnly)).toBeUndefined();
+  expect(seconds('open', 'front', openOnly)).toBe(120);
+  expect(seconds('open', 'shown', openOnly)).toBe(120);
+  expect(seconds('open', 'away', openOnly)).toBe(300);
+  expect(seconds('watched', 'front', openOnly)).toBeUndefined();
 
   const paused: RateLimitState = {
     kind: 'paused',
     until: at(RESET),
     reason: { kind: 'secondary' },
   };
-  expect(seconds('open', true, paused)).toBeUndefined();
-  expect(seconds('watched', false, paused)).toBeUndefined();
+  expect(seconds('open', 'front', paused)).toBeUndefined();
+  expect(seconds('watched', 'away', paused)).toBeUndefined();
 });
 
 test('backoff doubles up to the most less some jitter', () => {
