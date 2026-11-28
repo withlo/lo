@@ -174,8 +174,8 @@ const comments: Target[] = [];
  */
 let hunks: Record<string, { old: [number, number][]; new: [number, number][] }> = {};
 let known = true;
-const takes = (file: string, side: 'old' | 'new', line: number): boolean =>
-  (hunks[file]?.[side] ?? []).some(([first, last]) => line >= first && line <= last);
+const takes = (id: string, side: 'old' | 'new', line: number): boolean =>
+  (hunks[id]?.[side] ?? []).some(([first, last]) => line >= first && line <= last);
 
 function view(): DiffView {
   if (!shown) throw new Error('The page has no view yet.');
@@ -353,11 +353,11 @@ const harness = {
         jumped: ignore,
         load: ignore,
         menu: ignore,
-        commentLines: (file) =>
+        commentLines: (id) =>
           known
             ? {
                 on: ({ side, from, to }) =>
-                  takes(file, side, from) && takes(file, side, to)
+                  takes(id, side, from) && takes(id, side, to)
                     ? `${from === to ? `Line ${to}` : `Lines ${from}–${to}`}${side === 'old' ? ', removed' : ''}`
                     : undefined,
               }

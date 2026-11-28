@@ -6,8 +6,10 @@ import { expect, test } from 'vitest';
 
 import { restingEnd, SCROLL_REACH, SCROLL_STEP, scrollFor } from './pick.ts';
 
+/** Lines 3, 4, 9 and 10 take a range's end. */
+const rests = (line: number): boolean => [3, 4, 9, 10].includes(line);
+
 test('a far end rests on the nearest line it may, going back toward the start, or on the start', () => {
-  const rests = (line: number): boolean => [3, 4, 9, 10].includes(line);
   // Down from line 2: line 12 can't, so 10; in the fold at 7, back to 4.
   expect(restingEnd(2, 12, rests)).toBe(10);
   expect(restingEnd(2, 7, rests)).toBe(4);

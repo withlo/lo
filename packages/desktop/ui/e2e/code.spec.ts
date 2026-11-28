@@ -1605,7 +1605,7 @@ function picking(page: Page) {
   }));
 }
 
-for (const [editor, side, other, last] of [
+for (const [editor, side, opposite, last] of [
   ['After', 'new', 'Before', 'a 50, changed'],
   ['Before', 'old', 'After', 'a 50'],
 ] as const) {
@@ -1615,14 +1615,12 @@ for (const [editor, side, other, last] of [
     await page.mouse.down();
     await dragTo(page, editor, last);
     const removed = side === 'old' ? ', removed' : '';
-    const crossed = [
-      ...['a 5', side === 'new' ? 'a 6, changed' : 'a 6', 'a 7', 'a 8', 'a 9'],
-      ...['a 47', 'a 48', 'a 49', last],
-    ];
+    const changed = side === 'new' ? 'a 6, changed' : 'a 6';
+    const crossed = ['a 5', changed, 'a 7', 'a 8', 'a 9', 'a 47', 'a 48', 'a 49', last];
     let now = await picking(page);
     // The fold's lines are its own, and the other column has none.
     expect(now.picked[editor]).toEqual(crossed);
-    expect(now.picked[other]).toEqual([]);
+    expect(now.picked[opposite]).toEqual([]);
     expect(now.tip).toBe(`Lines 5–50${removed}`);
     expect(now.commented).toEqual([]);
 
