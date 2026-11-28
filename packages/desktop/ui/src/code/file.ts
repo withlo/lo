@@ -299,7 +299,8 @@ class WholeFile implements FileView {
   #lineOf(at: Target): { line: number; column: number } | undefined {
     switch (at.kind) {
       case 'line':
-      case 'draft': {
+      case 'draft':
+      case 'note': {
         const place = at.at;
         if (place.file !== this.#id || place.side !== this.#side) return undefined;
         if ('line' in place) return { line: this.#docLine(place.line), column: place.column ?? 0 };

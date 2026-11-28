@@ -9,14 +9,26 @@ export interface PoppedThread {
   readonly card: ReactNode;
 }
 
+/** One overview note in a popover: the code view's name for it, and the note. */
+export interface PoppedNote {
+  readonly key: string;
+  /** The note as `Note` draws it in a popover (`variant="popover"`). */
+  readonly card: ReactNode;
+}
+
 export interface ThreadPopoverProps {
   /**
    * What it is, for a screen reader, as its head says it: its first thread's state and lines,
-   * "Unresolved thread · lines 10–35".
+   * "Unresolved thread · lines 10–35", or its notes', "Overview note, lines 2–15".
    */
   label: string;
   /** The threads, in the order they show: unresolved first, then oldest. The first has Close. */
   threads: readonly PoppedThread[];
+  /**
+   * In place of threads, the overview notes that end on the line, in the overview's order, each
+   * marked as its note's (`data-note-key`). The first has Close.
+   */
+  notes?: readonly PoppedNote[] | undefined;
   /**
    * A new comment's box is in it, after the threads, or alone: it draws the slot the code view puts
    * the box in (`NEW_SLOT`), a hairline over it where threads are above.
@@ -25,14 +37,15 @@ export interface ThreadPopoverProps {
 }
 
 /**
- * The review threads on a line, over the code: the shell a code view places under the line, in a
+ * The review threads on a line, or the overview notes that end on it, over the code: the shell a code view places under the line, in a
  * layer of its own scroll, and the threads in it, `lo-sp-12` apart with a hairline between, each
- * marked as its thread's (`data-thread-id`), which a key or a right-click in it acts on. It's as
+ * marked as its thread's (`data-thread-id`), which a key or a right-click in it acts on; or the
+ * notes, the same way, each marked as its note's (`data-note-key`). It's as
  * tall as they are, up to the most the code view lets it be (`thread-pop`), past which they scroll
  * inside it, each thread's head staying over its comments. To a screen reader it's a dialog that
  * doesn't hold focus in, named for its first thread.
  */
-export function ThreadPopover({ label, threads, box = false }: ThreadPopoverProps) {
+export function ThreadPopover({ label, threads, notes = [], box = false }: ThreadPopoverProps) {
   return (
     <div
       role="dialog"
@@ -47,6 +60,17 @@ export function ThreadPopover({ label, threads, box = false }: ThreadPopoverProp
           key={id}
           data-thread-id={id}
           className={index === 0 ? undefined : 'mt-12 border-t border-border-subtle'}
+        >
+          {card}
+        </div>
+      ))}
+      {notes.map(({ key, card }, index) => (
+        <div
+          key={key}
+          data-note-key={key}
+          className={
+            index === 0 && threads.length === 0 ? undefined : 'mt-12 border-t border-border-subtle'
+          }
         >
           {card}
         </div>

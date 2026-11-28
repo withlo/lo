@@ -29,11 +29,11 @@ import {
   type HeaderRing,
   HeaderWidget,
   MovedLabelWidget,
-  type NoteDraw,
   type PeekHost,
   type ThreadSizes,
   ThreadWidget,
 } from './widgets.ts';
+import type { NoteCard } from './notecards.ts';
 import type { ThreadHost } from './threads.ts';
 
 /** A file as the view shows it. */
@@ -59,7 +59,8 @@ export interface ViewThread {
    * showing.
    */
   drawing?: number | undefined;
-  notes?: readonly NoteDraw[] | undefined;
+  /** The cards of the overview notes open that end on the line. */
+  notes?: readonly NoteCard[] | undefined;
   /** A peek open under the line. */
   peek?: PeekHost | undefined;
 }

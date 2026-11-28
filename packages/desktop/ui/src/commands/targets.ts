@@ -43,6 +43,11 @@ export interface LineTarget {
    * line gives it as a draft only where it gives no thread.
    */
   draft?: true;
+  /**
+   * The line is among an overview note's lines. A line gives it as a note only where it gives no
+   * thread and no draft.
+   */
+  note?: true;
   /** The comment box the key is in, by its caller's name for it. */
   box?: string;
   /**
@@ -56,6 +61,17 @@ export interface LineTarget {
 export interface DraftTarget {
   kind: 'draft';
   at: Place;
+}
+
+/**
+ * An overview note in a code view, by its line: what `⏎` on its lines opens, a line it ends on or
+ * one among its lines, and with `note`, the one note its own controls act on, by the view's name for
+ * it.
+ */
+export interface NoteTarget {
+  kind: 'note';
+  at: Place;
+  note?: string;
 }
 
 export interface FileTarget {
@@ -152,6 +168,7 @@ export type Target =
   | FileTarget
   | ThreadTarget
   | DraftTarget
+  | NoteTarget
   | LayerTarget
   | BlockTarget
   | TabTarget
@@ -173,6 +190,7 @@ export const targetKinds: readonly TargetKind[] = [
   'file',
   'thread',
   'draft',
+  'note',
   'layer',
   'block',
   'tab',
@@ -245,6 +263,15 @@ function derive(kind: TargetKind, target: Target): Target | undefined {
         'line' in target.at
         ? { kind: 'draft', at: target.at }
         : undefined;
+    // Nor with either: theirs take the line, and the note's lines are beside them.
+    case 'note':
+      return target.kind === 'line' &&
+        target.note === true &&
+        target.thread === undefined &&
+        target.draft !== true &&
+        'line' in target.at
+        ? { kind: 'note', at: target.at }
+        : undefined;
     case 'line':
     case 'header':
     case 'layer':
@@ -269,6 +296,7 @@ export function plainTarget(target: Target): Target {
       const line: LineTarget = { kind: 'line', at: plainAt(target.at) };
       if (target.thread !== undefined) line.thread = target.thread;
       if (target.draft === true) line.draft = true;
+      if (target.note === true) line.note = true;
       if (target.box !== undefined) line.box = target.box;
       return line;
     }
@@ -286,6 +314,11 @@ export function plainTarget(target: Target): Target {
         : { kind: 'thread', thread: target.thread, comment: target.comment };
     case 'draft':
       return { kind: 'draft', at: plainPlace(target.at) };
+    case 'note': {
+      const note: NoteTarget = { kind: 'note', at: plainPlace(target.at) };
+      if (target.note !== undefined) note.note = target.note;
+      return note;
+    }
     case 'layer':
       return { kind: 'layer', layer: target.layer };
     case 'block':
@@ -323,10 +356,13 @@ function plainPlace(at: Place): Place {
   return place;
 }
 
+/** What a line gives one of at most: a thread, else a draft, else a note. */
+const ONE_OF: readonly TargetKind[] = ['thread', 'draft', 'note'];
+
 /**
  * Whether one target can give both kinds `a` and `b`, so that keys for what each acts on meet. A
- * line gives a draft only where it gives no thread.
+ * line gives a draft only where it gives no thread, and a note only where it gives neither.
  */
 export function together(a: TargetKind, b: TargetKind): boolean {
-  return !((a === 'thread' && b === 'draft') || (a === 'draft' && b === 'thread'));
+  return a === b || !(ONE_OF.includes(a) && ONE_OF.includes(b));
 }

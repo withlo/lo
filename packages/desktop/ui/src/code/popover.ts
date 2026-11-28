@@ -22,7 +22,7 @@ import {
   SCOPE_ATTRIBUTE,
   setScopeSource,
   TAB_ATTRIBUTE,
-  type ThreadTarget,
+  type Target,
 } from '../commands/index.ts';
 import { whenSettled } from '../motion.ts';
 import type { PopoverContent, PopoverView, RenderPopover } from './api.ts';
@@ -235,6 +235,11 @@ export interface PopHost<At extends PopAt> {
   /** Whether the press `event` is on `at`'s mark. */
   onMark(event: { readonly target: EventTarget | null; readonly clientX: number }, at: At): boolean;
   /**
+   * What a key in it acts on at `at`, focus in `inside` if it's in it, where that's not a thread:
+   * the overview note focus is in, or its first.
+   */
+  target?(at: At, inside: Element | undefined): Target | undefined;
+  /**
    * Whether what it shows at `at` holds a comment box being written: only the box closing closes
    * it then, so a press outside leaves it be.
    */
@@ -254,9 +259,9 @@ export interface PopHost<At extends PopAt> {
   menu?(target: Element, x: number, y: number, at: At): boolean;
 }
 
-/** Whether `view` shows nothing: no threads, and no comment box. */
+/** Whether `view` shows nothing: no threads, no overview notes, and no comment box. */
 function nothingIn(view: PopoverView): boolean {
-  return view.threads.length === 0 && view.box === undefined;
+  return view.threads.length === 0 && !view.notes?.length && view.box === undefined;
 }
 
 /**
@@ -819,11 +824,14 @@ export class ThreadPop<At extends PopAt> implements Popover<At> {
 
   /**
    * What a key in it acts on: the thread focus is in, or its first, and the comment the ring is
-   * on.
+   * on, or what its view says it shows instead, as an overview note.
    */
-  #target(): ThreadTarget {
+  #target(): Target {
     const active = document.activeElement;
     const inside = active instanceof Element && this.dom.contains(active) ? active : undefined;
+    const other =
+      this.#at && this.#state !== 'closed' ? this.#host.target?.(this.#at, inside) : undefined;
+    if (other) return other;
     const card = inside?.closest<HTMLElement>('[data-thread-id]');
     const thread =
       card?.dataset.threadId ??
@@ -890,6 +898,7 @@ class SharedPop {
       focusLine: (owned) => owned.member.host.focusLine(owned.at),
       scrollBy: (by, owned) => owned.member.host.scrollBy(by, owned.at),
       onMark: (target, owned) => owned.member.host.onMark(target, owned.at),
+      target: (owned, inside) => owned.member.host.target?.(owned.at, inside),
       holds: (owned) => owned.member.host.holds(owned.at),
       release: (owned) => owned.member.host.release(owned.at),
       drawn: (owned) => owned.member.host.drawn(owned.at),

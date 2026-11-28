@@ -1373,7 +1373,8 @@ class Excerpt implements ExcerptView {
   #lineOf(at: Target): { line: number; column: number } | undefined {
     switch (at.kind) {
       case 'line':
-      case 'draft': {
+      case 'draft':
+      case 'note': {
         const place = at.at;
         if (place.file !== this.#id) return undefined;
         const number = 'line' in place ? place.line : Math.max(place.from, place.to);
