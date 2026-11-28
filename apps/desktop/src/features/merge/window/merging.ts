@@ -16,7 +16,15 @@ import { contract as revisionsContract } from '../../revisions/contract.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
 import { activeTab, pullOf, withoutBidi } from '../../tab/window/shared.ts';
-import type { Asked, JobView, MergePlan, MergeState, PlanKind, Refusal } from '../contract.ts';
+import type {
+  Asked,
+  JobView,
+  MergePlan,
+  MergeState,
+  MergeView,
+  PlanKind,
+  Refusal,
+} from '../contract.ts';
 import {
   canOpen,
   closePanel,
@@ -84,14 +92,16 @@ export function canMerge(): true | string {
 
 /**
  * Whether `a` in the open panel can turn auto-merge on, or off, or why not: not while a merge of the
- * pull request Lo sent is at work, which auto-merge turned off is too, one at a time.
+ * pull request Lo sent is at work, which auto-merge turned off is too, one at a time, until the
+ * status says it's off.
  */
 export function canAutoMerge(): true | string {
   const can = canAsk(cantAutoMerge);
   const tab = activeTab();
   if (can !== true || tab?.kind !== 'pull') return can;
   const job = merging.getState().jobs.get(pullKey(tab.owner, tab.repo, tab.number));
-  return job && (job.state.kind === 'sending' || job.state.kind === 'pending')
+  if (!job) return true;
+  return job.state.kind === 'sending' || job.state.kind === 'pending' || offUnread(tab.id, job)
     ? workingOf(job)
     : true;
 }
@@ -120,14 +130,33 @@ export function canOverride(): true | string {
   return canAsk(cantOverride);
 }
 
-/** Whether auto-merge is being turned off for `tab`'s pull request now, as asked or as main says. */
+/**
+ * Whether auto-merge is being turned off for `tab`'s pull request now, as asked or as main says, and
+ * once main says it's off, until the tab's status does.
+ */
 export function turningOff(tab: { id: string; owner: string; repo: string; number: number }) {
   const { turningOff: asked, jobs } = merging.getState();
   if (asked.has(tab.id)) return true;
   const job = jobs.get(pullKey(tab.owner, tab.repo, tab.number));
-  return (
-    job?.kind === 'autoMergeOff' && (job.state.kind === 'sending' || job.state.kind === 'pending')
-  );
+  if (job?.kind !== 'autoMergeOff') return false;
+  return job.state.kind === 'sending' || job.state.kind === 'pending' || offUnread(tab.id, job);
+}
+
+/**
+ * The views' statuses as main said each write it sent turned auto-merge off: main says so on `jobs`
+ * as GitHub answers, and a view's status says so from a read after that, which comes later.
+ */
+const offWhile = new WeakMap<JobView, ReadonlyMap<string, MergeView>>();
+
+/**
+ * Whether main said `job` turned auto-merge off and view `id`'s status, unchanged since, still says
+ * it's on: what the status says next is from then or later, and says how it stands.
+ */
+function offUnread(id: string, job: JobView): boolean {
+  const then = offWhile.get(job);
+  if (!then) return false;
+  const view = statuses.getState().views.get(id);
+  return view === then.get(id) && view?.kind === 'known' && view.state.autoMerge !== null;
 }
 
 /** The views whose `⏎` waits to hear where their pull request sits. */
@@ -708,7 +737,18 @@ const toasted = new Set<string>();
  */
 export function heardJob(job: JobView, quiet = false): void {
   const jobs = new Map(merging.getState().jobs);
-  jobs.set(pullKey(job.owner, job.repo, job.number), job);
+  const pull = pullKey(job.owner, job.repo, job.number);
+  const was = jobs.get(pull);
+  // Main says auto-merge is off as GitHub answers; each view's status says so once read again.
+  if (
+    job.kind === 'autoMergeOff' &&
+    job.state.kind === 'autoMergeOff' &&
+    was?.key === job.key &&
+    was.state.kind !== 'autoMergeOff'
+  ) {
+    offWhile.set(job, statuses.getState().views);
+  }
+  jobs.set(pull, job);
   merging.setState({ jobs });
   if (quiet) {
     const stopped = job.together?.kind === 'chain' && job.together.phase === 'stopped';
