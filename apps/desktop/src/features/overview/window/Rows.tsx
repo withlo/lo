@@ -193,8 +193,12 @@ function InstallCommand({ label, description }: { label: string; description: st
     >
       <Button {...keyAria(keys, undefined)} onClick={() => void copyInstallCommand()}>
         {/* Each face takes the room of the widest, so the button and the row hold still. */}
-        <CopyFaces said={copied}>Copy</CopyFaces>
-        {keys !== undefined && <Key keys={keys} quiet decorative />}
+        <CopyFaces
+          said={copied}
+          chip={keys === undefined ? undefined : <Key keys={keys} quiet decorative />}
+        >
+          Copy
+        </CopyFaces>
       </Button>
       <CopyStatus said={copied} />
     </Setting>

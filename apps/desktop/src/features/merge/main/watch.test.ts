@@ -87,7 +87,7 @@ function setup(opened: Database = database(), facts: MergeFacts = on()) {
   };
   const poller = {
     login: 'rozed-bot',
-    foreground: true,
+    presence: 'front' as const,
     mergeFacts: () => Promise.resolve(cached),
     readAfresh() {
       reads += 1;

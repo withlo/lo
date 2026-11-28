@@ -294,11 +294,11 @@ test('a cached read is refreshed every five minutes and kept across restarts', a
   const refreshed = t.poller.cachedRead(pr(1), COUNTED);
   expect([refreshed?.value, refreshed?.fetchedAt]).toEqual([2, wall(300)]);
   // Not in the background.
-  t.poller.setForeground(false);
+  t.poller.setPresence('away');
   await t.run();
   await t.runUntil(1000);
   expect(answers.runs).toBe(2);
-  t.poller.setForeground(true);
+  t.poller.setPresence('front');
   await t.run();
   await t.runUntil(1001);
   expect(answers.runs).toBe(3);

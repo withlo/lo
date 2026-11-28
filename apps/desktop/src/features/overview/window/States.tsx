@@ -8,6 +8,7 @@ import {
   CopyStatus,
   Countdown,
   EmptyState,
+  Key,
   Problem,
   useCopySaid,
   type CopySaid,
@@ -223,9 +224,17 @@ function copyAction(
   copied: CopySaid | undefined,
 ): ProblemAction | undefined {
   if (prompt === undefined) return undefined;
+  const keys = keyOf(COPY_PROMPT);
   return {
-    label: <CopyFaces said={copied}>Copy prompt</CopyFaces>,
-    keys: keyOf(COPY_PROMPT),
+    // Its key's chip goes in each of its faces, beside the words that show.
+    label: (
+      <CopyFaces
+        said={copied}
+        chip={keys === undefined ? undefined : <Key keys={keys} decorative />}
+      >
+        Copy prompt
+      </CopyFaces>
+    ),
     onClick: () => void copyPrompt(id, prompt),
   };
 }

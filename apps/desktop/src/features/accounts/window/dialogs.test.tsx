@@ -159,7 +159,8 @@ describe('the sign-in dialog', () => {
     await settle();
     expect(bridge.calls).toContainEqual(['accounts.copyCode', { id: 7 }]);
     expect(
-      button(shown, 'Copy').querySelector('.inline-grid > span:not(.invisible)')?.textContent,
+      button(shown, 'Copy').querySelector('.inline-grid > span:not(.invisible)')?.firstChild
+        ?.textContent,
     ).toBe('Copied');
     // The body stays as the account is checked: the code keeps its place, and the button is busy.
     act(() => bridge.push('accounts.signingIn', { kind: 'checking', id: 7 }));
@@ -229,7 +230,8 @@ describe('the sign-in dialog', () => {
     await settle();
     expect(bridge.calls).toContainEqual(['accounts.copyCode', { id: 7 }]);
     expect(
-      button(shown, 'Copy').querySelector('.inline-grid > span:not(.invisible)')?.textContent,
+      button(shown, 'Copy').querySelector('.inline-grid > span:not(.invisible)')?.firstChild
+        ?.textContent,
     ).toBe('Copied');
     press(shown ?? document.body, 'Escape');
     await settle();
