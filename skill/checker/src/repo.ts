@@ -80,12 +80,19 @@ export const SKILL_FOLDER = '.claude/skills/lo-overview';
 export const CLAUDE_COMMAND = `node "$CLAUDE_PROJECT_DIR/${SKILL_FOLDER}/hook.mjs"`;
 
 /**
- * The command Codex runs the hook with, from the folder its session started in, which may be one in
- * the clone. Codex asks each person to trust a hook once, and asks again when its command changes,
- * so it stays the same in every version.
+ * The command Codex runs the hook with, through the person's shell (`$SHELL -lc`), from the folder
+ * its session started in, which may be one in the clone: so the hook is found from the clone's top,
+ * as Codex's documentation advises. Codex asks each person to trust a hook once, and asks again when
+ * its command changes, so it stays the same in every version.
  */
 export const CODEX_COMMAND =
   'node "$(git rev-parse --show-toplevel)/.agents/skills/lo-overview/hook.mjs"';
+
+/**
+ * The command Codex runs the hook with on Windows, through `cmd /C`, which has no `$(…)`: from the
+ * clone's top, where a session started there finds it.
+ */
+export const CODEX_WINDOWS_COMMAND = 'node .agents/skills/lo-overview/hook.mjs';
 
 /**
  * How long Claude Code and Codex give the hook, in seconds: it asks `gh` for a pushed branch's pull
@@ -124,7 +131,14 @@ export const CLAUDE_GROUPS = [
 export const CODEX_GROUPS = [
   {
     matcher: 'Bash|mcp__.*__create_pull_request',
-    hooks: [{ type: 'command', command: CODEX_COMMAND, timeout: TIMEOUT }],
+    hooks: [
+      {
+        type: 'command',
+        command: CODEX_COMMAND,
+        commandWindows: CODEX_WINDOWS_COMMAND,
+        timeout: TIMEOUT,
+      },
+    ],
   },
 ];
 

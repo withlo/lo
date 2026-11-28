@@ -4,9 +4,11 @@
  * writer for the same pull request, and records one follow-up instead for a push that comes in;
  * `done` hands the writer that follow-up, so it writes the overview once more, for the pull request
  * as it is then. The lock is the hook's own (`hook.mjs`), kept in a folder of the person's in the
- * temporary folder, and lapses on its own after a while, so a writer that never says it's done
- * holds nothing for long.
+ * repository's git folder, which a command in Claude Code's sandbox can write too, and lapses on its
+ * own after a while, so a writer that never says it's done holds nothing for long.
  */
+
+import { resolve } from 'node:path';
 
 import { giveBack, keepLock, LOCK_MS, pullOf } from '@lo/skill/hook.mjs';
 
@@ -32,37 +34,60 @@ export interface Started {
   said: string;
 }
 
-/** Takes, or keeps, the lock on writing the overview of the pull request `link` names. */
-export function start(link: string, env: NodeJS.ProcessEnv): Started {
+/**
+ * Takes, or keeps, the lock on writing the overview of the pull request `link` names, in the git
+ * folder of the repository `repo` is in.
+ */
+export function start(link: string, repo: string, env: NodeJS.ProcessEnv): Started {
   const pull = pullNamed(link);
+  const dir = resolve(repo);
   const minutes = LOCK_MS / 60_000;
-  return keepLock(pull, { env }) === 'kept'
+  return keepLock(pull, { dir, env }) === 'kept'
     ? {
         locked: true,
         said: `Lo marked the overview of ${pull.url} as being written, for ${minutes} minutes, or until done says otherwise.`,
       }
     : {
         locked: false,
-        said: `Lo couldn't mark the overview of ${pull.url} as being written, since it has no folder of its own to do it in. Go on: only another writer may start meanwhile.`,
+        said: `Lo couldn't mark the overview of ${pull.url} as being written: it couldn't write its lock in the git folder of ${dir}. Go on, and say so when you report: a push meanwhile may start another writer.`,
       };
 }
 
-/** What `done` said: whether to write the overview again, and in words. */
+/**
+ * What `done` said: whether to write the overview again, whether it couldn't tell, and in words.
+ */
 export interface Done {
   again: boolean;
+  failed: boolean;
   said: string;
 }
 
 /**
- * Gives back the lock on writing the overview of the pull request `link` names, or, when a push
- * came in meanwhile, keeps it and says to write the overview again.
+ * Gives back the lock on writing the overview of the pull request `link` names, in the git folder of
+ * the repository `repo` is in, or, when a push came in meanwhile, keeps it and says to write the
+ * overview again.
  */
-export function done(link: string, env: NodeJS.ProcessEnv): Done {
+export function done(link: string, repo: string, env: NodeJS.ProcessEnv): Done {
   const pull = pullNamed(link);
-  return giveBack(pull, { env }) === 'again'
-    ? {
-        again: true,
-        said: `A push came in while you wrote: write the overview of ${pull.url} again, for the pull request as it is now, starting from the overview you pushed. Then run done again.`,
-      }
-    : { again: false, said: `Nothing came in while you wrote the overview of ${pull.url}.` };
+  const dir = resolve(repo);
+  const given = giveBack(pull, { dir, env });
+  if (given === 'again') {
+    return {
+      again: true,
+      failed: false,
+      said: `A push came in while you wrote: write the overview of ${pull.url} again, for the pull request as it is now, starting from the overview you pushed. Then run done again.`,
+    };
+  }
+  if (given === 'done') {
+    return {
+      again: false,
+      failed: false,
+      said: `Nothing came in while you wrote the overview of ${pull.url}.`,
+    };
+  }
+  return {
+    again: false,
+    failed: true,
+    said: `Lo couldn't say the overview of ${pull.url} is written: it couldn't read or write its lock in the git folder of ${dir}. Say so when you report: a push that came in while you wrote may get no overview.`,
+  };
 }

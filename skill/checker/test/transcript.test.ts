@@ -41,6 +41,18 @@ beforeAll(() => {
 
 afterAll(() => root.remove());
 
+/** `text`'s lines, each wrapped at `width`, as a terminal shows them. */
+function wrap(text: string, width: number): string {
+  return text
+    .split('\n')
+    .flatMap((line) =>
+      Array.from({ length: Math.max(1, Math.ceil(line.length / width)) }, (_, index) =>
+        line.slice(index * width, (index + 1) * width),
+      ),
+    )
+    .join('\n');
+}
+
 /** A new empty folder. */
 function fresh(name = 'case'): string {
   const dir = join(realpathSync(root.dir), `${name}-${made++}`);
@@ -423,6 +435,101 @@ describe('what the copy holds', () => {
     expect(redacted('a sk-short key, the token generation, ghp_ alone')).toBe(
       'a sk-short key, the token generation, ghp_ alone',
     );
+  });
+
+  // Each made up here from pieces, so that no scanner takes the test for a leak.
+  const tail = 'Ab3dEf6hIj9lMn2pQr5tUv8xYz1b';
+
+  test.each([
+    ['GitLab', `glpat-${tail}`],
+    ['npm', `npm_${tail}${tail}`],
+    ['Slack', ['xox', 'b-1234567890-', tail].join('')],
+    ['Stripe', ['s', 'k_live_', tail].join('')],
+    ['Stripe, restricted', ['r', 'k_live_', tail].join('')],
+    ['AWS', ['AK', 'IAIOSFODNN7EXAMPLE'].join('')],
+  ])('leaves out a %s token', (_kind, token) => {
+    expect(redacted(`said ${token} here`)).toBe('said [redacted] here');
+  });
+
+  test('leaves out the value a secret’s name is set to', () => {
+    expect(
+      redacted(
+        [
+          `STRIPE_SECRET=${tail}`,
+          `DB_PASSWORD='hunter two'`,
+          `export OPENAI_API_KEY="${tail}"`,
+          `aws_secret_access_key = ${tail}/K7MDENG`,
+          `password=${tail}`,
+          `const apiKey = '${tail}';`,
+          `{ "SecretAccessKey": "${tail}", "client_secret": "${tail}" }`,
+          'TOKEN=""',
+        ].join('\n'),
+      ),
+    ).toBe(
+      [
+        'STRIPE_SECRET=[redacted]',
+        "DB_PASSWORD='[redacted]'",
+        'export OPENAI_API_KEY="[redacted]"',
+        'aws_secret_access_key = [redacted]',
+        'password=[redacted]',
+        "const apiKey = '[redacted]';",
+        '{ "SecretAccessKey": "[redacted]", "client_secret": "[redacted]" }',
+        'TOKEN=""',
+      ].join('\n'),
+    );
+    // Names that aren't a secret's, comparisons and counts stay.
+    const kept = 'MAX_TOKENS=4096\nif (token === undefined) return\nmonkey=1\nKEY_ID=7';
+    expect(redacted(kept)).toBe(kept);
+  });
+
+  test('leaves out a private key’s block, or what’s left of one cut short', () => {
+    const body = Array.from({ length: 3 }, () => `MII${tail}${tail}`).join('\n');
+    expect(
+      redacted(
+        `key:\n-----BEGIN OPENSSH PRIVATE KEY-----\n${body}\n-----END OPENSSH PRIVATE KEY-----\nok`,
+      ),
+    ).toBe(
+      'key:\n-----BEGIN OPENSSH PRIVATE KEY-----\n[redacted]\n-----END OPENSSH PRIVATE KEY-----\nok',
+    );
+    // As JSON holds it, on one line.
+    expect(
+      redacted(
+        `"private_key": "-----BEGIN PRIVATE KEY-----\\n${tail}\\n-----END PRIVATE KEY-----\\n"`,
+      ),
+    ).toBe('"private_key": "[redacted]"');
+    // Its end cut off, or its start.
+    expect(redacted(`-----BEGIN RSA PRIVATE KEY-----\n${body}`)).toBe(
+      '-----BEGIN RSA PRIVATE KEY-----\n[redacted]\n-----END RSA PRIVATE KEY-----',
+    );
+    expect(redacted(`[… 20 lines cut]\n${body}\n-----END RSA PRIVATE KEY-----`)).toBe(
+      '[… 20 lines cut]\n[redacted]\n-----END RSA PRIVATE KEY-----',
+    );
+  });
+
+  test('leaves out a token wrapped across lines, however short its first piece', () => {
+    const token = `ghp_${tail}${tail}`;
+    expect(redacted(wrap(`export GH_TOKEN=${token}\nnext`, 40))).toBe(
+      'export GH_TOKEN=[redacted]\n[redacted]\nnext',
+    );
+    // A first piece of a few characters, and a last one followed by what came after it.
+    expect(redacted(wrap(`curl -H 'Authorization: token ${token}' https://x\ndone`, 32))).toBe(
+      "curl -H 'Authorization: [redacted]\n[redacted]\n[redacted]' http\ns://x\ndone",
+    );
+    expect(redacted(wrap(`${'x'.repeat(31)} ${token}`, 40))).toBe(
+      `${'x'.repeat(31)} [redacted]\n[redacted]\n[redacted]`,
+    );
+    // Its start broken, too.
+    expect(redacted(wrap(`${'x'.repeat(36)} ${token}`, 40))).toBe(
+      `${'x'.repeat(36)} [redacted]\n[redacted]\n[redacted]`,
+    );
+    // A value's, too.
+    expect(redacted(wrap(`STRIPE_SECRET=${tail}${tail}${tail}`, 30))).toBe(
+      'STRIPE_SECRET=[redacted]\n[redacted]\n[redacted]\n[redacted]',
+    );
+    // Cut short where the line was too long.
+    expect(redacted(`${'x'.repeat(30)} ghp_Ab3 […]`)).toBe(`${'x'.repeat(30)} [redacted] […]`);
+    // A line after one that ends in a secret's value, but isn't made of its characters, stays.
+    expect(redacted(`TOKEN=${tail}\necho done`)).toBe('TOKEN=[redacted]\necho done');
   });
 
   test('keeps the start and the end of what a command printed', () => {

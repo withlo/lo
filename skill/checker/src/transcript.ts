@@ -398,17 +398,204 @@ export const HEADING = '@@ ';
 const REDACTED = '[redacted]';
 
 /**
- * `text` with what reads as a secret replaced by `REDACTED`: GitHub's tokens, keys of the form
- * `sk-…`, a bearer token, an `Authorization:` header's value, and the password or token in an
- * address such as `https://user:token@host`.
+ * A kind of secret, as it's found in a line: `lead`, which is kept, then `secret`, which goes.
+ */
+interface Secret {
+  find: RegExp;
+  /** The characters it's made of, as a class's insides: a line it goes on to is made of them. */
+  body: string;
+  /** The fewest characters `secret` has to read as one, unless the line breaks it. */
+  least: number;
+  /** Whether its start alone marks it, so that even a short piece at a line's end goes. */
+  marked: boolean;
+  /** What `secret` is replaced with. */
+  put?: (secret: string) => string;
+}
+
+/**
+ * Tokens known by how they start, each with what follows, how long a whole one is at least, and
+ * whether its start alone marks it.
+ */
+const TOKENS: readonly [start: string, body: string, least: number, marked: boolean][] = [
+  // GitHub's.
+  ['gh[opusr]_', 'A-Za-z0-9', 20, true],
+  ['github_pat_', 'A-Za-z0-9_', 27, true],
+  // GitLab's, npm's, Slack's and Stripe's.
+  ['glpat-', 'A-Za-z0-9_-', 22, true],
+  ['npm_', 'A-Za-z0-9', 20, true],
+  ['xox[abeprs]-', 'A-Za-z0-9-', 15, true],
+  ['[rs]k_(?:live|test)_', 'A-Za-z0-9', 18, true],
+  // AWS's access key ids, and keys such as OpenAI's and Anthropic's, whose starts a word may have.
+  ['(?:AKIA|ASIA)', 'A-Z0-9', 20, false],
+  ['sk-', 'A-Za-z0-9_-', 19, false],
+];
+
+/** What a value a secret's name is set to is, after `=`: quoted, or a word. */
+const VALUE = String.raw`(?<secret>"[^"\n]*"?|'[^'\n]*'?|[^\s"'\x60;,)]+)`;
+
+/** A name that reads as a secret's, as an environment variable's: `API_KEY`, `password`. */
+const ENV_NAME = String.raw`(?:(?:[A-Za-z0-9]+_)+(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PAT)|TOKEN|SECRET|PASSWORD|PASSWD)`;
+
+/** A name that reads as a secret's, in camel case: `apiKey`, `SecretAccessKey`. */
+const CAMEL_NAME = String.raw`[A-Za-z][A-Za-z0-9]*[a-z0-9](?:Key|Token|Secret|Password)`;
+
+/** A value as it's replaced: in its quotes, if it has them; one that's empty is kept. */
+function quoted(secret: string): string {
+  const quote = /^["']/.exec(secret)?.[0];
+  if (quote === undefined) return REDACTED;
+  const inner = secret.slice(1).replace(new RegExp(`${quote}$`), '');
+  if (inner === '') return secret;
+  return `${quote}${REDACTED}${secret.length > 1 && secret.endsWith(quote) ? quote : ''}`;
+}
+
+/** The characters of a value that goes on to the next line. */
+const VALUE_BODY = 'A-Za-z0-9_+/-';
+
+const SECRETS: readonly Secret[] = [
+  ...TOKENS.map(([start, body, least, marked]) => ({
+    find: new RegExp(`(?<![A-Za-z0-9_])(?<lead>)(?<secret>${start}[${body}]+)`, 'g'),
+    body,
+    least,
+    marked,
+  })),
+  {
+    find: new RegExp(String.raw`(?<![A-Za-z0-9_])(?<lead>${ENV_NAME}\s*=(?!=)\s*)${VALUE}`, 'gi'),
+    body: VALUE_BODY,
+    least: 1,
+    marked: false,
+    put: quoted,
+  },
+  {
+    find: new RegExp(String.raw`(?<![A-Za-z0-9_])(?<lead>${CAMEL_NAME}\s*=(?!=)\s*)${VALUE}`, 'g'),
+    body: VALUE_BODY,
+    least: 1,
+    marked: false,
+    put: quoted,
+  },
+  {
+    find: new RegExp(String.raw`(?<lead>"${ENV_NAME}"\s*:\s*)(?<secret>"[^"\n]*"?)`, 'gi'),
+    body: VALUE_BODY,
+    least: 1,
+    marked: false,
+    put: quoted,
+  },
+  {
+    find: new RegExp(String.raw`(?<lead>"${CAMEL_NAME}"\s*:\s*)(?<secret>"[^"\n]*"?)`, 'g'),
+    body: VALUE_BODY,
+    least: 1,
+    marked: false,
+    put: quoted,
+  },
+  {
+    find: /\b(?<lead>Bearer\s+)(?<secret>[A-Za-z0-9._~+/=-]+)/gi,
+    body: 'A-Za-z0-9._~+/=-',
+    least: 12,
+    marked: false,
+  },
+  {
+    find: /^(?<lead>.*?\bAuthorization:)(?<secret>.*)$/gi,
+    body: 'A-Za-z0-9._~+/=-',
+    least: 0,
+    marked: true,
+    put: () => ` ${REDACTED}`,
+  },
+];
+
+/** A private key's block, from its first line to its last, or to the end when that's cut off. */
+const KEY_BLOCK =
+  /-----BEGIN (?<kind>(?:[A-Z0-9]+ )*)PRIVATE KEY-----[\s\S]*?(?:-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----|$)/g;
+
+/** The end of a private key's block whose start was cut off: its lines before its last. */
+const KEY_TAIL =
+  /^(?:[ \t]*[A-Za-z0-9+/=]{16,}[ \t]*\n)+(?=[ \t]*-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----)/gm;
+
+/** The password or token in an address such as `https://user:token@host`. */
+const ADDRESS_USER = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi;
+
+/** What a command prints where it cut a long line short. */
+const CUT_LINE = ' […]';
+
+/**
+ * `text` with what reads as a secret replaced by `REDACTED`: tokens known by how they start
+ * (GitHub's, GitLab's, npm's, Slack's, Stripe's, AWS's, and keys of the form `sk-…`), the value a
+ * name such as `API_KEY` or `password` is set to, a bearer token, an `Authorization:` header's
+ * value, a private key's block, and the password or token in an address such as
+ * `https://user:token@host`. A secret that runs to a line's end goes on in the lines after that are
+ * made of its characters, as a long one wraps, and those go too.
  */
 export function redacted(text: string): string {
-  return text
-    .replace(/\b(?:gh[opusr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{16,})/g, REDACTED)
-    .replace(/\bsk-[A-Za-z0-9_-]{16,}/g, REDACTED)
-    .replace(/\b(Bearer)\s+[A-Za-z0-9._~+/=-]{12,}/gi, `$1 ${REDACTED}`)
-    .replace(/^(.*?\bAuthorization:)[^\n]*/gim, `$1 ${REDACTED}`)
-    .replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi, `$1${REDACTED}@`);
+  const lines = text
+    .replace(KEY_BLOCK, (whole, kind: string) => {
+      // On lines of its own, or on one, as a JSON string holds it.
+      const between = whole.includes('\n') ? '\n' : String.raw`\n`;
+      return `-----BEGIN ${kind}PRIVATE KEY-----${between}${REDACTED}${between}-----END ${kind}PRIVATE KEY-----`;
+    })
+    .replace(KEY_TAIL, `${REDACTED}\n`)
+    .replace(ADDRESS_USER, `$1${REDACTED}@`)
+    .split('\n');
+  /**
+   * A secret the line before broke off at its end: the characters it's made of, which this line
+   * may go on with, and how long the line it started on was, as each line it wraps onto is but its
+   * last.
+   */
+  let going: { body: string; width: number } | undefined;
+  for (let at = 0; at < lines.length; at++) {
+    let line = lines[at] ?? '';
+    const width = line.trimEnd().length;
+    if (going !== undefined) {
+      const whole = new RegExp(String.raw`^(\s*)[${going.body}]+=*\s*$`).exec(line);
+      if (whole) {
+        lines[at] = `${whole[1] ?? ''}${REDACTED}`;
+        if (width < going.width) going = undefined;
+        continue;
+      }
+      // Its last piece, followed by what came after it, such as a closing quote.
+      const tail = new RegExp(String.raw`^(\s*)[${going.body}]+=*(?=["'\x60,;)\]}>])`).exec(line);
+      if (tail) line = `${tail[1] ?? ''}${REDACTED}${line.slice(tail[0].length)}`;
+      going = undefined;
+    }
+    const next = lines[at + 1];
+    for (const secret of SECRETS) {
+      const goesOn =
+        next !== undefined && new RegExp(String.raw`^\s*[${secret.body}]+=*\s*$`).test(next);
+      let out = '';
+      let last = 0;
+      for (const found of line.matchAll(secret.find)) {
+        const lead = found.groups?.lead ?? '';
+        const value = found.groups?.secret ?? '';
+        const end = found.index + found[0].length;
+        const atEnd = line.slice(end).trim() === '';
+        const cut = line.startsWith(CUT_LINE, end);
+        const taken =
+          value.length >= secret.least ||
+          (secret.marked && (atEnd || cut)) ||
+          (atEnd && goesOn && value !== '');
+        out += line.slice(last, found.index) + lead;
+        out += taken ? (secret.put?.(value) ?? REDACTED) : value;
+        last = end;
+        const closed = value.length > 1 && /^(["']).*\1$/.test(value);
+        if (taken && atEnd && goesOn && !closed) going = { body: secret.body, width };
+      }
+      line = out + line.slice(last);
+    }
+    if (going === undefined && next !== undefined) {
+      // A token whose start the line broke off: `gh` at its end, `p_…` on the next.
+      const piece = /(?<![A-Za-z0-9_-])[A-Za-z0-9_-]+$/.exec(line.trimEnd());
+      const joined = `${piece?.[0] ?? ''}${next.trimStart()}`;
+      const split = TOKENS.some(
+        ([start, body, , marked]) =>
+          marked &&
+          piece !== null &&
+          (new RegExp(`^(?:${start})[${body}]+`).exec(joined)?.[0].length ?? 0) > piece[0].length,
+      );
+      if (split && piece !== null) {
+        line = `${line.slice(0, piece.index)}${REDACTED}${line.slice(piece.index + piece[0].length)}`;
+        going = { body: 'A-Za-z0-9_-', width };
+      }
+    }
+    lines[at] = line;
+  }
+  return lines.join('\n');
 }
 
 /**

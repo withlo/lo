@@ -68,10 +68,10 @@ The skill runs the checker's other commands itself, by the exact version it was 
 glossary's marks against the repository's definitions at `refs/lo/terms`, when it has them. `commit`
 checks it, then writes it as a commit to push to the pull request's ref, or the stack's.
 `transcript --out <folder>` copies the agent's session, Claude Code's or Codex's, as text the skill
-reads. `start <link>` and `done <link>` mark the pull request's overview as being written, so the
-hook starts no other writer for it meanwhile, and say whether a push came in that it's to write the
-overview again for. `lo-overview --help` lists every command and option
-(`npx @withlo/overview --help` runs it).
+reads. `start <link>` and `done <link>` mark the pull request's overview as being written, in the
+git folder of the clone `--repo` names, so the hook starts no other writer for it meanwhile, and say
+whether a push came in that it's to write the overview again for. `lo-overview --help` lists every
+command and option (`npx @withlo/overview --help` runs it).
 
 ## The repository's workflow
 

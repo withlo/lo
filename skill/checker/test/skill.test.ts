@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { pullOf, takeLock } from '@lo/skill/hook.mjs';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 import { git, gitBytes, testGitEnvironment } from '@lo/testing/git';
@@ -236,6 +237,8 @@ describe('SKILL.md', () => {
       "'<n>'": '4797',
       "'<stack>'": '4790',
       "'<link>'": 'https://github.com/acme/demo/pull/4797',
+      // The git folder of the clone the writer started in, whose lock it keeps.
+      "'<local>'": join(repo, '.git'),
     };
     const said = npx.map((line) => {
       const [, spec, rest] = shape.exec(line) ?? [];
@@ -244,23 +247,30 @@ describe('SKILL.md', () => {
     });
     const link = 'https://github.com/acme/demo/pull/4797';
     expect(said.map(({ spec, args }) => `${spec} ${args.join(' ')}`)).toEqual([
-      `${manifest.name}@{version} start ${link}`,
+      `${manifest.name}@{version} start ${link} --repo ${join(repo, '.git')}`,
       `${manifest.name}@{version} transcript --out ${work}`,
       `${manifest.name}@{version} check ${dir} --pr 4797 --repo ${repo}`,
       `${manifest.name}@{version} commit ${dir} --pr 4797 --repo ${repo}`,
       `${manifest.name}@{version} check ${stack} --stack 4790 --repo ${repo}`,
       `${manifest.name}@{version} commit ${stack} --stack 4790 --repo ${repo}`,
-      `${manifest.name}@{version} done ${link}`,
+      `${manifest.name}@{version} done ${link} --repo ${join(repo, '.git')}`,
     ]);
 
-    // Marked as being written, and done, with the hook's lock between.
-    const locks = { PATH: process.env.PATH, LO_OVERVIEW_TMP: work };
+    // Marked as being written, and done, with the hook's lock between, in the git folder of the
+    // clone it started in, where the hook keeps it.
+    const pull = pullOf(link);
+    if (pull === undefined) throw new Error('Not a link.');
     const [start, , , , , , done] = said;
-    expect(runChecker(start!.args, join(work, 'tools'), locks)).toMatchObject({
+    expect(runChecker(start!.args, join(work, 'tools'))).toMatchObject({
       status: 0,
       stdout: expect.stringContaining(`Lo marked the overview of ${link} as being written`),
     });
-    expect(runChecker(done!.args, join(work, 'tools'), locks)).toMatchObject({
+    expect(takeLock(pull, { dir: repo })).toBe('held');
+    expect(runChecker(done!.args, join(work, 'tools'))).toMatchObject({
+      status: 0,
+      stdout: expect.stringContaining(`A push came in while you wrote`),
+    });
+    expect(runChecker(done!.args, join(work, 'tools'))).toMatchObject({
       status: 0,
       stdout: `Nothing came in while you wrote the overview of ${link}.\n`,
     });

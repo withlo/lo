@@ -70,8 +70,8 @@ figures'. In a shell, a name such as `$(curl …)` runs, so:
 - **Single-quote every value** you put in a command, as the commands below do: `'<path>'`. Inside
   single quotes, the shell reads nothing as code.
 - **A value holding a `'` never goes in a command.** If it's a file's path, leave that file out of
-  the overview, and say so in it. If it's `<local>` in step 1, make an empty clone instead. If it's
-  anything else, stop.
+  the overview, and say so in it. If it's `<local>` in step 1, make an empty clone instead, and have
+  no `<local>`. If it's anything else, stop.
 - **Never use double quotes,** or a value bare, where the commands below single-quote it.
 - **Check these before you use them,** and stop if one isn't so: `<commit>`, `<top>`, `<id>` and
   `<stack-id>` are 40 or 64 lowercase hexadecimal digits; `<n>`, `<stack>` and every other number is
@@ -136,7 +136,8 @@ git init --quiet '<work>/clone'
 ```
 
 Your clone has none of a repository's hooks or settings, so fetching and pushing in it runs nothing
-of theirs. Never change the clone you started in, or anything else outside `<work>`.
+of theirs. Never change the clone you started in, or anything else outside `<work>`: only `start`
+and `done`, below, write there, in a folder of Lo's own in `<local>`.
 
 Your overviews' commits are by whoever the clone you started in commits as. From the folder you
 started in, copy that name and email address to your clone, with the author's and committer's where
@@ -220,14 +221,16 @@ git -C '<work>/clone' diff --no-ext-diff --no-textconv 'refs/writer/base...<comm
 Read the changed files as they are at `<commit>`, and the code around them, with
 `git -C '<work>/clone' cat-file blob '<commit>:<path>'`.
 
-Then mark the overview as being written, so that Lo's hook starts no other writer for this pull
-request while you write, and keeps a push that comes in meanwhile for you. It holds for 30 minutes:
+Then, when step 1 found `<local>`, mark the overview as being written, so that Lo's hook starts no
+other writer for this pull request while you write, and keeps a push that comes in meanwhile for
+you. It holds for 30 minutes:
 
 ```sh
-(cd '<work>/tools' && npx --prefix '<work>/tools' --yes @withlo/overview@{version} start '<link>')
+(cd '<work>/tools' && npx --prefix '<work>/tools' --yes @withlo/overview@{version} start '<link>' --repo '<local>')
 ```
 
-From here on, whatever happens, step 13 says you're done.
+If it says it couldn't, go on, and say so when you report. From here on, whatever happens, step 13
+says you're done.
 
 ## 3. Read the handoff and the transcript
 
@@ -655,13 +658,15 @@ git -C '<work>/clone' ls-remote '<url>' 'refs/lo/stack/<stack>'
 
 Name the fork with `<fork-url>` in place of `<url>` where you pushed there.
 
-Then say you're done with the pull request, pushed or not, so that Lo's hook can start a writer for
-it again. Name it by `<link>`, or, when you stopped before step 2 found it, by `<pr>` if that's a
-link; skip this only when you have neither:
+Then, when step 1 found `<local>`, say you're done with the pull request, pushed or not, so that
+Lo's hook can start a writer for it again. Name it by `<link>`, or, when you stopped before step 2
+found it, by `<pr>` if that's a link; skip this when you have neither:
 
 ```sh
-(cd '<work>/tools' && npx --prefix '<work>/tools' --yes @withlo/overview@{version} done '<link>')
+(cd '<work>/tools' && npx --prefix '<work>/tools' --yes @withlo/overview@{version} done '<link>' --repo '<local>')
 ```
+
+If it says it couldn't, say so when you report, and go on.
 
 When it says a push came in while you wrote, the pull request has changed since step 2 read it:
 

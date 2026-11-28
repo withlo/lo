@@ -49,8 +49,8 @@ Usage:
   lo-overview check [<dir>] [--pr <number> | --stack <number>] [--repo <folder>] [--json]
   lo-overview commit <dir> (--pr <number> | --stack <number>) [--repo <folder>] [--json]
   lo-overview transcript --out <folder> [--from <file>] [--json]
-  lo-overview start <pull request's link> [--json]
-  lo-overview done <pull request's link> [--json]
+  lo-overview start <pull request's link> [--repo <folder>] [--json]
+  lo-overview done <pull request's link> [--repo <folder>] [--json]
   lo-overview keep --pr <number>
   lo-overview fold --pr <number>
 
@@ -75,8 +75,8 @@ Commands:
             Copy the transcript of the coding agent's session as text, to <folder>/transcript.txt:
             its messages, and the commands it ran with their exit codes. The session is the one
             --from names, or the one Claude Code or Codex says is running.
-  start     Mark the overview of the pull request as being written, so that the skill's hook
-            starts no other writer for it meanwhile.
+  start     Mark the overview of the pull request as being written, in the repository's git
+            folder, so that the skill's hook starts no other writer for it meanwhile.
   done      Say the overview is written. When a push came in meanwhile, it says to write it again.
   keep      For the repository's workflow: when pull request <number> comes from a fork, copy
             the fork's refs/lo/pr/<number>, and the stack overview its header names, to
@@ -99,7 +99,8 @@ Options:
                   The stack the overview is for, when it's a stack's. Its header must name the
                   same one, in place of a pull request.
   --repo <folder> The pull request's repository: the one the current folder is in unless given.
-                  For install, the clone to install the skill in.
+                  For install, the clone to install the skill in; for start and done, the clone
+                  whose git folder keeps the lock.
   --out <folder>  The folder to write transcript.txt in.
   --from <file>   The transcript to copy: a Claude Code or Codex session's .jsonl or .jsonl.zst.
   --json          Print what was found, or done, as JSON.
@@ -118,7 +119,7 @@ type Command =
   | { kind: 'check'; dir: string; on: OnRef; repo: string | undefined; json: boolean }
   | { kind: 'commit'; dir: string; owner: Owner; repo: string | undefined; json: boolean }
   | { kind: 'transcript'; out: string; from: string | undefined; json: boolean }
-  | { kind: 'start' | 'done'; link: string; json: boolean }
+  | { kind: 'start' | 'done'; link: string; repo: string; json: boolean }
   | { kind: 'keep' | 'fold'; pr: number };
 
 /** Where the checker writes. */
@@ -167,14 +168,12 @@ export async function main(
             streams,
           );
         case 'start': {
-          const { locked, said } = start(command.link, process.env);
-          streams.out(command.json ? `${JSON.stringify({ locked }, null, 2)}\n` : `${said}\n`);
-          return 0;
+          const { locked, said } = start(command.link, command.repo, process.env);
+          return lockSaid(locked, said, { locked }, command.json, streams);
         }
         case 'done': {
-          const { again, said } = done(command.link, process.env);
-          streams.out(command.json ? `${JSON.stringify({ again }, null, 2)}\n` : `${said}\n`);
-          return 0;
+          const { again, failed, said } = done(command.link, command.repo, process.env);
+          return lockSaid(!failed, said, { again, failed }, command.json, streams);
         }
         case 'check': {
           const git = gitIn(repository(command.repo));
@@ -308,10 +307,10 @@ function parse(args: readonly string[]): Command {
     }
     case 'start':
     case 'done': {
-      if (rest.length !== 1 || pr !== undefined || stack !== undefined || repoNamed) {
-        throw new Error(`${name} takes the pull request's link, and nothing else.`);
+      if (rest.length !== 1 || pr !== undefined || stack !== undefined) {
+        throw new Error(`${name} takes the pull request's link, and --repo <folder>.`);
       }
-      return { kind: name, link: rest[0]!, json };
+      return { kind: name, link: rest[0]!, repo: repo ?? '.', json };
     }
     case 'check': {
       if (rest.length > 1) throw new Error('check takes one folder.');
@@ -464,6 +463,23 @@ function copied(copy: Copied, json: boolean, streams: Streams): number {
     `Copied ${copy.source} to ${copy.path}: ${copy.messages} messages and ${copy.commands} commands${cut}.\n`,
   );
   return 0;
+}
+
+/**
+ * Says what `start` or `done` did, `said`, or that it couldn't, when it isn't `ok`, and returns the
+ * exit status: 2 when it couldn't keep or give back the lock.
+ */
+function lockSaid(
+  ok: boolean,
+  said: string,
+  shown: Record<string, boolean>,
+  json: boolean,
+  streams: Streams,
+): number {
+  if (json) streams.out(`${JSON.stringify(shown, null, 2)}\n`);
+  else if (ok) streams.out(`${said}\n`);
+  else streams.err(`${said}\n`);
+  return ok ? 0 : 2;
 }
 
 /**

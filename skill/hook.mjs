@@ -16,8 +16,9 @@
  * - the pull request can't be found, or isn't open.
  *
  * One writer per pull request: the hook takes a lock for it in a folder of the person's own in the
- * temporary folder, which `start` and `done` in `@withlo/overview` take and give back. When a writer
- * holds it, the hook records one follow-up, which `done` hands the writer, so it runs once more.
+ * repository's git folder, which `start` and `done` in `@withlo/overview` take and give back. When a
+ * writer holds it, the hook records one follow-up, which `done` hands the writer, so it runs once
+ * more.
  *
  * What it reads is the agent's command and what the command printed, so it's never run, and only
  * a pull request's link that reads back the same goes into what it answers. Whatever goes wrong,
@@ -43,7 +44,7 @@ import {
   utimesSync,
   writeSync,
 } from 'node:fs';
-import { homedir, platform, tmpdir, userInfo } from 'node:os';
+import { homedir, platform } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -703,22 +704,23 @@ export function offBy(top, env) {
 // --- One writer per pull request ------------------------------------------------------------------
 
 /**
- * The folder the locks are kept in: one of the person's own in `/tmp`, made for them alone, or
- * `undefined` when it can't be, or is someone else's, or open to others. It's `/tmp`, not `TMPDIR`,
- * since Claude Code gives a command in its sandbox a `TMPDIR` of its own, which the hook, run
- * outside it, doesn't see. `LO_OVERVIEW_TMP` names another folder in its place, as tests do; on
- * Windows it's the person's temporary folder.
+ * The folder the locks for the repository at `dir` are kept in: `lo-overview` in its git folder,
+ * the one its worktrees share, made for the person alone; or `undefined` when there's no repository,
+ * or the folder can't be made, is a link, or is someone else's or open to others. It's there, not in
+ * a temporary folder, since Claude Code gives a command in its sandbox a temporary folder of its
+ * own, which the hook, run outside it, doesn't see, and lets it write in little else but the
+ * repository it works in.
  *
+ * @param {string | undefined} dir
  * @param {NodeJS.ProcessEnv} env
  * @returns {string | undefined}
  */
-export function lockFolder(env = process.env) {
+export function lockFolder(dir, env = process.env) {
+  if (dir === undefined) return undefined;
+  const common = gitLine(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir'], env);
+  if (common === undefined || !isAbsolute(common)) return undefined;
   const uid = typeof process.getuid === 'function' ? process.getuid() : undefined;
-  const who = uid ?? safeName(userInfo().username);
-  const named = env.LO_OVERVIEW_TMP;
-  const base =
-    named !== undefined && isAbsolute(named) ? named : platform() === 'win32' ? tmpdir() : '/tmp';
-  const folder = join(base, `lo-overview-${who}`);
+  const folder = join(common, 'lo-overview');
   try {
     mkdirSync(folder, { mode: 0o700 });
   } catch (error) {
@@ -732,15 +734,6 @@ export function lockFolder(env = process.env) {
   } catch {
     return undefined;
   }
-}
-
-/**
- * `name` with only letters, digits, `-` and `_` kept.
- *
- * @param {string} name
- */
-function safeName(name) {
-  return name.replace(/[^A-Za-z0-9_-]/g, '_') || 'user';
 }
 
 /**
@@ -824,18 +817,19 @@ function held(path, now) {
 }
 
 /**
- * Takes the lock on writing `pull`'s overview for the tool call `call`: `taken` when it was free, or
- * held by a writer gone past `LOCK_MS`; `same` when the same call took it, as a command that both
- * pushes and opens a pull request runs the hook twice; `held` when a writer has it, after recording
- * one follow-up for it; `unlocked` when there's nowhere to keep locks, so nothing stops another.
- * `meanwhile` runs once a follow-up is recorded, as a writer's `done` might, for tests.
+ * Takes the lock on writing `pull`'s overview for the tool call `call`, in the repository at `dir`:
+ * `taken` when it was free, or held by a writer gone past `LOCK_MS`; `same` when the same call took
+ * it, as a command that both pushes and opens a pull request runs the hook twice; `held` when a
+ * writer has it, after recording one follow-up for it; `unlocked` when there's nowhere to keep
+ * locks, so nothing stops another. `meanwhile` runs once a follow-up is recorded, as a writer's
+ * `done` might, for tests.
  *
  * @param {Pull} pull
- * @param {{ env?: NodeJS.ProcessEnv, now?: number, call?: string, meanwhile?: () => void }} [options]
+ * @param {{ dir?: string, env?: NodeJS.ProcessEnv, now?: number, call?: string, meanwhile?: () => void }} [options]
  * @returns {'taken' | 'same' | 'held' | 'unlocked'}
  */
-export function takeLock(pull, { env = process.env, now = Date.now(), call, meanwhile } = {}) {
-  const folder = lockFolder(env);
+export function takeLock(pull, { dir, env = process.env, now = Date.now(), call, meanwhile } = {}) {
+  const folder = lockFolder(dir, env);
   if (folder === undefined) return 'unlocked';
   const { lock, again } = lockFiles(folder, pull);
   try {
@@ -897,54 +891,65 @@ export function clearStale(lock, again, now) {
 }
 
 /**
- * Keeps the lock on writing `pull`'s overview, as a writer does as it starts: taken when it's free,
- * and its time set again when it's held, so it holds for `LOCK_MS` from `now`.
+ * Keeps the lock on writing `pull`'s overview in the repository at `dir`, as a writer does as it
+ * starts: taken when it's free, and its time set again when it's held, so it holds for `LOCK_MS`
+ * from `now`. `failed` when there's no folder for it, or it couldn't be written there.
  *
  * @param {Pull} pull
- * @param {{ env?: NodeJS.ProcessEnv, now?: number }} [options]
- * @returns {'kept' | 'unlocked'}
+ * @param {{ dir?: string, env?: NodeJS.ProcessEnv, now?: number }} [options]
+ * @returns {'kept' | 'failed'}
  */
-export function keepLock(pull, { env = process.env, now = Date.now() } = {}) {
-  const folder = lockFolder(env);
-  if (folder === undefined) return 'unlocked';
+export function keepLock(pull, { dir, env = process.env, now = Date.now() } = {}) {
+  const folder = lockFolder(dir, env);
+  if (folder === undefined) return 'failed';
+  return keepIn(folder, pull, now) ? 'kept' : 'failed';
+}
+
+/**
+ * Keeps the lock on writing `pull`'s overview in `folder`, from `now`: whether it could.
+ *
+ * @param {string} folder
+ * @param {Pull} pull
+ * @param {number} now
+ */
+function keepIn(folder, pull, now) {
   const { lock } = lockFiles(folder, pull);
   try {
     if (!makeNew(lock, `${JSON.stringify({ pr: pull.url, call: null })}\n`)) {
-      if (!lstatSync(lock).isFile()) return 'unlocked';
+      if (!lstatSync(lock).isFile()) return false;
       utimesSync(lock, now / 1000, now / 1000);
     }
-    return 'kept';
+    return true;
   } catch {
-    return 'unlocked';
+    return false;
   }
 }
 
 /**
- * Gives back the lock on writing `pull`'s overview, as a writer does once it's done: `again`, with
- * the lock kept, when a follow-up was recorded meanwhile, which it then takes; `done` otherwise.
- * `meanwhile` runs once the lock's gone, as a hook might, for tests.
+ * Gives back the lock on writing `pull`'s overview in the repository at `dir`, as a writer does
+ * once it's done: `again`, with the lock kept, when a follow-up was recorded meanwhile, which it
+ * then takes; `done` otherwise; `failed` when there's no folder for it, or it couldn't be read or
+ * written there, so a follow-up may be left that no one takes. `meanwhile` runs once the lock's
+ * gone, as a hook might, for tests.
  *
  * @param {Pull} pull
- * @param {{ env?: NodeJS.ProcessEnv, now?: number, meanwhile?: () => void }} [options]
- * @returns {'again' | 'done'}
+ * @param {{ dir?: string, env?: NodeJS.ProcessEnv, now?: number, meanwhile?: () => void }} [options]
+ * @returns {'again' | 'done' | 'failed'}
  */
-export function giveBack(pull, { env = process.env, now = Date.now(), meanwhile } = {}) {
-  const folder = lockFolder(env);
-  if (folder === undefined) return 'done';
+export function giveBack(pull, { dir, env = process.env, now = Date.now(), meanwhile } = {}) {
+  const folder = lockFolder(dir, env);
+  if (folder === undefined) return 'failed';
   const { lock, again } = lockFiles(folder, pull);
-  /** Takes the follow-up, if there's one. */
+  /** Takes the follow-up, if there's one; throws when it can't tell, or can't take it. */
   const followUp = () => {
-    try {
-      if (!lstatSync(again).isFile()) return false;
-      unlinkSync(again);
-      return true;
-    } catch {
-      return false;
-    }
+    const stats = lstatSync(again, { throwIfNoEntry: false });
+    if (stats === undefined) return false;
+    unlinkSync(again);
+    return true;
   };
   try {
     if (followUp()) {
-      keepLock(pull, { env, now });
+      keepIn(folder, pull, now);
       return 'again';
     }
     removeIfThere(lock);
@@ -954,10 +959,10 @@ export function giveBack(pull, { env = process.env, now = Date.now(), meanwhile 
     if (followUp() && makeNew(lock, `${JSON.stringify({ pr: pull.url, call: null })}\n`)) {
       return 'again';
     }
+    return 'done';
   } catch {
-    // Nothing more to give back.
+    return 'failed';
   }
-  return 'done';
 }
 
 /**
@@ -1015,24 +1020,123 @@ function gitLine(dir, args, env) {
 }
 
 /**
- * The owner of the repository on GitHub that `remote`, a remote's name or address, points to in the
+ * A repository on GitHub, as an address of it names it: `https://github.com/<owner>/<repo>.git`,
+ * `git@github.com:<owner>/<repo>.git` and the like, or `undefined` for one that isn't.
+ *
+ * @param {string | undefined} address
+ * @returns {{ owner: string, repo: string } | undefined}
+ */
+function gitHubRepoAt(address) {
+  const found =
+    /github\.com[:/]+([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/.exec(
+      address ?? '',
+    );
+  return found ? { owner: found[1] ?? '', repo: found[2] ?? '' } : undefined;
+}
+
+/**
+ * The repository on GitHub that `remote`, a remote's name or address, points to for a push in the
  * clone at `dir`, or `undefined` when it isn't one on GitHub.
  *
  * @param {string} dir
  * @param {string | undefined} remote
  * @param {NodeJS.ProcessEnv} env
  */
-function ownerOf(dir, remote, env) {
+function pushedTo(dir, remote, env) {
   if (remote === undefined) return undefined;
   const address =
     /^[A-Za-z0-9._-]+$/.test(remote) && !remote.startsWith('-')
       ? gitLine(dir, ['remote', 'get-url', '--push', remote], env)
       : remote;
-  const owner =
-    /github\.com[:/]+([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/[A-Za-z0-9._-]+?(?:\.git)?\/?$/.exec(
-      address ?? '',
-    )?.[1];
-  return owner;
+  return gitHubRepoAt(address);
+}
+
+/**
+ * The repository `gh` takes a pull request to be in, from the clone at `dir`, as it picks it
+ * without asking: `GH_REPO`'s; else the one `gh repo set-default` chose (`gh-resolved` in a remote's
+ * config); else the first remote on GitHub, `upstream`, `github` and `origin` first.
+ *
+ * @param {string} dir
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {{ owner: string, repo: string } | undefined}
+ */
+function baseRepoOf(dir, env) {
+  const named = env.GH_REPO;
+  if (named !== undefined && named !== '') return fullNamed(named);
+  const ran = spawnSync(
+    'git',
+    ['-C', dir, 'config', '--get-regexp', '^remote\\..*\\.(url|gh-resolved)$'],
+    {
+      encoding: 'utf8',
+      timeout: 5000,
+      maxBuffer: 256 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      env: { ...env, GIT_TERMINAL_PROMPT: '0' },
+    },
+  );
+  if (ran.error || ran.status !== 0) return undefined;
+  /** @type {{ name: string, at: { owner: string, repo: string } }[]} */
+  const remotes = [];
+  /** @type {Map<string, string>} */
+  const resolved = new Map();
+  for (const line of ran.stdout.split('\n')) {
+    const found = /^remote\.(.+)\.(url|gh-resolved) (.*)$/.exec(line);
+    if (!found) continue;
+    const [, name = '', key, value = ''] = found;
+    if (key === 'gh-resolved') {
+      resolved.set(name, value.trim());
+      continue;
+    }
+    const at = gitHubRepoAt(value.trim());
+    if (at && !remotes.some((each) => each.name === name)) remotes.push({ name, at });
+  }
+  for (const { name, at } of remotes) {
+    const chose = resolved.get(name);
+    if (chose === 'base') return at;
+    if (chose !== undefined && chose !== '') return fullNamed(chose);
+  }
+  const first = remotes
+    .map((each, index) => ({ ...each, index }))
+    .toSorted((a, b) => {
+      const order = remoteRank(a.name) - remoteRank(b.name);
+      return order === 0 ? a.index - b.index : order;
+    })[0];
+  return first?.at;
+}
+
+/**
+ * Where `gh` puts a remote named `name` among those it picks from: `upstream`, `github` and
+ * `origin` first, in that order, then the rest.
+ *
+ * @param {string} name
+ */
+function remoteRank(name) {
+  const rank = ['upstream', 'github', 'origin'].indexOf(name.toLowerCase());
+  return rank < 0 ? 3 : rank;
+}
+
+/**
+ * The repository `name` names as `gh` takes one: `<owner>/<repo>`, or `<host>/<owner>/<repo>`.
+ *
+ * @param {string} name
+ * @returns {{ owner: string, repo: string } | undefined}
+ */
+function fullNamed(name) {
+  const parts = name.trim().split('/');
+  const [owner, repo] = parts.slice(-2);
+  return parts.length <= 3 && owner && repo ? { owner, repo } : undefined;
+}
+
+/**
+ * Whether `a` and `b` are the same repository on GitHub, as GitHub compares names.
+ *
+ * @param {{ owner: string, repo: string }} a
+ * @param {{ owner: string, repo: string }} b
+ */
+function sameRepo(a, b) {
+  return (
+    a.owner.toLowerCase() === b.owner.toLowerCase() && a.repo.toLowerCase() === b.repo.toLowerCase()
+  );
 }
 
 /**
@@ -1057,9 +1161,10 @@ function currentNames(dir, env) {
 
 /**
  * The open pull request `gh` finds, from `dir`, for `target`'s branch: the one checked out, by
- * what `gh` reads of its config, or another by `<owner>:<branch>`, the owner its remote points to,
- * so that a fork's is found too. It's taken only when it's open, and its head is the branch: `gh`
- * reads a name of digits as a pull request's number.
+ * what `gh` reads of its config; or another by its name, as `<owner>:<branch>` when it went to a
+ * repository other than the one `gh` looks in, a fork, as `gh` matches a pull request from one only
+ * so. It's taken only when it's open, and its head is the branch: `gh` reads a name of digits as a
+ * pull request's number, so one is asked about only as a fork's.
  *
  * @param {string} dir
  * @param {Target} target
@@ -1082,7 +1187,13 @@ export function openPullFor(dir, target, env) {
     names = current;
   } else {
     if (!isBranchName(branch)) return undefined;
-    owner = target.owner ?? ownerOf(dir, target.remote, env);
+    const base = baseRepoOf(dir, env);
+    if (base === undefined) return undefined;
+    const to =
+      target.owner === undefined
+        ? pushedTo(dir, target.remote, env)
+        : { owner: target.owner, repo: base.repo };
+    owner = to === undefined || sameRepo(to, base) ? undefined : to.owner;
     if (owner === undefined && /^[0-9]+$/.test(branch)) return undefined;
     args.push('--', owner === undefined ? branch : `${owner}:${branch}`);
     names = [branch];
@@ -1325,7 +1436,10 @@ export function hook(input, { env = process.env, find, now = Date.now() } = {}) 
   if (pulls.length === 0) return undefined;
   const id = field(input, 'tool_use_id');
   const call = typeof id === 'string' ? id : undefined;
-  const each = pulls.map(({ pull }) => ({ pull, lock: takeLock(pull, { env, now, call }) }));
+  const each = pulls.map(({ pull, top }) => ({
+    pull,
+    lock: takeLock(pull, { dir: top, env, now, call }),
+  }));
   if (each.every(({ lock }) => lock === 'same')) return undefined;
   const host = field(input, 'turn_id') === undefined ? 'claude' : 'codex';
   const additionalContext = answerFor(each, host);

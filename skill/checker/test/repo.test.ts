@@ -4,6 +4,7 @@
  * it was.
  */
 
+import { spawnSync } from 'node:child_process';
 import {
   lstatSync,
   mkdirSync,
@@ -147,12 +148,31 @@ Commit them in a pull request. On Codex, each person approves the hook once, in 
       'Bash(gh pr create *)',
       'Bash(gh pr new *)',
     ]);
-    // Codex runs it in the folder its session started in, which may be one in the clone.
+    // Codex runs it through a shell, in the folder its session started in, which may be one in the
+    // clone; on Windows, through cmd, from the clone's top.
     expect(CODEX_GROUPS[0]?.hooks[0]).toEqual({
       type: 'command',
       command: 'node "$(git rev-parse --show-toplevel)/.agents/skills/lo-overview/hook.mjs"',
+      commandWindows: 'node .agents/skills/lo-overview/hook.mjs',
       timeout: 60,
     });
+  });
+
+  test('runs Codex’s hook as Codex does, through the shell, from a folder deep in the clone', () => {
+    const clone = freshClone();
+    installed(clone);
+    const deep = join(clone, 'src', 'deep');
+    mkdirSync(deep, { recursive: true });
+    const hooks = JSON.parse(readFileSync(join(clone, '.codex/hooks.json'), 'utf8'));
+    const { command } = hooks.hooks.PostToolUse[0].hooks[0];
+    for (const cwd of [clone, deep]) {
+      const ran = spawnSync('sh', ['-c', command], { cwd, input: '{}', encoding: 'utf8' });
+      expect({ cwd, status: ran.status, stderr: ran.stderr }).toEqual({
+        cwd,
+        status: 0,
+        stderr: '',
+      });
+    }
   });
 
   test('finds the clone’s top from a folder in it, or the one --repo names', () => {
