@@ -1,6 +1,7 @@
 /*
  * The overview's rules that the design system's stylesheets leave to the components: the card a
- * term opens, and two kinds of `.lo-block` for blocks with no frame of their own.
+ * term opens, a term's row in a glossary, a section's heading, and two kinds of `.lo-block` for
+ * blocks with no frame of their own.
  */
 
 /* Things that float. */
@@ -18,6 +19,8 @@
   max-width: calc(100vw - var(--lo-sp-32));
   padding: 12px 14px 10px;
   font: 400 13px/20px var(--lo-font-ui);
+  /* A word longer than the card is, such as a path, breaks where it must. */
+  overflow-wrap: anywhere;
 }
 .lo-hovercard__term {
   font: 700 13.5px/18px var(--lo-font-ui);
@@ -35,6 +38,136 @@
 .lo-hovercard__more {
   color: var(--lo-fg-muted);
 }
+/* The card's foot goes with its last hint: a hint shows only while its command can run. */
+.lo-hovercard__foot:not(:has(button)) {
+  display: none;
+}
+
+/*
+ * A term's row in a glossary (`TermRow`): the term with its tags under it, its definition, and its
+ * end controls, `⋯` and the chevron, in a column kept 48 px wide whether they're drawn or not. The
+ * row is its own box (`@container`): under 420 px it's one column, the term and its end controls on
+ * one line, then the definition.
+ */
+.lo-term-row {
+  container-type: inline-size;
+  border-bottom: 1px solid var(--lo-border-subtle);
+}
+.lo-term-row__grid {
+  display: grid;
+  grid-template-columns: minmax(120px, 190px) minmax(0, 1fr) minmax(48px, max-content);
+  grid-template-areas:
+    'head definition end'
+    '. problem problem';
+  padding: 10px 8px;
+}
+.lo-term-row__grid.is-target {
+  background: var(--lo-current);
+}
+.lo-term-row__head {
+  grid-area: head;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--lo-sp-6);
+  min-width: 0;
+  padding-right: 16px;
+}
+.lo-term-row__term {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border-radius: var(--lo-r-xs);
+  font: 600 14px/21px var(--lo-font-ui);
+  color: var(--lo-fg);
+}
+.lo-term-row__definition {
+  grid-area: definition;
+  min-width: 0;
+  font: 400 14px/21px var(--lo-font-ui);
+  color: var(--lo-fg);
+  /* What it holds keeps to its column, a word longer than it is and all: an alias, a path. */
+  overflow-wrap: anywhere;
+}
+/* Its buttons, 22 px, on the definition's first line, the term's on a narrow row. */
+.lo-term-row__end {
+  grid-area: end;
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--lo-sp-4);
+  margin-top: calc((21px - var(--lo-control-h-sm)) / 2);
+  padding-left: var(--lo-sp-8);
+}
+.lo-term-row__problem {
+  grid-area: problem;
+  min-width: 0;
+}
+.lo-term-row__grid.is-ignored :is(.lo-term-row__term, .lo-term-row__definition) {
+  color: var(--lo-fg-muted);
+}
+@container (width < 420px) {
+  .lo-term-row__grid {
+    grid-template-columns: minmax(0, 1fr) minmax(48px, max-content);
+    grid-template-areas:
+      'head end'
+      'definition definition'
+      'problem problem';
+  }
+  .lo-term-row__head {
+    padding-right: 0;
+  }
+  .lo-term-row__definition {
+    margin-top: var(--lo-sp-6);
+  }
+}
+
+/*
+ * An overview section's heading (`SectionHead`): where an `h2` of the article would be, with its
+ * room above and below, its chevron in the article's 20 px of room at its left, and its `⋯` at the
+ * measure's right edge, both centred on the heading's first line. Collapsed, the heading is
+ * `lo-fg-muted` and takes a click.
+ */
+.lo-prose > .lo-section-head {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--lo-sp-8);
+  max-width: var(--lo-read-measure);
+  margin-top: 52px;
+}
+.lo-prose > .lo-section-head:first-child {
+  margin-top: 30px;
+}
+.lo-prose > .lo-section-head + * {
+  margin-top: 12px;
+}
+.lo-section-head > h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.lo-section-head[data-collapsed] > h2 {
+  color: var(--lo-fg-muted);
+  cursor: pointer;
+}
+.lo-section-head__chevron,
+.lo-section-head__more {
+  display: flex;
+  flex: none;
+  margin-top: calc((28px - var(--lo-control-h-sm)) / 2);
+}
+.lo-section-head__chevron {
+  position: absolute;
+  top: 0;
+  left: calc(var(--lo-sp-20) * -1);
+  justify-content: center;
+  width: var(--lo-sp-20);
+}
+.lo-section-head__chevron .lo-i {
+  color: var(--lo-fg-subtle);
+}
+.lo-section-head__chevron button:is(:hover, :focus-visible) .lo-i {
+  color: var(--lo-icon);
+}
 
 /*
  * Prose the block keys stop at, in a block that keeps the spacing prose has: the space its own
@@ -47,6 +180,9 @@
   margin-top: 14px;
 }
 .lo-prose > h2 + .lo-block--prose {
+  margin-top: 12px;
+}
+.lo-prose > .lo-section-head + .lo-block--prose {
   margin-top: 12px;
 }
 .lo-prose > h3 + .lo-block--prose {

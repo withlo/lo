@@ -1,6 +1,16 @@
-import { useCallback, type RefObject } from 'react';
+import { useCallback, type MouseEvent, type RefObject } from 'react';
 
 import { CAUGHT_ATTRIBUTE } from './commands/focus.ts';
+
+/**
+ * What makes a control one the keyboard never reaches, for a surface that takes no focus, as a
+ * term's card: out of the tab order, and a click on it leaves focus where it was, so the keys of
+ * what has focus, which do all its controls do, go on working.
+ */
+export const UNFOCUSABLE = {
+  tabIndex: -1,
+  onMouseDown: (event: MouseEvent) => event.preventDefault(),
+} as const;
 
 /**
  * A ref for a Base UI popup (a menu, a dialog or a palette) that gives it focus as soon as it
