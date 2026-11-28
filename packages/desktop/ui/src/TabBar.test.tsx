@@ -126,6 +126,45 @@ describe('TabBar', () => {
     expect(arrived).toContain('Done</span>');
   });
 
+  it('shows a spinner in place of the state or the icon on a tab being read again', () => {
+    const markup = renderToStaticMarkup(
+      <TabBar
+        tabs={[
+          { kind: 'pull', id: 'a', repo: 'fd', number: 2212, title: 'Done', state: 'open' },
+          { kind: 'queue', id: 'b', repo: 'fd', branch: 'main' },
+        ]}
+      />,
+    );
+    expect(markup).not.toContain('aria-busy="');
+    expect(markup).not.toContain('spinner');
+    const refreshing = renderToStaticMarkup(
+      <TabBar
+        tabs={[
+          {
+            kind: 'pull',
+            id: 'a',
+            repo: 'fd',
+            number: 2212,
+            title: 'Done',
+            state: 'open',
+            refreshing: true,
+          },
+          { kind: 'queue', id: 'b', repo: 'fd', branch: 'main', refreshing: true },
+        ]}
+      />,
+    );
+    const [pull = '', queue = ''] = tabsIn(refreshing);
+    for (const each of [pull, queue]) {
+      expect(each).toContain('aria-busy="true"');
+      expect(each).toContain('spinner');
+    }
+    // Its title stays, with no placeholder: only the state's ball gives way.
+    expect(pull).toContain('Done</span>');
+    expect(pull).not.toContain('skeleton');
+    expect(pull).not.toContain('aria-label="Open"');
+    expect(queue).not.toContain('text-queue');
+  });
+
   it("keeps a narrow tab's repository, cut short, and gives a long one half the tab at most", () => {
     const markup = renderToStaticMarkup(
       <TabBar

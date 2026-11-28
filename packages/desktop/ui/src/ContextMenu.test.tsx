@@ -55,10 +55,11 @@ interface HarnessProps {
   onClosed?: (chosen: string | undefined) => void;
   onOpenChange?: (open: boolean) => void;
   finalFocus?: HTMLElement | SVGElement;
+  opener?: Element;
 }
 
 /** A menu that opens at a point and closes as it's asked to. */
-function Harness({ onClosed, onOpenChange, finalFocus }: HarnessProps) {
+function Harness({ onClosed, onOpenChange, finalFocus, opener }: HarnessProps) {
   const [open, setOpen] = useState(true);
   return (
     <ContextMenu
@@ -71,6 +72,7 @@ function Harness({ onClosed, onOpenChange, finalFocus }: HarnessProps) {
       anchor={{ x: 40, y: 60 }}
       sections={sections}
       finalFocus={finalFocus}
+      opener={opener}
       onClosed={onClosed}
     />
   );
@@ -229,6 +231,19 @@ describe('ContextMenu', () => {
     await vi.waitFor(() => expect(onClosed).toHaveBeenCalledWith(undefined));
     expect(document.activeElement).toBe(part);
     drawing.remove();
+  });
+
+  it('has the `⋯` it opened from say it’s expanded while it’s open, and not once it closes', async () => {
+    const more = document.createElement('button');
+    more.setAttribute('aria-haspopup', 'menu');
+    document.body.append(more);
+    const page = render(<Harness opener={more} />);
+    expect(more.getAttribute('aria-expanded')).toBe('true');
+    const menu = page.querySelector('[role="menu"]')!;
+    await vi.waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+    press(document.activeElement!, 'Escape');
+    await vi.waitFor(() => expect(more.hasAttribute('aria-expanded')).toBe(false));
+    more.remove();
   });
 
   it('opens nowhere without an anchor', () => {
