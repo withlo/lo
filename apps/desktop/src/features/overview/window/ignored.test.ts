@@ -148,6 +148,18 @@ describe('Undo, after the setting changed since', () => {
     undo('Ignored Bucket in rozed-dev/e2e');
     expect(shown()).toEqual({ '*': ['Lease'], [REPO]: ['Lease', 'Quota'] });
   });
+
+  it('takes away a repo’s own list it leaves the same as every repo’s, in this repo', async () => {
+    mainSays({ '*': ['Lease'] });
+    turnIgnored(REPO, BUCKET, 'repo');
+    await settled();
+    turnIgnored(REPO, { name: 'Quota', also: [] }, 'repo');
+    await settled();
+    // Oldest first: the second's Undo leaves the repo's list as every repo's.
+    undo('Ignored Bucket in rozed-dev/e2e');
+    undo('Ignored Quota in rozed-dev/e2e');
+    expect(shown()).toEqual({ '*': ['Lease'] });
+  });
 });
 
 describe('a term with a long name', () => {

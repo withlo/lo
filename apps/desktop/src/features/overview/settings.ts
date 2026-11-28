@@ -293,6 +293,19 @@ export function removeFrom(
   return withEvery(value, changed(listOf(value, EVERY) ?? [], entry, false, []));
 }
 
+/**
+ * `value` without `repo`'s own list where it's the same as every repo's, as "In this repo" leaves
+ * it: every repo's applies there then, and goes on applying as it changes.
+ */
+export function withoutSame(value: ScopedValue, repo: string): ScopedValue {
+  const key = keyOf(value, repo);
+  const list = key === undefined ? undefined : listOf(value, key);
+  if (key === undefined || !list || !sameEntries(list, listOf(value, EVERY) ?? [])) return value;
+  const next = { ...value };
+  delete next[key];
+  return next;
+}
+
 /** `value` without `repo`'s own list: every repo's applies there again. */
 export function resetRepo(value: ScopedValue, repo: string): ScopedValue {
   const key = keyOf(value, repo);

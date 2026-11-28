@@ -18,6 +18,7 @@ import {
   setEverywhere,
   setInRepo,
   undoAdded,
+  withoutSame,
   type Scoped,
   type ScopedValue,
 } from '../settings.ts';
@@ -102,8 +103,8 @@ function ignoredLine(names: TermNames, where: IgnoredWhere, repo: string): strin
  * names, read in `repo`: on, it's plain text at once, and once it's saved, a toast says so, with
  * Undo. Undo puts the setting back as it was, or, changed since, takes out only what this put in
  * (`undoAdded`): the term goes from the lists that gained it, a repo's own list this made goes while
- * it's as this made it, and lists that held the term already keep it. Off, it's a term again, with
- * nothing said.
+ * it's as this made it, and lists that held the term already keep it; in this repo, the repo's own
+ * list then goes where it's every repo's. Off, it's a term again, with nothing said.
  */
 export function turnIgnored(repo: string, names: TermNames, where: IgnoredWhere): void {
   const before = ignoring.shownNow();
@@ -117,9 +118,13 @@ export function turnIgnored(repo: string, names: TermNames, where: IgnoredWhere)
       label: 'Undo',
       onClick: () => {
         const now = ignoring.shownNow();
-        void ignoring.change(
-          same(now, after) ? before : undoAdded(now, added, names.name, names.also),
-        );
+        if (same(now, after)) {
+          void ignoring.change(before);
+          return;
+        }
+        const undone = undoAdded(now, added, names.name, names.also);
+        // In this repo, the repo's own list goes once it's every repo's, as the switch has it.
+        void ignoring.change(where === 'repo' ? withoutSame(undone, repo) : undone);
       },
     });
   });
