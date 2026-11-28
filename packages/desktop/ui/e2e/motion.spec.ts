@@ -164,6 +164,32 @@ test('a thumb slides to the segment chosen, and a switch’s to its other end', 
   await expect.poll(() => middle('[role="switch"] > span')).toBeGreaterThan(before);
 });
 
+test('a thumb goes at once to a choice its caller says jumps, and slides to one clicked', async () => {
+  const page = await open();
+  const thumb = page.locator('[role="tablist"] > span[aria-hidden="true"]');
+  const under = (name: string) =>
+    page.evaluate((tab) => {
+      const box = [...document.querySelectorAll('[role="tab"]')]
+        .find((each) => each.textContent === tab)
+        ?.getBoundingClientRect();
+      return box ? Math.round(box.left) : -1;
+    }, name);
+  await page.getByRole('tab', { name: 'Diff' }).click();
+  await expect(thumb).toHaveClass(/move-slide/);
+  // Gone to by the page itself, it's under the choice in the frame that draws it, with no move.
+  await page.locator('#jump-timeline').click();
+  await expect(page.getByRole('tab', { name: 'Timeline' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(thumb).not.toHaveClass(/move-slide/);
+  expect(await thumb.evaluate((span) => span.getAnimations().length)).toBe(0);
+  expect(Math.round((await thumb.boundingBox())?.x ?? -1)).toBe(await under('Timeline'));
+  // The reader's next choice slides.
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  await expect(thumb).toHaveClass(/move-slide/);
+});
+
 test('a toast floats fixed to the window, and a long word wraps inside it', async () => {
   // How many show at once and how long each stays are the stack's own tests: here a toast would
   // be racing the clicks.

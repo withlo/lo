@@ -952,13 +952,17 @@ status bar.
   requests take their turns in the account's queue, and the rate limit holds them as it holds polls.
   A refresh that fails while GitHub is out of reach leaves the backoff as it was, and the reads it
   runs again go at once, whatever a run already under way or the cache says. The tab's mark in the
-  strip turns until every part is in or has failed, and a press meanwhile asks nothing more. Recent
+  strip turns until every part is in or has failed, and for `MARKED_MS` (400 ms) from the press at
+  least, so an answer that's in at once still shows it; a press meanwhile asks nothing more. Recent
   and Settings read nothing from GitHub, so it does nothing there.
 - The `tab.open` setting says which middle view a pull request's tab opens on: the overview, the
   timeline or the diff. A tab that opens on the overview waits for it, up to `HOLD_LIMIT`, and goes
   to the timeline, where the description is first, when there's none or it's late, drawing nothing
   of the overview on the way: the overview's view draws the tab's placeholder until it's gone from
-  the screen, and the timeline takes that wait over at once. The tab keeps its middle view by id
+  the screen, and the timeline takes that wait over at once. Where it goes there before the wait
+  shows (`LOADING_DELAY_MS` from the wait's start), the header's view switch goes there at once too,
+  as if the tab had opened there (`showInstead(tab, true)`, `wentAtOnce`); later, its thumb slides
+  there, as it does for a view the reader picks. The tab keeps its middle view by id
   (`Panels.middle`): while that view isn't there, as the overview isn't with `overview.on` off, the
   timeline stands in, and the tab goes back to it when it returns. The key `tab.open` replaced,
   `overview.open`, stays declared, file-only: main carries a `diff` saved there over once, while the

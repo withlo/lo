@@ -222,10 +222,14 @@ item. Nor does “on screen”: write “this revision”, not “the revision o
 | Continue, Skip            | A welcome step’s buttons. See [Welcome step](#welcome-step).                                                                                                                                       | Next, Not now, Later, Get started                    |
 | Cancel, Close, Done, Back | A dialog’s other button. See [Confirmation](#confirmation).                                                                                                                                        | OK, Got it, Not now                                  |
 
-Once an account is listed, signing in adds one, and what offers it says so: “Add account…”, the
-title over its button (“Add an account to see threads”) and its result (“Added ravi-k”). “Sign in
-again” stays for an account GitHub signed out, and a dimmed control’s reason stays “Sign in to
-comment”: with an account listed, a pull request opens read only just while it’s signed out.
+Once an account is listed, signing in adds one, and what offers it says so: “Add account…” and its
+result (“Added ravi-k”). A view that needs an account says what for, by how the accounts stand.
+While none is signed in, as the header’s “Not signed in” says, it asks to sign in: “Sign in to see
+threads”, with “Sign in with GitHub…”, or “Sign in again” where every account listed is signed out.
+Both sign in plainly. While one is signed in, it asks for another: “Add an account to see threads”,
+with “Add account…”. “Sign in again” stays for an account GitHub signed out, and a dimmed control’s
+reason stays “Sign in to comment”: with an account listed, a pull request opens read only just while
+it’s signed out.
 
 A state is “on” or “off”: “Auto-merge is on”. Never “enabled”, “disabled” or “active”.
 

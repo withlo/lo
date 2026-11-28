@@ -24,6 +24,13 @@ export default {
       // Once an account is listed, a sign-in adds another: it says so, wherever it's offered.
       labelled: () => (listedAccounts().length > 0 ? 'Add account…' : undefined),
     },
+    signInAgain: {
+      run: () => openSignIn({ adds: false }),
+      enabled: () =>
+        (accountsStore.getState().accounts ?? []).some((account) => account.signedOut !== null)
+          ? true
+          : 'No account is signed out',
+    },
     signOut: {
       run: () => openSignOut((accountsStore.getState().accounts ?? []).map(({ login }) => login)),
       enabled: () =>

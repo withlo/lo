@@ -133,6 +133,9 @@
   --color-info: var(--lo-info);
   --color-info-bg: var(--lo-info-bg);
   --color-info-border: var(--lo-info-border);
+  --color-important: var(--lo-important);
+  --color-important-bg: var(--lo-important-bg);
+  --color-important-border: var(--lo-important-border);
   --color-state-open: var(--lo-state-open);
   --color-state-open-bg: var(--lo-state-open-bg);
   --color-state-open-border: var(--lo-state-open-border);

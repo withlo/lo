@@ -15,6 +15,7 @@ import {
   checkArtifact,
   FINDING_CODES,
   parseArtifact,
+  parseStore,
   type CodeReader,
 } from '../src/index.ts';
 import {
@@ -70,7 +71,9 @@ describe.each(fixtures)('$group/$name', ({ group, dir }) => {
     const parsed = whole ? parseArtifact(artifact.bytes) : undefined;
     const started = performance.now();
     const on = input.stack === undefined ? { pr: input.ref ?? PR } : { stack: input.stack };
-    const checked = await checkArtifact(parsed, files, readCode, on);
+    const terms = join(dir, 'terms.json');
+    const store = existsSync(terms) ? parseStore(readFileSync(terms)) : undefined;
+    const checked = await checkArtifact(parsed, files, readCode, { ...on, store });
     expect(performance.now() - started).toBeLessThan(5_000);
 
     expect(expectedOf(checked)).toEqual(expected);

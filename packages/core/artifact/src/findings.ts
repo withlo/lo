@@ -63,6 +63,12 @@ const SEVERITIES = {
   'term-undefined': 'error',
   'term-twice': 'error',
   'term-unused': 'warning',
+  // The glossary's marks, against the repository's definitions.
+  'term-not-stored': 'error',
+  'term-stored': 'error',
+  'term-differs': 'error',
+  'term-unchanged': 'error',
+  'store-unread': 'warning',
   // What Markdown shows differently from how it's written.
   'too-deep': 'error',
   'too-many-nodes': 'error',

@@ -160,7 +160,24 @@ export interface FixtureInput {
 }
 
 /** The files in a fixture's folder that aren't the overview's. */
-const OWN = new Set(['expected.json', 'fixture.json']);
+const OWN = new Set(['expected.json', 'fixture.json', 'terms.json']);
+
+/**
+ * Puts `store`, the bytes of a `terms.json`, at `refs/lo/terms` in the repository at `dir`, as the
+ * one file of a commit there; or, without it, takes that ref away.
+ */
+export function setStore(dir: string, store: Uint8Array | undefined): void {
+  if (store === undefined) {
+    gitBytes(dir, ['update-ref', '-d', 'refs/lo/terms']);
+    return;
+  }
+  const blob = gitBytes(dir, ['hash-object', '-w', '--stdin'], store).toString('utf8').trim();
+  const tree = gitBytes(dir, ['mktree'], `100644 blob ${blob}\tterms.json\n`)
+    .toString('utf8')
+    .trim();
+  const commit = gitBytes(dir, ['commit-tree', tree, '-m', 'Definitions']).toString('utf8').trim();
+  gitBytes(dir, ['update-ref', 'refs/lo/terms', commit]);
+}
 
 /**
  * Writes the overview in the fixture at `fixture` to the folder `to`, with the entries its
