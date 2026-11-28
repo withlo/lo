@@ -1,17 +1,27 @@
 // The repo's definitions in a tab's overview: what each of its terms shows with them, for the
-// document to draw (the definition, its tags, the one a Changed term replaces, who it's by, and
-// whether the reader ignores it), with the term's menu and "Stop ignoring"; the line under the
-// byline that says what the pull request adds and changes, with "Go to glossary"; and the note
-// under the Glossary heading when they can't be used.
+// document to draw (the definition, its tags, the one a Changed term replaces, who it's by, whether
+// the reader ignores it, and what its row holds expanded), with the term's menu, "Stop ignoring",
+// which rows are expanded and what a row and a card run; the line under the byline that says what
+// the pull request adds and changes, with "Go to glossary"; and the note under the Glossary heading
+// when they can't be used.
 
+import { STORE_LIMITS } from '@lo/artifact';
 import { ago, Collapse, Problem, Ticks, type ProblemAction } from '@lo/ui';
-import { OverviewLine, type OverviewTerms, type TermShown } from '@lo/ui/overview';
+import {
+  OverviewLine,
+  type OverviewTerms,
+  type TermCommands,
+  type TermShown,
+  type TermShownDetails,
+} from '@lo/ui/overview';
 import { useMemo, useState, type ReactNode } from 'react';
 
 import { client } from '../../../window/ipc.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
-import { usePull, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
+import { usePull, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
+import termKeys from '../../terms/keys.ts';
 import keys from '../keys.ts';
+import type { StoredTerm } from '../jobs.ts';
 import { namesOf, type Definitions, type ShownTerm, type TermByline } from './definitions.ts';
 import { useNow } from './hooks.ts';
 import { stopIgnoringTerm } from './ignoring.ts';
@@ -21,13 +31,22 @@ import {
   problemReason,
   STORE_TITLE,
   storeReason,
+  writerName,
 } from './says.ts';
 import { readAction } from './States.tsx';
 import { termMenu } from './termMenu.ts';
+import { expandedRows } from './termRows.ts';
 import { readTermsAgain, type RepoName, type StoreFailure } from './terms.ts';
 
 /** The command that goes to the Glossary section, from the line under the byline. */
 const GO_GLOSSARY = `${keys.feature}.goGlossary`;
+
+/** What a term's row and card run: its row's chevron, and its card's "History" and suggestions. */
+const COMMANDS: TermCommands = {
+  expand: `${termKeys.feature}.expand`,
+  history: `${termKeys.feature}.history`,
+  hints: [{ command: `${termKeys.feature}.history`, label: 'History' }],
+};
 
 /**
  * What tab `tab`'s overview, of a pull request in `repo`, shows for each of its terms with the
@@ -40,26 +59,30 @@ export function useOverviewTerms(
   definitions: Definitions | undefined,
 ): OverviewTerms | undefined {
   const now = useNow(true, 60_000);
+  const expanded = useTabState(expandedRows, tab);
   const { terms } = definitions ?? {};
   const note = useMemo(
     () => (terms?.kind === 'unreadable' ? <StoreNote tab={tab} why={terms.why} /> : undefined),
     [tab, terms],
   );
   return useMemo(
-    () => (definitions === undefined ? undefined : shownWith(definitions, repo, now, note)),
-    [definitions, repo, now, note],
+    () =>
+      definitions === undefined ? undefined : shownWith(definitions, repo, now, note, expanded),
+    [definitions, repo, now, note, expanded],
   );
 }
 
 /**
  * What the document shows for each term of `definitions`, each worked out once, as asked for, with
- * the terms' menu, and "Stop ignoring", which turns off both of a term's switches in `repo`.
+ * the terms' menu, "Stop ignoring", which turns off both of a term's switches in `repo`, the rows
+ * `expanded`, and what a row and a card run.
  */
 function shownWith(
   definitions: Definitions,
   repo: string,
   now: number,
   note: ReactNode,
+  expanded: ReadonlySet<string>,
 ): OverviewTerms {
   const { terms } = definitions;
   const reading = terms.kind === 'reading';
@@ -79,6 +102,8 @@ function shownWith(
       const term = definitions.of(key);
       if (term) stopIgnoringTerm(repo, namesOf(term), key);
     },
+    expanded: (key) => expanded.has(key),
+    commands: COMMANDS,
   };
 }
 
@@ -105,6 +130,37 @@ export function shownOf(
     before: term.before?.blocks,
     byline: reading ? { reading: true } : term.byline && bylineFacts(term.byline, now, repository),
     ignored: term.ignored,
+    details: stored && detailsOf(stored, now, repository),
+  };
+}
+
+/**
+ * What the row of `stored`, a term the repo's definitions hold, shows expanded: who locked it, its
+ * other names, its suggestions, oldest first, each a merged pull request's overview's, and its
+ * earlier definitions, newest first, each with who it's by.
+ */
+function detailsOf(
+  stored: StoredTerm,
+  now: number,
+  repository: RepoName | undefined,
+): TermShownDetails {
+  const { locked, aliases, suggestions, changes } = stored;
+  return {
+    locked: locked && { by: writerName(locked.by), when: ago(Date.parse(locked.at), now) },
+    aliases,
+    // The repo's definitions keep the newest first.
+    suggestions: suggestions.toReversed().map((suggestion, at) => ({
+      key: `${at} ${suggestion.from} ${suggestion.at}`,
+      blocks: suggestion.blocks,
+      byline: bylineFacts({ ...suggestion, written: 'agent' }, now, repository),
+    })),
+    earlier: changes.map((change, at) => ({
+      // Counted from the oldest, so each keeps its key as a newer one comes.
+      key: String(changes.length - at),
+      blocks: change.blocks,
+      byline: bylineFacts(change, now, repository),
+    })),
+    capped: changes.length >= STORE_LIMITS.changes,
   };
 }
 

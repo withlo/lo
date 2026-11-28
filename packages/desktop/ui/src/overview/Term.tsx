@@ -19,8 +19,15 @@ import {
   useRendering,
   type Rendering,
 } from '../markdown/index.ts';
+import type { TermTarget as TermCommandTarget } from '../commands/targets.ts';
 import { TermCard } from './TermCard.tsx';
-import { TERM_ATTRIBUTE, useGlossary, type TermMenu, type TermShown } from './terms.ts';
+import {
+  TERM_ATTRIBUTE,
+  useGlossary,
+  type TermCommands,
+  type TermMenu,
+  type TermShown,
+} from './terms.ts';
 
 /** How long the pointer rests on a term before its card opens, and leaves before it closes. */
 export const HOVER_OPEN_MS = 300;
@@ -83,8 +90,10 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
   const element = useRef<HTMLSpanElement | null>(null);
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // While the term has focus, its card stays, wherever the pointer goes.
+  // While the term has focus, its card stays, wherever the pointer goes, and its foot's hints show
+  // their keys.
   const focused = useRef(false);
+  const [keyed, setKeyed] = useState(false);
   // `Esc` closed the card, and focus hasn't left the term since: what stops watching for it to.
   const dismissed = useRef<(() => void) | undefined>(undefined);
 
@@ -215,6 +224,7 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
         </span>
         <HoverCard
           open={false}
+          termKey={term.key}
           anchor={element}
           container={container}
           definition={definition}
@@ -243,10 +253,12 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
         onPointerLeave={() => later(false, HOVER_CLOSE_MS)}
         onFocus={() => {
           focused.current = true;
+          setKeyed(true);
           if (!dismissed.current) now(true);
         }}
         onBlur={(event) => {
           focused.current = false;
+          setKeyed(false);
           // The window losing focus blurs the term but leaves it the focused element, and gives it
           // focus again when the window comes back: a card closed with `Esc` stays closed. Only
           // focus moving elsewhere undoes the `Esc`.
@@ -273,12 +285,16 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
       <HoverCard
         // It stays while its menu is open, wherever the pointer and focus have gone meanwhile.
         open={open || menuOpen}
+        termKey={term.key}
         anchor={element}
         container={container}
         definition={definition}
         shown={shown}
         rendering={card}
         menu={menu !== undefined}
+        commands={terms?.commands}
+        listed={listed}
+        keys={keyed}
         onClose={() => now(false)}
         onPointerEnter={() => clearTimeout(timer.current)}
         onPointerLeave={() => later(false, HOVER_CLOSE_MS)}
@@ -290,6 +306,8 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
 
 interface HoverCardProps {
   open: boolean;
+  /** The term's key, which what its card runs acts on. */
+  termKey: string;
   anchor: RefObject<HTMLSpanElement | null>;
   container: RefObject<HTMLElement | null>;
   /** The overview's own definition, if its glossary has one. */
@@ -300,6 +318,12 @@ interface HoverCardProps {
   rendering: Rendering<Overview>;
   /** The term has a menu: the card draws its `⋯`, which opens it as a right-click does. */
   menu: boolean;
+  /** What the card's foot and its suggestions run, on the term. Without them, neither shows. */
+  commands?: TermCommands | undefined;
+  /** The term has a row in the overview's glossary, which its suggestions' link goes to. */
+  listed?: boolean | undefined;
+  /** The term has keyboard focus: the foot's hints show their keys. */
+  keys?: boolean | undefined;
   onClose: () => void;
   onPointerEnter: () => void;
   onPointerLeave: () => void;
@@ -314,18 +338,24 @@ interface HoverCardProps {
  */
 function HoverCard({
   open,
+  termKey,
   anchor,
   container,
   definition,
   shown,
   rendering,
   menu,
+  commands,
+  listed = false,
+  keys = false,
   onClose,
   onPointerEnter,
   onPointerLeave,
   onContextMenu,
 }: HoverCardProps) {
   const own = shown?.source !== 'store';
+  const target: TermCommandTarget = { kind: 'term', term: termKey };
+  const suggested = shown?.marks.locked === true ? (shown.marks.suggestions ?? 0) : 0;
   // The overview's own shows its opening paragraph, the repo's whole: it's one paragraph.
   const blocks = shown?.blocks ?? definition?.children ?? [];
   const [first, ...rest] = blocks;
@@ -361,6 +391,13 @@ function HoverCard({
                   more={own && first?.kind === 'paragraph' && rest.length > 0}
                   before={shown?.before && <Inlines blocks={shown.before} />}
                   byline={shown?.byline}
+                  suggestions={
+                    commands && listed && suggested > 0
+                      ? { count: suggested, command: commands.history, target }
+                      : undefined
+                  }
+                  hints={commands?.hints.map((hint) => ({ ...hint, target }))}
+                  keys={keys}
                 />
               </MarkdownProvider>
             )}

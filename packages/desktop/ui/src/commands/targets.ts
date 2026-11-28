@@ -125,6 +125,11 @@ export interface TermTarget {
   kind: 'term';
   term: string;
   block?: string;
+  /**
+   * It's the term's row in a glossary, not a use of it in the text: a key there is on a row, as a
+   * command's `when.on` asks (`isOn`), so `⏎` expands the row where on a use it goes to the row.
+   */
+  row?: true;
 }
 
 export interface TabTarget {
@@ -235,9 +240,12 @@ export function fit<K extends TargetKind>(
 
 /**
  * Whether a key acts on a target of kind `kind` at `target`, as a command's `when.on` asks: it's
- * one, or a line that gives one. A header names its file before anything on it.
+ * one, or a line that gives one. A header names its file before anything on it. A term's row in a
+ * glossary is on a row too, though it gives none: the commands that take a row, as a queue's, never
+ * take a term's, but a key for what's on a row holds there, as `⏎` expanding it does.
  */
 export function isOn(target: Target, kind: TargetKind): boolean {
+  if (kind === 'row' && target.kind === 'term' && target.row === true) return true;
   return target.kind === kind || (target.kind === 'line' && fit([kind], target) !== undefined);
 }
 
@@ -340,10 +348,12 @@ export function plainTarget(target: Target): Target {
       return { kind: 'layer', layer: target.layer };
     case 'block':
       return { kind: 'block', block: target.block };
-    case 'term':
-      return target.block === undefined
-        ? { kind: 'term', term: target.term }
-        : { kind: 'term', term: target.term, block: target.block };
+    case 'term': {
+      const term: TermTarget = { kind: 'term', term: target.term };
+      if (target.block !== undefined) term.block = target.block;
+      if (target.row === true) term.row = true;
+      return term;
+    }
     case 'tab':
       return { kind: 'tab', tab: target.tab };
     case 'row':

@@ -4,9 +4,9 @@
 // it, which the stack's tree shows for the layer on screen; the review threads another feature
 // places and draws on its code blocks, with their popover and the comments written there; whether
 // a tab's overview has a block now, and when that may have changed; the stack's overview, which the
-// stack's tree has a row for, shown in place of the layer's own and back; and what a term's
-// switches, "Ignore in this repo" and "Ignore in every repo", do to a term in the overview on
-// screen.
+// stack's tree has a row for, shown in place of the layer's own and back; what a term's switches,
+// "Ignore in this repo" and "Ignore in every repo", do to a term in the overview on screen; and a
+// term's row, which expands, and its history, which a term in the text goes to.
 
 import type { StackTreeOverview } from '@lo/ui';
 import type { Target, TermTarget } from '@lo/ui/commands';
@@ -30,6 +30,14 @@ import type { IgnoredWhere } from './ignored.ts';
 import { ignoreTerm, termIgnored, termReady } from './ignoring.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import type { CommentOnHead } from './mapping.ts';
+import {
+  expandListed,
+  expandReady,
+  historyReady,
+  isExpanded,
+  showHistory,
+  turnExpanded,
+} from './termRows.ts';
 import { commentLinesOnHead, commentLinesOnHeadNow } from './since.ts';
 import {
   hasStackOverview as stackOverviewIn,
@@ -381,4 +389,40 @@ export function isTermIgnored(target: TermTarget, where: TermIgnored): boolean {
  */
 export function turnTermIgnored(target: TermTarget, where: TermIgnored): void {
   ignoreTerm(target, where);
+}
+
+/**
+ * Whether Expand term can act on the term `target` names, its row in the Glossary section of the
+ * overview on screen, or why not: the repo's glossary holds what it shows expanded.
+ */
+export function termExpandReady(target: TermTarget): true | string {
+  return expandReady(target);
+}
+
+/** Whether a term's menu lists Expand term: on its row, but not in the Ignored group. */
+export function termExpandListed(target: TermTarget): boolean {
+  return expandListed(target);
+}
+
+/** Whether the row of the term `target` names is expanded. */
+export function isTermExpanded(target: TermTarget): boolean {
+  return isExpanded(target);
+}
+
+/** Expands the row of the term `target` names, or collapses it. */
+export function turnTermExpanded(target: TermTarget): void {
+  turnExpanded(target);
+}
+
+/** Whether Show history can act on the term `target` names, in the text, or why not. */
+export function termHistoryReady(target: TermTarget): true | string {
+  return historyReady(target);
+}
+
+/**
+ * Goes from the term `target` names, in the text or its card, to its row in the Glossary section,
+ * expanded, and lands on it: the tab's history keeps where the reader was.
+ */
+export function showTermHistory(target: TermTarget): void {
+  showHistory(target);
 }

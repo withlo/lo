@@ -2,10 +2,12 @@ import {
   Fragment,
   memo,
   useCallback,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type ReactNode,
@@ -558,13 +560,26 @@ const NO_HINTS: readonly BlockHint[] = [];
 /**
  * A focused block's chip: a button for each thing its keys do there, with the key, named by what
  * it does on the block, as its handler's `named` says: "Open link" for `⏎` on prose that links to
- * a page, "Next tab" for `→` on tabs. A press leaves focus on the block, and never reaches the
- * block itself, so a fold's title doesn't take it as a click of its own.
+ * a page, "Next tab" for `→` on tabs, "Collapse term" on a glossary's expanded row. Those names
+ * turn on what has focus in the block, and on the glossary, so it's named again as focus moves in
+ * the block and as a row expands or collapses. A press leaves focus on the block, and never
+ * reaches the block itself, so a fold's title doesn't take it as a click of its own.
  */
 function Hints({ hints, fold }: { hints: readonly BlockHint[]; fold: boolean }) {
-  if (hints.length === 0) return null;
+  const own = useRef<HTMLSpanElement>(null);
+  const [, nameAgain] = useReducer((count: number) => count + 1, 0);
+  // A row expanding changes the glossary, which draws its words again here.
+  useContext(GlossaryContext);
+  const drawn = hints.length > 0;
+  useLayoutEffect(() => {
+    const block = own.current?.closest('[data-lo-block]');
+    if (!block) return undefined;
+    block.addEventListener('focusin', nameAgain);
+    return () => block.removeEventListener('focusin', nameAgain);
+  }, [drawn]);
+  if (!drawn) return null;
   return (
-    <span className="lo-block__hints" onClick={(event) => event.stopPropagation()}>
+    <span ref={own} className="lo-block__hints" onClick={(event) => event.stopPropagation()}>
       {hints.map((hint) => (
         <HintButton key={hint.command} command={hint.command} target={hint.target}>
           {fold ? <FoldWords /> : heldRegistry()?.named(hint.command, hint.target ?? NO_TARGET)}

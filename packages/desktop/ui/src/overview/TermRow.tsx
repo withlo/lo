@@ -18,6 +18,7 @@ import {
 
 import { Button } from '../Button.tsx';
 import { Collapse } from '../Collapse.tsx';
+import { runControl } from '../commands/control.ts';
 import { CommandButton } from '../CommandButton.tsx';
 import { withoutBidi } from '../controls.ts';
 import { EmptyState } from '../EmptyState.tsx';
@@ -119,8 +120,8 @@ export interface TermRowProps extends Omit<HTMLAttributes<HTMLDivElement>, 'chil
  * A term's row in a glossary. It draws what it's given. Its end controls show on the row under the
  * pointer or with focus, and keep their room otherwise; neither is a stop for `Tab`, since the
  * term's own keys do what they do: `⏎` expands, `Menu` opens its menu. So the term is a button that
- * says whether the row is expanded, and focus in what the row holds expanded goes back to it as
- * the row collapses.
+ * says whether the row is expanded, which a click on it expands and collapses as its chevron does,
+ * and focus in what the row holds expanded goes back to it as the row collapses.
  */
 export function TermRow({
   term,
@@ -195,6 +196,16 @@ export function TermRow({
             aria-expanded={expand === undefined ? undefined : expanded}
             aria-controls={expand !== undefined && open ? held : undefined}
             className="lo-term-row__term"
+            // A click does what its chevron does, as a button's does, but for one that ends a
+            // drag selecting its words.
+            onClick={
+              expand === undefined
+                ? undefined
+                : (event) => {
+                    if (selecting(event.currentTarget)) return;
+                    runControl(expand.command, expand.target);
+                  }
+            }
           >
             {name}
           </span>
@@ -229,6 +240,17 @@ export function TermRow({
         </Collapse>
       </div>
     </div>
+  );
+}
+
+/** Whether words in `element` are selected, as a drag across them ends. */
+function selecting(element: Element): boolean {
+  const selection = element.ownerDocument.getSelection();
+  return (
+    selection !== null &&
+    !selection.isCollapsed &&
+    selection.rangeCount > 0 &&
+    element.contains(selection.getRangeAt(0).commonAncestorContainer)
   );
 }
 

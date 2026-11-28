@@ -8,7 +8,7 @@
 
 import type { OverviewTree } from '@lo/artifact';
 import { land, reveal } from '@lo/ui';
-import { KEY_EVENT, type Entry, type Target } from '@lo/ui/commands';
+import { KEY_EVENT, type Entry, type Target, type TermTarget } from '@lo/ui/commands';
 import {
   blockNumber,
   blockOf,
@@ -19,12 +19,15 @@ import {
   linksIn,
   sectionHeadOf,
   stepIn,
+  termAt,
+  termRowIn,
   type GlossaryParts,
 } from '@lo/ui/overview';
 import { flushSync } from 'react-dom';
 
 import { refuse } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
+import termKeys from '../../terms/keys.ts';
 import { showPlace, type ShowHow } from '../../diff/window/shared.ts';
 import { holdLimit } from '../../revisions/window/shared.ts';
 import { settingNow } from '../../settings/window/shared.ts';
@@ -37,6 +40,9 @@ import { openings, overviewPlace } from './opening.ts';
 import { placeOnHead, placing, writtenIn } from './since.ts';
 import { hasStackOverview, stackStandingOf, subjects } from './stack.ts';
 import { showWholeStackAt } from './stacked.ts';
+
+/** Expand term, which `⏎` on a term's row's term does. */
+const EXPAND = `${termKeys.feature}.expand`;
 
 /** An overview drawn in a tab while it's on screen, as the keys act on it. */
 export interface DrawnOverview {
@@ -296,6 +302,21 @@ export function goToGlossary(overview: DrawnOverview): void {
 }
 
 /**
+ * Goes to the row of the term `key` names in the overview's Glossary section, in its list: brought
+ * to the top of the screen, given focus and landed on. `here`, where the reader was before
+ * anything moved, is kept in the tab's history, so `⌃o` comes back.
+ */
+export function goToTermRow(overview: DrawnOverview, key: string, here: Entry | undefined): void {
+  const glossary = glossaryOf(overview);
+  const row = glossary && termRowIn(glossary.box, key);
+  if (!row) return;
+  letGo(overview);
+  if (here) registry().history.record(here);
+  reveal(row, { block: 'start' });
+  row.querySelector<HTMLElement>('.lo-term-row__term')?.focus({ preventScroll: true });
+}
+
+/**
  * Why the block keys can't move while the overview's first blocks draw, unseen: nothing, so a key
  * pressed meanwhile does nothing and says nothing. The placeholder over it says the wait.
  */
@@ -468,7 +489,8 @@ export function followOf(overview: DrawnOverview, block: HTMLElement): Follow | 
   const own = focusTargetOf(block);
   const active = document.activeElement;
   if (active && active !== own && (linksIn(block) as Element[]).includes(active)) {
-    // A term's row's term is a stop, for its menu's keys, and goes nowhere.
+    // A term's row's term is a stop, for its own keys, and goes nowhere: one that expands is a
+    // button, which `⏎` presses, as Expand term does.
     if (active.hasAttribute('data-lo-stop') && !active.hasAttribute('role')) {
       return 'Nothing to open on a term';
     }
@@ -492,6 +514,12 @@ export function followName(overview: DrawnOverview, block: HTMLElement): string 
   const found = followOf(overview, block);
   if (typeof found === 'string' || found.kind === 'code') return undefined;
   if (found.kind === 'section') return 'Expand';
+  // A term's row's term: what expanding its row is called there now, "Collapse term" on one open.
+  const row = found.element.matches('.lo-term-row__term') ? termAt(found.element) : undefined;
+  if (row?.row === true) {
+    const target: TermTarget = { kind: 'term', term: row.key, row: true };
+    return registry().labelled(EXPAND, target) ?? registry().command(EXPAND)?.label;
+  }
   if (block instanceof HTMLDetailsElement && found.element === focusTargetOf(block)) {
     return block.open ? 'Collapse' : 'Expand';
   }

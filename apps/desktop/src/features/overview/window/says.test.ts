@@ -8,14 +8,20 @@ import {
   copyLabel,
   definitionsLine,
   findingPlace,
+  GLOSSARY_READING,
   invalidSummary,
+  joinsGlossary,
   newerDetails,
   NEWER_REASON,
+  NO_GLOSSARY,
+  NOT_IN_GLOSSARY,
+  NOT_IN_THIS_GLOSSARY,
   problemReason,
   shortId,
   sizeRows,
   storeReason,
   tooLargeWords,
+  writerName,
   writtenText,
 } from './says.ts';
 
@@ -265,5 +271,20 @@ describe('repo definitions that can’t be used', () => {
       again: false,
     });
     expect(storeReason({ kind: 'failed', code: 'crashed' })).toEqual({ cause: '', again: true });
+  });
+});
+
+describe('why a term’s row can’t offer what the repo’s glossary holds', () => {
+  it('says the glossary is being read, missing, or without the term, and when one joins it', () => {
+    expect(GLOSSARY_READING).toBe('Reading the glossary…');
+    expect(NO_GLOSSARY).toBe('This repo has no glossary');
+    expect(NOT_IN_GLOSSARY).toBe('Not in the glossary');
+    expect(NOT_IN_THIS_GLOSSARY).toBe('Not in this overview’s glossary');
+    expect(joinsGlossary(264)).toBe('Joins the glossary when #264 merges');
+  });
+
+  it('names a writer by their login, else the name their commit gives', () => {
+    expect(writerName({ login: 'elle-kzn' })).toBe('elle-kzn');
+    expect(writerName({ name: 'Ravi K' })).toBe('Ravi K');
   });
 });

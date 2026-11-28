@@ -102,4 +102,70 @@ describe('what a term shows', () => {
       reading: true,
     });
   });
+
+  it('has what its row holds expanded: its lock, other names, suggestions oldest first, and earlier definitions', () => {
+    const at = (days: number) => new Date(Date.parse(AT) - days * DAY).toISOString();
+    const suggestion = (from: number, days: number) => ({
+      definition: `Offered by ${from}.`,
+      blocks: definitionBlocks(`Offered by ${from}.`) ?? [],
+      by: { login: 'mona' },
+      from,
+      at: at(days),
+    });
+    const change = (days: number) => ({
+      definition: `Old by ${days} d.`,
+      blocks: definitionBlocks(`Old by ${days} d.`) ?? [],
+      written: 'human' as const,
+      by: { name: 'Elle' },
+      from: 'lo' as const,
+      at: at(days),
+    });
+    const held = stored({
+      locked: { by: { login: 'elle-kzn' }, at: at(2) },
+      aliases: ['buckets', 'token bucket'],
+      // The repo's definitions keep the newest first.
+      suggestions: [suggestion(272, 1), suggestion(270, 5)],
+      changes: [change(3), change(9)],
+    });
+    const details = shownOf(term({ stored: held }), false, Date.parse(AT), REPO).details;
+    expect(details).toMatchObject({
+      locked: { by: 'elle-kzn', when: '2 d ago' },
+      aliases: ['buckets', 'token bucket'],
+      suggestions: [
+        {
+          byline: {
+            by: { login: 'mona' },
+            written: 'agent',
+            pull: { number: 270 },
+            when: '5 d ago',
+          },
+        },
+        {
+          byline: {
+            by: { login: 'mona' },
+            written: 'agent',
+            pull: { number: 272 },
+            when: '1 d ago',
+          },
+        },
+      ],
+      earlier: [
+        {
+          key: '2',
+          byline: { by: { name: 'Elle' }, written: 'human', pull: undefined, when: '3 d ago' },
+        },
+        { key: '1', byline: { when: '9 d ago' } },
+      ],
+      capped: false,
+    });
+    expect(details?.suggestions[0]?.blocks).toEqual(definitionBlocks('Offered by 270.'));
+    expect(details?.earlier[1]?.blocks).toEqual(definitionBlocks('Old by 9 d.'));
+    expect(details?.earlier[1]?.blocks).not.toEqual([]);
+
+    // The repo's definitions keep 50 at most: there may be more.
+    const full = stored({ changes: Array.from({ length: 50 }, (_, days) => change(days)) });
+    expect(shownOf(term({ stored: full }), false, 0, REPO).details?.capped).toBe(true);
+    // A term they don't hold has nothing to expand.
+    expect(shownOf(term({ stored: undefined }), false, 0, REPO).details).toBeUndefined();
+  });
 });
