@@ -421,7 +421,16 @@ export function Thread({
       align="end"
       // One change to a thread at a time: while a delete is at work, it says so.
       disabled={deleting !== undefined}
-      hint={deleting !== undefined ? 'Deleting…' : resolved ? 'Unresolve' : 'Resolve'}
+      // Its name, with its key: in a card, where its words always show, only with a key to give.
+      hint={
+        deleting !== undefined
+          ? 'Deleting…'
+          : popover || keys.resolve !== undefined
+            ? resolved
+              ? 'Unresolve'
+              : 'Resolve'
+            : null
+      }
       hintKeys={keys.resolve}
       onClick={onResolve}
     >
@@ -599,7 +608,8 @@ export function Thread({
       )}
       {showReply && (
         <div className="border-t border-border-subtle py-8 ps-40 pe-12">
-          <Tooltip label="Reply" keys={keys.reply}>
+          {/* Its key: the field says "Reply" already. */}
+          <Tooltip label={keys.reply === undefined ? null : 'Reply'} keys={keys.reply}>
             <button
               type="button"
               {...keyAria(keys.reply, undefined)}
