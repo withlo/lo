@@ -53,7 +53,7 @@ export function syntax(reading: Reading): Syntax<Building> {
           reading.unreadLinks(state.tokens);
         });
         md.core.ruler.push('lo_reading', (state) => {
-          reading.read(state.tokens, state.md);
+          reading.read(state.tokens);
         });
       },
     ],

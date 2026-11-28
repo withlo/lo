@@ -119,7 +119,7 @@ describe('the store', () => {
   test('a term keyed other than by its key is refused', () => {
     expect(problem(store({ Bucket: entry('Bucket') }))).toBe('key@terms["Bucket"]');
     expect(problem(store({ 'hash  map': entry('Hash map') }))).toBe('key@terms["hash  map"]');
-    expect(problem(store({ bucket: entry(' bucket ') }))).toBe('read');
+    expect(problem(store({ 'hash map': entry('Hash  map') }))).toBe('read');
   });
 
   test('a name two terms go by is refused, whichever comes first', () => {
@@ -243,9 +243,43 @@ describe('what the store refuses', () => {
     ['a time as a number', { at: 1_764_239_400 }, 'shape@terms["b"].at'],
     [
       'a suggestion from Lo',
-      { suggestions: [{ definition: 'A.', by: { login: 'a' }, from: 'lo', at: AT }] },
+      {
+        locked: { by: { login: 'a' }, at: AT },
+        suggestions: [{ definition: 'A.', by: { login: 'a' }, from: 'lo', at: AT }],
+      },
       'shape@terms["b"].suggestions[0].from',
     ],
+    [
+      'suggestions for a term that isn’t locked',
+      { suggestions: [{ definition: 'A.', by: { login: 'a' }, from: '#1', at: AT }] },
+      'shape@terms["b"].suggestions',
+    ],
+    ['a term with a line break', { term: 'b\nc' }, 'shape@terms["b"].term'],
+    ['a term with a tab', { term: 'b\tc' }, 'shape@terms["b"].term'],
+    ['a term with a carriage return', { term: 'b\rc' }, 'shape@terms["b"].term'],
+    ['a term with a space at its end', { term: 'b ' }, 'shape@terms["b"].term'],
+    ['a term with a space at its start', { term: '\u00A0b' }, 'shape@terms["b"].term'],
+    ['an alias with a space at its end', { aliases: ['bs '] }, 'shape@terms["b"].aliases[0]'],
+    ['an alias with a form feed', { aliases: ['b\fs'] }, 'shape@terms["b"].aliases[0]'],
+    ['a definition in bold', { definition: 'A **b**.' }, 'shape@terms["b"].definition'],
+    ['a definition with emphasis', { definition: 'A _b_.' }, 'shape@terms["b"].definition'],
+    ['a definition struck through', { definition: 'A ~b~.' }, 'shape@terms["b"].definition'],
+    ['an image', { definition: 'A ![b](figures/b.png).' }, 'shape@terms["b"].definition'],
+    ['HTML', { definition: 'A <img src="b.png">.' }, 'shape@terms["b"].definition'],
+    ['a web link', { definition: 'A [b](https://b.test).' }, 'shape@terms["b"].definition'],
+    [
+      'a javascript: link',
+      { definition: 'A [b](javascript:alert(1)).' },
+      'shape@terms["b"].definition',
+    ],
+    ['an autolink', { definition: 'A <https://b.test>.' }, 'shape@terms["b"].definition'],
+    ['a www. address', { definition: 'At www.example.com.' }, 'shape@terms["b"].definition'],
+    [
+      'a link to code written wrongly',
+      { definition: 'A [b](code:/b.ts).' },
+      'shape@terms["b"].definition',
+    ],
+    ['a link to a section', { definition: 'A [b](#b).' }, 'shape@terms["b"].definition'],
     [
       'a change missing who wrote it',
       { changes: [{ definition: 'A.', by: { login: 'a' }, from: 'lo', at: AT }] },
@@ -280,8 +314,12 @@ describe('what the store refuses', () => {
 
     const suggestion = { definition: 'A.', by: { login: 'a' }, from: '#1', at: AT };
     const suggestions = Array.from({ length: STORE_LIMITS.suggestions + 1 }, () => suggestion);
-    expect(problem(store({ b: entry('b', { suggestions }) }))).toBe(
+    const locked = { by: { login: 'a' }, at: AT };
+    expect(problem(store({ b: entry('b', { locked, suggestions }) }))).toBe(
       'too-many@terms["b"].suggestions',
+    );
+    expect(problem(store({ b: entry('b', { locked, suggestions: suggestions.slice(1) }) }))).toBe(
+      'read',
     );
   });
 
@@ -296,13 +334,64 @@ describe('what the store refuses', () => {
     const name = { name: 'n'.repeat(STORE_LIMITS.name + 1) };
     expect(problem(store({ b: entry('b', { by: name }) }))).toBe('too-long@terms["b"].by.name');
   });
+
+  test('a definition holds text, inline code, and links to code and terms, as Markdown reads it', () => {
+    const at = (definition: string) => problem(store({ b: entry('b', { definition }) }));
+    expect(
+      at(
+        'Tokens per_request, in `take()` at [the limiter](code:src/a.ts#L1-L2), for [buckets](term:bucket), when a < b, in ~5 ms, \\*not bold\\*.',
+      ),
+    ).toBe('read');
+    // Each definition the store holds, its earlier ones and suggestions too.
+    const change = {
+      definition: 'A *b*.',
+      written: 'agent',
+      by: { login: 'a' },
+      from: '#1',
+      at: AT,
+    };
+    expect(problem(store({ b: entry('b', { changes: [change] }) }))).toBe(
+      'shape@terms["b"].changes[0].definition',
+    );
+    const read = parseStore(store({ b: entry('b', { definition: 'A **b**.' }) }));
+    expect(!read.ok && read.problem.message).toBe(
+      'terms["b"].definition holds bold text. A definition holds only text, inline code, and links to code and terms.',
+    );
+    const wrong = parseStore(store({ b: entry('b', { definition: 'A [b](code:/b.ts).' }) }));
+    expect(!wrong.ok && wrong.problem.message).toMatch(
+      /^terms\["b"\]\.definition holds a link whose address is wrong\. ./,
+    );
+  });
+
+  test('a key twice in one object, as JSON would keep only the last', () => {
+    const one = JSON.stringify(entry('b'));
+    expect(problem('{"format": 1, "format": 1, "terms": {}}')).toBe('key-twice');
+    expect(problem(`{"format": 1, "terms": {"b": ${one}, "b": ${one}}}`)).toBe('key-twice');
+    // However the key is written.
+    expect(problem(`{"format": 1, "terms": {"b": ${one}, "\\u0062": ${one}}}`)).toBe('key-twice');
+    const twice = parseStore(`{\n"format": 1,\n"terms": {\n"b": ${one},\n"b": ${one}}}`);
+    expect(!twice.ok && twice.problem.message).toBe(
+      'terms.json has the key "b" twice in one object, the second time on line 5.',
+    );
+    // Once in each of two objects, or as a value, it's once.
+    const locked = { by: { login: 'a' }, at: AT };
+    expect(problem(store({ b: entry('b', { locked, term: 'b' }), at: entry('at') }))).toBe('read');
+    expect(
+      problem(
+        `{"format": 1, "terms": {"b": ${JSON.stringify(entry('b', { aliases: ['term', 'at'] }))}}}`,
+      ),
+    ).toBe('read');
+  });
 });
 
 describe('hostile stores', () => {
   test('names an object has are terms like any other', () => {
     const read = parseStore(
       store({
-        ['__proto__']: entry('__proto__', { aliases: ['constructor'] }),
+        ['__proto__']: entry('__proto__', {
+          definition: 'The `__proto__`.',
+          aliases: ['constructor'],
+        }),
         tostring: entry('toString', { aliases: ['hasOwnProperty'] }),
       }),
     );

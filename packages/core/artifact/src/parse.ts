@@ -42,7 +42,7 @@ export interface ParsedArtifact {
   references: CodeReference[];
   /** Every figure it shows, in order. */
   figures: FigureReference[];
-  /** The glossary's entries that define their terms, in order. */
+  /** The glossary's entries, in order. */
   glossary: GlossaryEntry[];
   /** What's wrong with it: any error makes it invalid. At most {@link LIMITS.findings}. */
   findings: Finding[];

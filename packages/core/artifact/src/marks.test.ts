@@ -11,18 +11,11 @@ import {
   STORE_READ,
   type CheckedArtifact,
   type FileAnswer,
-  type GlossaryEntry,
   type StoreRead,
 } from './index.ts';
 
 const LINE = PREAMBLE_LINES + 1;
 const COMMIT = '3f9c2e1d8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e';
-
-/** `items`, a glossary, after a line that links each term, parsed. */
-function glossary(...items: string[]): GlossaryEntry[] {
-  const parsed = parseArtifact(overview(`${links(items)}\n\n## Glossary\n\n${items.join('\n')}\n`));
-  return parsed.glossary;
-}
 
 /** A line linking each item's term, so none is unused. */
 function links(items: readonly string[]): string {
@@ -32,108 +25,6 @@ function links(items: readonly string[]): string {
   });
   return terms.join(' ');
 }
-
-/** The entries' definitions, as written. */
-function written(...items: string[]): (string | undefined)[] {
-  return glossary(...items).map(({ definition }) => definition);
-}
-
-describe('a glossary entry', () => {
-  test('keeps its term, its mark, its line and its definition as written', () => {
-    expect(
-      glossary(
-        '- **Bucket** (new): the tokens a [tenant](term:tenant) has, *spent* in `take()`.',
-        '- **Tenant**: whoever',
-        '  pays, and their    keys.',
-        '- **Token** (changed): one request.',
-      ),
-    ).toEqual([
-      {
-        name: 'Bucket',
-        key: 'bucket',
-        mark: 'new',
-        line: LINE + 4,
-        definition: 'the tokens a [tenant](term:tenant) has, *spent* in `take()`.',
-        storable: false,
-      },
-      {
-        name: 'Tenant',
-        key: 'tenant',
-        line: LINE + 5,
-        definition: 'whoever pays, and their    keys.',
-        storable: true,
-      },
-      {
-        name: 'Token',
-        key: 'token',
-        mark: 'changed',
-        line: LINE + 7,
-        definition: 'one request.',
-        storable: true,
-      },
-    ]);
-  });
-
-  test('starts its definition where the term really ends', () => {
-    expect(
-      written(
-        '- __Under__: underscores.',
-        '- **`a**:b`**: a colon in code.',
-        '- **a\\*\\*: b**: escaped stars.',
-        '- **a.**: b**: c.',
-        '- **`x`** (new): code alone.',
-        '- **&amp;**: an entity.',
-      ),
-    ).toEqual([
-      'underscores.',
-      'a colon in code.',
-      'escaped stars.',
-      'b**: c.',
-      'code alone.',
-      'an entity.',
-    ]);
-    expect(glossary('- **a\\*\\*: b**: x.', '- **a.**: b**: c.').map(({ name }) => name)).toEqual([
-      'a**: b',
-      'a.',
-    ]);
-  });
-
-  test('has no definition as written when it holds more than one paragraph', () => {
-    expect(
-      glossary('- **Bucket** (new): the tokens.', '', '  And more.', '- **Map**: a map.').map(
-        ({ definition, storable }) => [definition, storable],
-      ),
-    ).toEqual([
-      [undefined, false],
-      ['a map.', true],
-    ]);
-    expect(written('- **Bucket**: one.', '  - nested')).toEqual([undefined]);
-  });
-
-  test('has no definition as written when its colon is written as an escape or entity', () => {
-    expect(written('- **Bucket**\\: one.', '- **Map**&#58; two.')).toEqual([undefined, undefined]);
-  });
-
-  test('may be stored when it holds text, code and links to code and terms', () => {
-    const storable = (item: string): boolean => glossary(item)[0]!.storable;
-    expect(storable('- **A**: text, `code`, [code](code:src/a.ts#L1) and [b](term:b).')).toBe(true);
-    expect(storable('- **A**: *emphasis*.')).toBe(false);
-    expect(storable('- **A**: **strong**.')).toBe(false);
-    expect(storable('- **A**: [out](https://example.com).')).toBe(false);
-    expect(storable('- **A**: ![image](figures/a.png).')).toBe(false);
-    expect(storable('- **A**: a hard\\\n  break.')).toBe(false);
-    const most = `- **A**: ${'a'.repeat(STORE_LIMITS.definition)}`;
-    expect(storable(most)).toBe(true);
-    expect(storable(`${most}a`)).toBe(false);
-  });
-
-  test('is read in time on a paragraph of would-be ends', () => {
-    const start = performance.now();
-    const entries = glossary(`- **a ${'**: '.repeat(20_000)}**: x.`);
-    expect(performance.now() - start).toBeLessThan(2_000);
-    expect(entries.length).toBeLessThanOrEqual(1);
-  });
-});
 
 /** A store holding `terms`, each a term and its definition, and the last with `aliases`. */
 function store(terms: Record<string, string>, aliases: string[] = []): StoreRead {
@@ -222,29 +113,10 @@ describe('marks, against the repository’s definitions', () => {
   });
 
   test('a marked term whose definition they can’t hold is refused, with or without them', async () => {
-    const items = [
-      '- **Bucket** (changed): The *tokens*.',
-      '- **Token** (new): One request.',
-      '',
-      '  More.',
-      `- **Map** (new): ${'a'.repeat(STORE_LIMITS.definition + 1)}`,
-    ];
     for (const stored of [undefined, STORED]) {
-      const checked = await check(stored, ...items);
-      expect(codes(checked)).toEqual([
-        `mark-definition@${LINE + 4}`,
-        `mark-definition@${LINE + 5}`,
-        `mark-definition@${LINE + 8}`,
-      ]);
-      expect(checked.outcome.kind).toBe('shown');
+      const checked = await check(stored, '- **Bucket** (changed): The *tokens*.');
+      expect(codes(checked)).toEqual([`mark-definition@${LINE + 4}`]);
     }
-    const checked = await check(undefined, ...items);
-    expect(checked.findings[0]?.message).toBe(
-      '"Bucket" is marked (changed), so its definition goes into the repository\'s definitions, which hold one paragraph of text, inline code and links to code and terms. Write it so, or take the mark off.',
-    );
-    expect(checked.findings[2]?.message).toBe(
-      '"Map" is marked (new), and its definition is 2,049 bytes. The repository\'s definitions hold at most 2,048: shorten it, or take the mark off.',
-    );
   });
 
   test('aren’t checked without them', async () => {

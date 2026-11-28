@@ -10,6 +10,7 @@
  */
 
 import { article } from './commit.ts';
+import { isPlainTerm, notDefinitionText } from './definitions.ts';
 import { quote, UNSAFE } from './findings.ts';
 import { LIMITS } from './limits.ts';
 import { answered, type OverviewFiles } from './readers.ts';
@@ -127,7 +128,8 @@ export type StoreRead = { ok: true; store: Store } | { ok: false; problem: Store
 /**
  * Why the store can't be used. Its ref's commit has no file `terms.json`: `commit`. Past one of its
  * limits: `too-large`, `too-many` and `too-long`. Unread: `encoding`, `syntax`, `format`,
- * `format-newer` and `unreadable`. Not what it may hold: `shape`, `key` and `name-twice`.
+ * `format-newer` and `unreadable`. Not what it may hold: `shape`, `key`, `key-twice` and
+ * `name-twice`.
  */
 export type StoreProblemCode =
   | 'commit'
@@ -141,6 +143,7 @@ export type StoreProblemCode =
   | 'format-newer'
   | 'shape'
   | 'key'
+  | 'key-twice'
   | 'name-twice';
 
 export interface StoreProblem {
@@ -242,6 +245,14 @@ function read(source: Uint8Array | string): Store {
         : "terms.json isn't JSON.",
     );
   }
+  const repeated = keyedTwice(text);
+  if (repeated) {
+    refuse(
+      'key-twice',
+      undefined,
+      `terms.json has the key ${JSON.stringify(quote(repeated.key))} twice in one object, the second time on line ${repeated.line}.`,
+    );
+  }
   const root = object(value, undefined, 'terms.json');
   if (!Object.hasOwn(root, 'format')) {
     refuse('format', 'format', 'terms.json has no format. It holds "format": 1.');
@@ -306,6 +317,54 @@ function twice(name: string, key: string, owner: string): string {
   return `names ${JSON.stringify(quote(owner))}, another term.`;
 }
 
+/**
+ * The first key `text`, which is JSON, has twice in one object, and the line of the second. JSON
+ * keeps the last, so a store read and written back would lose the first. One pass, keeping the
+ * keys of each object still open.
+ */
+function keyedTwice(text: string): { key: string; line: number } | undefined {
+  // The keys of each object open, and undefined for each list.
+  const open: (Set<string> | undefined)[] = [];
+  let line = 1;
+  let key = false;
+  for (let at = 0; at < text.length; at++) {
+    const unit = text.charCodeAt(at);
+    if (unit === 0x0a) line += 1;
+    else if (unit === 0x7b) {
+      open.push(new Set());
+      key = true;
+    } else if (unit === 0x5b) {
+      open.push(undefined);
+      key = false;
+    } else if (unit === 0x7d || unit === 0x5d) {
+      open.pop();
+      key = false;
+    } else if (unit === 0x2c) key = open.at(-1) !== undefined;
+    else if (unit === 0x22) {
+      const start = at;
+      let escaped = false;
+      for (at += 1; at < text.length && text.charCodeAt(at) !== 0x22; at++) {
+        if (text.charCodeAt(at) === 0x5c) {
+          escaped = true;
+          at += 1;
+        }
+      }
+      const keys = open.at(-1);
+      if (key && keys) {
+        // A key may be written with escapes, as "\u0061" is "a".
+        const unquoted: unknown = escaped
+          ? JSON.parse(text.slice(start, at + 1))
+          : text.slice(start + 1, at);
+        const name = typeof unquoted === 'string' ? unquoted : '';
+        if (keys.has(name)) return { key: name, line };
+        keys.add(name);
+        key = false;
+      }
+    }
+  }
+  return undefined;
+}
+
 /** `source` as text, once it's no larger than the store may be and is UTF-8. */
 function textOf(source: Uint8Array | string): string {
   if (typeof source === 'string') {
@@ -352,6 +411,14 @@ function termOf(value: unknown, at: string): StoreTerm {
   const term = termText(field(entry, 'term', at), `${at}.term`);
   const aliases = list(entry, 'aliases', at, STORE_LIMITS.aliases, termText);
   const locked = Object.hasOwn(entry, 'locked') ? lock(entry['locked'], `${at}.locked`) : undefined;
+  // Unlocking a term takes its suggestions too: they wait only while it's locked.
+  if (!locked && Object.hasOwn(entry, 'suggestions')) {
+    refuse(
+      'shape',
+      `${at}.suggestions`,
+      `${at} has suggestions, and isn't locked. Only a locked term holds suggestions.`,
+    );
+  }
   return {
     key: termKey(term),
     term,
@@ -461,17 +528,20 @@ function termText(value: unknown, at: string): string {
       `${at} is longer than ${LIMITS.argument.toLocaleString('en-US')} bytes, the most a term may be.`,
     );
   }
-  if (readTerm(value).ok) return value;
-  return refuse(
-    'shape',
-    at,
-    termKey(value) === '' ? `${at} is empty.` : `${at} holds an invisible or control character.`,
-  );
+  if (termKey(value) === '') refuse('shape', at, `${at} is empty.`);
+  if (!isPlainTerm(value) || !readTerm(value).ok) {
+    refuse(
+      'shape',
+      at,
+      `${at} is plain text, with no line break, tab, invisible or control character, and no space at either end.`,
+    );
+  }
+  return value;
 }
 
 /**
  * A definition: on one line, so with no control character, and holding no invisible one, within
- * its limit.
+ * its limit, and read as Markdown, only text, inline code, and links to code and terms.
  */
 function definition(value: unknown, at: string): string {
   if (typeof value !== 'string') refuse('shape', at, `${at} is a definition, as a string.`);
@@ -485,6 +555,15 @@ function definition(value: unknown, at: string): string {
   }
   if (UNSAFE.test(value)) {
     refuse('shape', at, `${at} holds a line break, or an invisible or control character.`);
+  }
+  const not = notDefinitionText(value);
+  if (not?.why !== undefined) refuse('shape', at, `${at} holds ${not.what}. ${not.why}`);
+  if (not !== undefined) {
+    refuse(
+      'shape',
+      at,
+      `${at} holds ${not.what}. A definition holds only text, inline code, and links to code and terms.`,
+    );
   }
   return value;
 }

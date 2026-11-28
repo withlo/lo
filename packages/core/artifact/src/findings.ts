@@ -39,6 +39,7 @@ const SEVERITIES = {
   'glossary-content': 'error',
   'glossary-item': 'error',
   'glossary-mark': 'error',
+  'mark-definition': 'error',
   // Blocks.
   'block-unknown': 'error',
   'block-unclosed': 'error',
@@ -63,7 +64,6 @@ const SEVERITIES = {
   'term-twice': 'error',
   'term-unused': 'warning',
   // The glossary's marks, against the repository's definitions.
-  'mark-definition': 'error',
   'term-not-stored': 'error',
   'term-stored': 'error',
   'term-differs': 'error',

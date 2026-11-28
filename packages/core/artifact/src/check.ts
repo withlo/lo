@@ -14,7 +14,6 @@ import { ARTIFACT_READ, CHECK_TIMEOUT, FORMAT, LIMITS } from './limits.ts';
 import { tooLong, type ParsedArtifact } from './parse.ts';
 import type { GlossaryEntry } from './reading.ts';
 import type { CodeReader, OverviewFiles } from './readers.ts';
-import { utf8Length } from './source.ts';
 import { STORE_LIMITS, STORE_REF, type StoreRead } from './store.ts';
 
 /**
@@ -210,15 +209,12 @@ function checkMarks(
   store: StoreRead | undefined,
   findings: Findings,
 ): void {
-  for (const { name, mark, line, definition, storable } of glossary) {
-    if (mark === undefined || storable) continue;
-    const length = definition === undefined ? 0 : utf8Length(definition, Infinity);
+  for (const { name, mark, line, unstorable } of glossary) {
+    if (mark === undefined || unstorable === undefined) continue;
     findings.add(
       'mark-definition',
       line,
-      length > STORE_LIMITS.definition
-        ? `"${quote(name)}" is marked (${mark}), and its definition is ${length.toLocaleString('en-US')} bytes. The repository's definitions hold at most ${STORE_LIMITS.definition.toLocaleString('en-US')}: shorten it, or take the mark off.`
-        : `"${quote(name)}" is marked (${mark}), so its definition goes into the repository's definitions, which hold one paragraph of text, inline code and links to code and terms. Write it so, or take the mark off.`,
+      `"${quote(name)}" is marked (${mark}), so its definition goes into the repository's definitions, and it ${unstorable}. They hold one paragraph of text, inline code and links to code and terms, in at most ${STORE_LIMITS.definition.toLocaleString('en-US')} bytes: write it so, or take the mark off.`,
     );
   }
   if (store === undefined || glossary.length === 0) return;

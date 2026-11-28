@@ -309,7 +309,8 @@ Each tenant gets a [bucket](term:bucket), and its [buckets](term:bucket) refill 
 - **Matching** ignores case and runs of spaces: `[maps](<term:Hash  Map>)` names `**hash map**`. A
   term holds no control or invisible character.
 - **The glossary** is a list whose items each start with the term in bold, then a colon and the
-  definition: `- **Term**: definition`. The term is plain text, without links or formatting.
+  definition: `- **Term**: definition`. The term is plain text, without links or formatting, tabs,
+  or spaces at either end.
 - **Every term linked is defined,** and two definitions can't differ only in case or spaces. A term
   defined but never linked is a warning.
 
@@ -338,7 +339,12 @@ A [tenant](term:tenant) spends [tokens](term:token) from its [bucket](term:bucke
   there.
 
 A mark is written exactly so: one space after the term, then `(new)` or `(changed)` in lower case,
-then the colon.
+then the colon, with no escape or entity in place of any of them.
+
+A marked entry's definition goes into the repository's definitions when the pull request merges, so
+it's held to their rules: one paragraph of at most 2,048 bytes, holding only text, inline code,
+links into the code and links to terms, as Markdown reads it. One that isn't fails the checker, and
+Lo shows the overview all the same.
 
 ## The repository's definitions
 
@@ -377,10 +383,12 @@ writer only reads it.
 `format` is `1`, and `terms` holds each term, keyed by its name as `term:` links name it: in lower
 case, with each run of white space as one space. Each term holds:
 
-- **`term`:** the term as written, such as `"Bucket"`, as a glossary may name it.
-- **`definition`:** one or two sentences of Markdown on one line: text, inline code, links into the
-  code and links to other terms.
-- **`aliases`:** other forms that name it, such as `"buckets"`. Optional.
+- **`term`:** the term as written, such as `"Bucket"`, as a glossary may name it: plain text, with
+  no tab, line break or other control or invisible character, and no space at either end.
+- **`definition`:** one or two sentences of Markdown on one line, read as part of a paragraph, as a
+  glossary entry's is: only text, inline code, links into the code and links to other terms. No
+  bold, emphasis, HTML, images or links elsewhere.
+- **`aliases`:** other forms that name it, such as `"buckets"`, each as plain as a term. Optional.
 - **`written`:** `"agent"`, from an overview, or `"human"`, edited in Lo.
 - **`by`:** who wrote it: `{ "login": "octocat" }`, a GitHub account, or `{ "name": "A. Writer" }`,
   the git name of a commit GitHub couldn't map to an account, which isn't verified.
@@ -389,13 +397,14 @@ case, with each run of white space as one space. Each term holds:
 - **`locked`:** who locked it and when, as `by` and `at`. Optional. A merged pull request then
   suggests a change rather than making it.
 - **`suggestions`:** for a locked term, the changes merged pull requests proposed, newest first,
-  each with its `definition`, `by`, `from` (a pull request) and `at`. Optional.
+  each with its `definition`, `by`, `from` (a pull request) and `at`. Optional. A term that isn't
+  locked has none: unlocking it settles them.
 - **`changes`:** its earlier definitions, newest first, each with its `definition`, `written`, `by`,
   `from` and `at`. Optional. Older ones are in the ref's history.
 
-No two terms go by the same name, their own or an alias's, and nothing else may be in the file. A
-`terms.json` that breaks a rule here, or is past a limit, is refused whole: Lo then shows each
-overview's own glossary.
+No two terms go by the same name, their own or an alias's, no object has a key twice, and nothing
+else may be in the file. A `terms.json` that breaks a rule here, or is past a limit, is refused
+whole: Lo then shows each overview's own glossary.
 
 | What                 | At most        |
 | -------------------- | -------------- |
