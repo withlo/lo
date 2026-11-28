@@ -54,6 +54,7 @@ import { type Tip, TIPPED, tips } from './tip.ts';
 import type {
   Anchor,
   BoxFrame,
+  CommentLines,
   ComposeOptions,
   Composer,
   ComposerEvents,
@@ -159,9 +160,11 @@ import { markerGutter, type NoteEnds, notesLaneUpdate, setNotesLane } from './ma
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
 import { otherLine } from './moves.ts';
 import { PeekBlock, peekShownAt } from './peek.ts';
+import { pickLines, restingEnd } from './pick.ts';
 import { type PopRoom, ThreadPop } from './popover.ts';
 import {
   type LaneRange,
+  lineBeside,
   type Lights,
   type Lit,
   litOf,
@@ -265,6 +268,49 @@ const STILL_WITHIN = 0.01;
  * down, and keys as the key listener's event says they're input, a sequence's only as it ends.
  */
 const INPUT = ['wheel', KEY_EVENT, 'pointerdown'] as const;
+
+/** The keys that are no keys alone, as Shift held for a click: they take nothing away. */
+const MODIFIERS: ReadonlySet<string> = new Set([
+  'Shift',
+  'Control',
+  'Alt',
+  'Meta',
+  'CapsLock',
+  'Fn',
+]);
+
+/** Whether document line `line` of `view` is drawn as a line: not in a fold, a header or a note. */
+function drawnAsLine(view: EditorView, line: number): boolean {
+  const at = view.state.doc.line(line).from;
+  const whole = view.lineBlockAt(at);
+  const blocks = Array.isArray(whole.type) ? (whole.type as readonly BlockInfo[]) : [whole];
+  return blocks.some((each) => each.type === BlockType.Text && each.from <= at && at <= each.to);
+}
+
+/**
+ * Lines picked with the pointer, in one pane, of one file, on one side: from the line where it
+ * started, which stays, to its far end, which goes where the pointer does. What a drag from the
+ * `+` picks, and a click with Shift from the cursor's line.
+ */
+interface Pick {
+  readonly pane: Pane;
+  readonly file: number;
+  readonly side: Side;
+  /** The line it started on, on its side. */
+  readonly anchor: number;
+  /** The line its far end rests on now, on its side. */
+  end: number;
+  /** Which of the file's lines take a comment, once the caller says. */
+  lines: CommentLines | undefined;
+}
+
+/** A drag from the `+` that picks lines: whether it has moved far enough to, and what stops it. */
+interface PlusDrag extends Pick {
+  /** What a click on the `+` would have acted on, for a drag that ends on its own line. */
+  readonly target: LineTarget;
+  started: boolean;
+  stop: (() => void) | undefined;
+}
 
 /** Replaces one file's decorations. */
 /** How long a line put back at the top stays there once it's settled, in milliseconds. */
@@ -544,9 +590,19 @@ class View implements DiffView {
   /** What the events last said, so each says only what changed. */
   #said: { cursor?: string; mode: Mode; file: number } = { mode: 'normal', file: -1 };
   readonly #stops: (() => void)[] = [];
-  /** The `+` that follows the pointer down the gutter, and the line it's at. */
+  /**
+   * The `+` that follows the pointer down the gutter, the line it's at, and that line's document
+   * line in the pane it's drawn in.
+   */
   readonly #add = document.createElement('button');
   #addAt: Target | undefined;
+  #addRow: { pane: Pane; line: number } | undefined;
+  /** The lines a drag from the `+` picks, while one is under way. */
+  #pick: PlusDrag | undefined;
+  /** Whether the press last made in the view dragged from the `+`: its click is none of the `+`'s. */
+  #picked = false;
+  /** The file the `+` last came to, whose lines that take a comment the caller was asked for. */
+  #askedLines: number | undefined;
   /** The file whose header's band takes the keyboard's ring: every header reads it as drawn. */
   readonly #ring: HeaderRing = { file: undefined };
   /** The header of the file at the top of the scroll, pinned under the diff bar. */
@@ -741,8 +797,11 @@ class View implements DiffView {
     this.#add.hidden = true;
     this.#add.textContent = '+';
     this.#add.dataset.command = viewControls.comment;
-    // A press on it leaves focus, and what's selected, where they are.
+    // A press on it leaves focus, and what's selected, where they are. A drag from it picks lines.
     this.#add.addEventListener('mousedown', (event) => event.preventDefault());
+    this.#add.addEventListener('pointerdown', this.#pressAdd);
+    // A new press is no drag's, whatever ended the last.
+    this.dom.addEventListener('pointerdown', this.#unpick, { capture: true });
     this.dom.append(this.#add);
     this.dom.addEventListener('click', this.#runControl);
     this.dom.addEventListener('click', this.#openMore);
@@ -771,9 +830,18 @@ class View implements DiffView {
     this.dom.addEventListener('focusin', refocused);
     this.dom.addEventListener('focusout', refocused);
     this.dom.addEventListener('mouseleave', this.#hideAdd);
-    for (const type of ['wheel', 'scroll', KEY_EVENT] as const) {
+    for (const type of ['wheel', 'scroll'] as const) {
       this.dom.addEventListener(type, this.#hideAdd, { passive: true, capture: true });
     }
+    // A key takes it away, but for a modifier alone, as Shift held for a click on it. The key
+    // listener tells the view of a key before the view hears the key itself, so it looks after.
+    this.dom.addEventListener(KEY_EVENT, this.#keyHidesAdd, { passive: true, capture: true });
+    const win = this.dom.ownerDocument.defaultView;
+    win?.addEventListener('keydown', this.#noteLone, { capture: true });
+    this.#stops.push(() => {
+      win?.removeEventListener('keydown', this.#noteLone, { capture: true });
+      clearTimeout(this.#keyWait);
+    });
     this.#stops.push(tips(this.dom, (control) => this.#tipOf(control)));
     this.dom.addEventListener('keydown', this.#escape, { capture: true });
     this.dom.addEventListener('scroll', this.#letNotesGo, { passive: true });
@@ -2587,7 +2655,12 @@ class View implements DiffView {
    */
   #relight(): void {
     const lights: Lights = {
-      pinned: this.#mode === 'beside' ? this.#beside.pinnedLight() : this.#pickedBetween(),
+      // Lines a drag from the `+` picks are picked over everything else, like a box's.
+      pinned: this.#pick?.started
+        ? { picked: undefined }
+        : this.#mode === 'beside'
+          ? this.#beside.pinnedLight()
+          : this.#pickedBetween(),
       focused: this.#beside.focusedCard(),
       keyed: this.#mode === 'between' ? this.#keyLit : undefined,
       pointed: this.#pointed ?? this.#beside.pointedCard,
@@ -2635,8 +2708,21 @@ class View implements DiffView {
     };
   }
 
-  /** The lines of the comment box being written whose lines are picked, as `lightOf` found it. */
+  /**
+   * The lines picked: a drag's from the `+` under way, else those of the comment box being written
+   * whose lines are picked, as `lightOf` found it.
+   */
   #pickedLines(): { file: number; from: { side: Side; line: number }; end: At } | undefined {
+    const pick = this.#pick;
+    if (pick?.started) {
+      const { file, side } = pick;
+      const from = Math.min(pick.anchor, pick.end);
+      return {
+        file,
+        from: { side, line: from },
+        end: { file, side, line: Math.max(pick.anchor, pick.end) },
+      };
+    }
     if (this.#mode === 'beside') {
       const box = this.#beside.pickedBox();
       return box && { file: box.place.file, from: box.from ?? box.place, end: box.place };
@@ -3312,6 +3398,10 @@ class View implements DiffView {
     this.#peek?.block.destroy();
     cancelAnimationFrame(this.#takeFrame);
     cancelAnimationFrame(this.#addFrame);
+    // A drag under way stops with nothing to show it.
+    const pick = this.#pick;
+    this.#pick = undefined;
+    pick?.stop?.();
     this.#beside.destroy();
     this.#hosts.destroy();
     for (const problem of this.#problems.values()) problem.content.destroy();
@@ -4168,12 +4258,248 @@ class View implements DiffView {
     if (!control || id === undefined || !this.dom.contains(control)) return;
     // A mark beside lines pins its popover (`#clickMark`).
     if (control.dataset.beside !== undefined) return;
-    const target = this.#controlTarget(control);
+    let target = this.#controlTarget(control);
+    if (control === this.#add) {
+      // A drag from it ran Comment as it was let go, or dropped it: the click it ends in is none.
+      if (this.#picked) {
+        this.#picked = false;
+        event.preventDefault();
+        return;
+      }
+      // With Shift, on the lines from the cursor's to its own.
+      if (event.shiftKey) target = this.#fromCursor() ?? target;
+    }
     if (!target) return;
     event.preventDefault();
     this.#hideAdd();
     runControl(id, target);
   };
+
+  /** A new press in the view: whatever a drag from the `+` ended in has been heard. */
+  readonly #unpick = (): void => {
+    this.#picked = false;
+  };
+
+  /**
+   * A press on the `+`: a move of 4 px or more starts picking lines from its line, whose far end
+   * follows the pointer's row, held on lines that take a comment (`#endOf`), and lets go into
+   * Comment on them. A press let go with no move is the `+`'s click, on its line.
+   */
+  readonly #pressAdd = (event: PointerEvent): void => {
+    const target = this.#addAt;
+    const row = this.#addRow;
+    if (target?.kind !== 'line' || !('line' in target.at) || !row || this.#pick) return;
+    // Dimmed, it comments on nothing: its click says why.
+    if (this.#add.getAttribute('aria-disabled') === 'true') return;
+    const at = this.#placeAt(row.pane, row.line);
+    if (at.line === 0) return;
+    const drag: PlusDrag = {
+      pane: row.pane,
+      file: at.file,
+      side: at.side,
+      anchor: at.line,
+      end: at.line,
+      lines: this.#linesOf(at.file),
+      target,
+      started: false,
+      stop: undefined,
+    };
+    const stop = pickLines(this.#add, event, {
+      follow: (y) => this.#followPick(drag, y),
+      band: () => this.#pickBand(),
+      scroll: (by) => {
+        const before = this.dom.scrollTop;
+        this.dom.scrollTop = before + by;
+        // The reader's own scroll, made by holding the pointer there.
+        const moved = this.dom.scrollTop - before;
+        this.#asked += moved;
+        return moved !== 0;
+      },
+      end: () => {
+        this.#endPick(drag);
+        // Back on its own line, it's the `+`'s click there; else Comment on the lines it picked.
+        const span = this.#pickSpan(drag);
+        runControl(
+          viewControls.comment,
+          span.from === span.to ? drag.target : { kind: 'line', at: span },
+        );
+      },
+      cancel: () => this.#endPick(drag),
+      click: () => {
+        if (this.#pick === drag) this.#pick = undefined;
+      },
+    });
+    if (!stop) return;
+    drag.stop = stop;
+    this.#pick = drag;
+  };
+
+  /**
+   * The pointer at `y` in a drag from the `+`: its far end goes to the row there (`#endOf`), its
+   * rows take the picked ground, and the `+` stays filled on its first line. The words its tip
+   * says, once the caller has said which lines take a comment.
+   */
+  #followPick(drag: PlusDrag, y: number): string | undefined {
+    if (this.#pick !== drag) return undefined;
+    // Drawn anew another way meanwhile, as inline, or without its file's lines: it's dropped.
+    const sizes =
+      drag.pane === 'inline'
+        ? this.#inline?.layout.files[drag.file]
+        : this.#layout.files[drag.file]?.[drag.pane];
+    if (!this.#panes().includes(drag.pane) || !sizes || this.#noteOf(drag.file)) {
+      queueMicrotask(() => drag.stop?.());
+      return undefined;
+    }
+    if (!drag.started) {
+      drag.started = true;
+      this.#picked = true;
+      this.#add.classList.add('is-pressed');
+    }
+    drag.lines ??= this.#linesOf(drag.file);
+    const view = this.#viewOf(drag.pane);
+    const band = this.#pickBand();
+    // A pointer past the pane's top or foot means the row at that edge.
+    const at = Math.max(band.top + 1, Math.min(band.bottom - 1, y));
+    const start = this.#docLine(drag.pane, { file: drag.file, side: drag.side, line: drag.anchor });
+    const end = this.#endOf(drag, this.#rowToward(view, at, start));
+    if (end !== drag.end) drag.end = end;
+    this.#relight();
+    this.#holdAdd(drag, start, band);
+    return drag.lines?.on(this.#pickSpan(drag));
+  }
+
+  /** A drag from the `+` let go or dropped: what it drew goes. */
+  #endPick(drag: PlusDrag): void {
+    if (this.#pick !== drag) return;
+    this.#pick = undefined;
+    this.#add.classList.remove('is-pressed');
+    this.#add.style.visibility = '';
+    this.#hideAdd();
+    this.#relight();
+  }
+
+  /** Where the view shows lines: from under the pinned file header to the foot of its box. */
+  #pickBand(): { top: number; bottom: number } {
+    const box = this.dom.getBoundingClientRect();
+    const top = box.top + this.dom.clientTop;
+    return { top: top + this.#pinBelow(), bottom: top + this.dom.clientHeight };
+  }
+
+  /** Keeps the `+` on a drag's first line, document line `start`, while that's in `band`. */
+  #holdAdd(drag: PlusDrag, start: number, band: { top: number; bottom: number }): void {
+    const view = this.#viewOf(drag.pane);
+    const whole = view.lineBlockAt(view.state.doc.line(start).from);
+    const text = Array.isArray(whole.type)
+      ? (whole.type.find((each) => each.type === BlockType.Text) ?? whole)
+      : whole;
+    const top = view.documentTop + text.top + (view.defaultLineHeight - 16) / 2;
+    this.#add.style.top = `${top}px`;
+    // Out of sight, it's hidden, not taken away: it holds the pointer until the drag ends.
+    this.#add.style.visibility = top + 16 <= band.top || top >= band.bottom ? 'hidden' : '';
+  }
+
+  /** The lines `pick` covers, as the caller names them. */
+  #pickSpan(pick: Pick, end = pick.end): Span {
+    return {
+      file: this.#ids[pick.file]!,
+      side: pick.side,
+      from: Math.min(pick.anchor, end),
+      to: Math.max(pick.anchor, end),
+    };
+  }
+
+  /** Which lines of file `file` take a comment, as the caller says: nothing until it knows. */
+  #linesOf(file: number): CommentLines | undefined {
+    return this.#on.commentLines?.(this.#ids[file]!);
+  }
+
+  /**
+   * The document line of `view` the row at `y` in the window means, for a range starting on
+   * document line `start`: that row's line, or past what's drawn there between lines, as a fold, a
+   * header, a thread's card, a box or the room a side keeps for the other's, the nearest line on
+   * the range's side of it.
+   */
+  #rowToward(view: EditorView, y: number, start: number): number {
+    const height = y - view.documentTop;
+    const whole = view.lineBlockAtHeight(height);
+    const block = Array.isArray(whole.type)
+      ? (whole.type.find((each) => height < each.bottom) ?? whole.type.at(-1)!)
+      : whole;
+    const { doc } = view.state;
+    if (block.type === BlockType.Text) return doc.lineAt(block.from).number;
+    // Lines a block stands in for, as a fold or a header.
+    if (block.to > block.from) {
+      const first = doc.lineAt(block.from).number;
+      const last = doc.lineAt(block.to).number;
+      return start < first ? first - 1 : start > last ? last + 1 : start;
+    }
+    const { line, after } = lineBeside(view, block);
+    const above = after ? line : line - 1;
+    return start <= above ? above : above + 1;
+  }
+
+  /**
+   * Where `pick`'s far end rests that would be at document line `toward`: in its file, on its side,
+   * on a line drawn as a line (no fold, header or note), which takes a comment from `pick`'s first
+   * line as the caller says, the nearest such toward the first. Its line on its side.
+   */
+  #endOf(pick: Pick, toward: number): number {
+    const view = this.#viewOf(pick.pane);
+    const { doc } = view.state;
+    const sizes =
+      pick.pane === 'inline'
+        ? this.#inline!.layout.files[pick.file]!
+        : this.#layout.files[pick.file]![pick.pane];
+    const start = this.#docLine(pick.pane, { file: pick.file, side: pick.side, line: pick.anchor });
+    // A drag toward another file stops at its own's last line, or first.
+    const clamped = Math.max(sizes.header + 1, Math.min(sizes.header + sizes.count, toward));
+    const end = restingEnd(start, Math.min(doc.lines, clamped), (each) => {
+      const line = this.#sideLine(pick, each);
+      if (line === 0 || !drawnAsLine(view, each)) return false;
+      return pick.lines === undefined || pick.lines.on(this.#pickSpan(pick, line)) !== undefined;
+    });
+    return this.#sideLine(pick, end) || pick.anchor;
+  }
+
+  /**
+   * The line on `pick`'s side of its file that document line `line` of its pane shows, or 0 where
+   * it shows none, as a header, another file's line, or inline, a line of the other side alone.
+   */
+  #sideLine(pick: Pick, line: number): number {
+    if (pick.pane !== 'inline') {
+      const at = this.#placeAt(pick.pane, line);
+      return at.file === pick.file ? at.line : 0;
+    }
+    const shown = this.#inline!.layout.lineAt(line);
+    return shown.file === pick.file ? shown[pick.side] : 0;
+  }
+
+  /**
+   * A click with Shift on the `+`: the lines from the cursor's line to the `+`'s, by a drag's
+   * edges, when the cursor is in the same file and column, on a line that takes a comment; else
+   * nothing, and the click is the `+`'s own line's.
+   */
+  #fromCursor(): LineTarget | HeaderTarget | undefined {
+    const row = this.#addRow;
+    if (!row || row.pane !== this.#activePane()) return undefined;
+    const view = this.#viewOf(row.pane);
+    const head = view.state.doc.lineAt(view.state.selection.main.head).number;
+    const cursor = this.#placeAt(row.pane, head);
+    const clicked = this.#placeAt(row.pane, row.line);
+    if (cursor.line === 0 || clicked.line === 0 || cursor.file !== clicked.file) return undefined;
+    const pick: Pick = {
+      pane: row.pane,
+      file: cursor.file,
+      side: cursor.side,
+      anchor: cursor.line,
+      end: cursor.line,
+      lines: this.#linesOf(cursor.file),
+    };
+    if (pick.lines && pick.lines.on(this.#pickSpan(pick)) === undefined) return undefined;
+    pick.end = this.#endOf(pick, row.line);
+    if (pick.end === pick.anchor) return this.#lineTarget(cursor);
+    return { kind: 'line', at: this.#pickSpan(pick) };
+  }
 
   /**
    * Puts the `+` in the gutter beside the line of code the pointer is over, where a click comments
@@ -4196,7 +4522,7 @@ class View implements DiffView {
   #addFrame = 0;
 
   #placeAdd(target: EventTarget | null, y: number, pressed: boolean): void {
-    if (target === this.#add) return;
+    if (target === this.#add || this.#pick) return;
     const pane =
       target instanceof Element && !pressed
         ? this.#panes().find((each) => this.#viewOf(each).dom.contains(target))
@@ -4227,6 +4553,12 @@ class View implements DiffView {
       return;
     }
     this.#addAt = line;
+    this.#addRow = { pane, line: view.state.doc.lineAt(block.from).number };
+    // Which of the file's lines take a comment, asked of the caller before a drag needs it.
+    if (this.#askedLines !== at.file) {
+      this.#askedLines = at.file;
+      this.#linesOf(at.file);
+    }
     const add = this.#add;
     add.setAttribute('aria-label', shown.label);
     if (shown.off === undefined) add.removeAttribute('aria-disabled');
@@ -4236,10 +4568,29 @@ class View implements DiffView {
     add.hidden = false;
   }
 
+  /** Whether the key last pressed was a modifier alone, and the wait to see. */
+  #lone = false;
+  #keyWait: ReturnType<typeof setTimeout> | undefined;
+
+  readonly #noteLone = (event: KeyboardEvent): void => {
+    if (MODIFIERS.has(event.key)) this.#lone = true;
+  };
+
+  /** The reader's key: the `+` goes, unless it was a modifier alone, once that's known. */
+  readonly #keyHidesAdd = (): void => {
+    this.#lone = false;
+    clearTimeout(this.#keyWait);
+    this.#keyWait = setTimeout(() => {
+      if (!this.#lone) this.#hideAdd();
+    }, 0);
+  };
+
   #hideAdd = (): void => {
     // Nor does a move of the pointer still waiting for its frame bring it back.
     cancelAnimationFrame(this.#addFrame);
     this.#addOver = undefined;
+    // A drag from it keeps it, filled, on its first line, through the scroll it makes.
+    if (this.#pick) return;
     this.#add.hidden = true;
     this.#add.removeAttribute('aria-disabled');
   };
@@ -4270,10 +4621,28 @@ class View implements DiffView {
       if (pos === null) return;
       // At the column clicked, so what acts on a word, as `gd` does, acts on the one clicked.
       const line = view.state.doc.lineAt(pos);
-      clicked = this.#lineTarget(this.#placeAt(pane, line.number), pos - line.from);
+      clicked =
+        this.#selectionAt(pane, line.number) ??
+        this.#lineTarget(this.#placeAt(pane, line.number), pos - line.from);
     }
     event.preventDefault();
     this.#on.menu(clicked, event.clientX, event.clientY);
+  }
+
+  /**
+   * Inside a selection of more than one line of one file on one side, a right-click on document
+   * line `line` of `pane` acts on those lines, as a key would: what the menu's commands then take.
+   */
+  #selectionAt(pane: Pane, line: number): LineTarget | undefined {
+    const lines = selectedLines(this.#viewOf(pane));
+    if (lines.anchor === lines.head) return undefined;
+    if (line < Math.min(lines.anchor, lines.head) || line > Math.max(lines.anchor, lines.head)) {
+      return undefined;
+    }
+    const target = this.#targetOf(pane);
+    return target.kind === 'line' && 'from' in target.at && target.at.from < target.at.to
+      ? target
+      : undefined;
   }
 
   // Panes ------------------------------------------------------------------------------------

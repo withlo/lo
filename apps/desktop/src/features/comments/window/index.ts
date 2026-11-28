@@ -75,6 +75,7 @@ import {
   keepBoxesOf,
   keptAway,
   landBoxes,
+  linesTaken,
   knowPull,
   markDrafts,
   marksSoon,
@@ -128,6 +129,7 @@ import {
   takeThreads,
 } from './threads.ts';
 import { followVim, switchVim } from './vim.ts';
+import { commentOnText } from './writing.ts';
 
 /** The pull request's tab on screen, where a comment can be written, or why one can't. */
 function writable(): PullTab | string {
@@ -187,6 +189,16 @@ function changed(view: string): void {
   blockThreadsChanged(view);
 }
 
+/** On lines selected, what Comment's row in their right-click menu says: "Comment on lines 35–38". */
+function commentOnNamed(target: LineTarget | HeaderTarget): string | undefined {
+  if (target.kind !== 'line' || !('from' in target.at) || target.at.from === target.at.to) {
+    return undefined;
+  }
+  const tab = activeTab();
+  const taken = tab?.kind === 'pull' ? linesTaken(tab.id, target.at.file) : undefined;
+  return commentOnText(target.at, taken?.on(target.at));
+}
+
 /** Opens a box as `c`, `C` or `s` do. */
 function writing(how: 'review' | 'now', suggest = false) {
   return (target: LineTarget | HeaderTarget): void => {
@@ -212,7 +224,7 @@ function actOn(run: (tab: PullTab, target: ThreadKeyTarget) => unknown) {
 
 export default {
   commands: handlers(keys, {
-    comment: { run: writing('review'), enabled: enabled(inDiff) },
+    comment: { run: writing('review'), enabled: enabled(inDiff), named: commentOnNamed },
     commentNow: { run: writing('now'), enabled: enabled(inDiff) },
     suggest: { run: writing('review', true), enabled: enabled(inDiff) },
     commentOnBlock: {
@@ -444,6 +456,7 @@ export default {
       arrived(view) {
         if (activeTab()?.id === view) tell('New thread');
       },
+      commentLines: linesTaken,
     });
     setBlockThreads({
       threadsOn(block) {

@@ -13,6 +13,7 @@ import {
   blockWhere,
   boxAt,
   commentableOn,
+  commentOnText,
   hunksOf,
   linesAt,
   notesOf,
@@ -233,6 +234,18 @@ describe('a draft’s place', () => {
     expect(whereText({ ...onLines, lines: null })).toBe('File');
     expect(whereText({ kind: 'reply', thread: 'T1' })).toBe('Reply');
     expect(whereText({ kind: 'edit', thread: 'T1', comment: 'C1' })).toBe('Edit');
+  });
+
+  test('names the lines selected on Comment’s row of their menu, as a box on them says them', () => {
+    const span = { file: 'f1', side: 'new' as const, from: 35, to: 38 };
+    expect(commentOnText(span, undefined)).toBe('Comment on lines 35–38');
+    expect(commentOnText({ ...span, side: 'old' }, undefined)).toBe(
+      'Comment on lines 35–38, removed',
+    );
+    // Where an unchanged line picked in the older column goes on the newer.
+    expect(commentOnText({ ...span, side: 'old' }, 'Line 35, removed, to line 40')).toBe(
+      'Comment on line 35, removed, to line 40',
+    );
   });
 
   test('a reply’s is its thread’s, and an edit’s its comment’s, whatever the revision', () => {

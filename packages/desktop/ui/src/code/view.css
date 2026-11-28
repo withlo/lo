@@ -217,8 +217,9 @@
 }
 
 /*
- * The `+` that follows the pointer down the gutter: a click comments on its line. It sits over the
- * start of the line's number, clear of the overview markers, takes no room, and moves nothing.
+ * The `+` that follows the pointer down the gutter: a click comments on its line, and a drag from it
+ * on the lines it crosses. It sits over the start of the line's number, clear of the overview
+ * markers, takes no room, and moves nothing.
  */
 .lo-gutteradd {
   position: fixed;
@@ -238,8 +239,9 @@
   font-variant-ligatures: none;
   cursor: default;
 }
-/* An outline under the pointer, and the accent's fill only while it's pressed. */
-.lo-gutteradd:active:not([aria-disabled='true']) {
+/* An outline under the pointer, and the accent's fill only while it's pressed, or dragged from. */
+.lo-gutteradd:active:not([aria-disabled='true']),
+.lo-gutteradd.is-pressed {
   background: var(--lo-accent);
   box-shadow: none;
   color: var(--lo-on-accent);
@@ -268,6 +270,13 @@
   color: var(--lo-fg);
   font: var(--lo-text-small);
   pointer-events: none;
+}
+/* The lines a drag from the `+` picks, by the pointer: one line, as the box's head says them. */
+.lo-picktip {
+  white-space: nowrap;
+}
+.lo-picktip[hidden] {
+  display: none;
 }
 .lo-tip__keys {
   display: inline-flex;

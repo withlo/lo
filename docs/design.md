@@ -784,10 +784,12 @@ trust.
 ### Comments
 
 - **Where.** `c` comments on the current line, and `v` then `c` on a range of lines, on either side
-  of the diff. `c` on a file's header, or on its row in the file tree, leaves a file-level comment,
-  its box under the header, in the header's popover beside lines. GitHub takes line comments only on
-  lines in the PR's diff, so on any other line Lo says so, and `⏎` then comments on the file
-  instead. Comments can also be written on an overview's code blocks (section 8).
+  of the diff. By the mouse, a click on the `+` beside a line comments on it, a drag from the `+` on
+  the lines it crosses, and Shift with the click on the lines from the cursor's. `c` on a file's
+  header, or on its row in the file tree, leaves a file-level comment, its box under the header, in
+  the header's popover beside lines. GitHub takes line comments only on lines in the PR's diff, so
+  on any other line Lo says so, and `⏎` then comments on the file instead. Comments can also be
+  written on an overview's code blocks (section 8).
 - **In the diff.** A thread is its mark beside the code, and opens over the code in a popover under
   its last line: the pointer resting on the mark previews it, and a click, `⏎` on its line or `]t`
   pins it. A reply's, an edit's and a new comment's box open in the popover too, so no line moves

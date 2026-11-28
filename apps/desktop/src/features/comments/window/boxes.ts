@@ -30,6 +30,7 @@ import {
   type LineRef,
 } from '@lo/review';
 import type {
+  CommentLines,
   Composer,
   ComposerEvents,
   DraftMark,
@@ -138,6 +139,7 @@ import {
   sentLabel,
   SIGN_IN,
   couldnt,
+  whereText,
   whyOf,
   NOTHING_TO_DISCARD,
   NOTHING_TO_UNDO,
@@ -496,8 +498,14 @@ const views = new Map<string, Map<string, Box>>();
 /** The pull request each view shows, as its diff was drawn. */
 const pulls = new Map<string, PostPull>();
 
-/** What main said of the comments each file takes, by view, commit and path, with the view. */
-const commentables = new Map<string, { view: string; asked: Promise<Commentable> }>();
+/**
+ * What main said of the comments each file takes, by view, commit and path, with the view: asked,
+ * and once it's said, the answer.
+ */
+const commentables = new Map<
+  string,
+  { view: string; asked: Promise<Commentable>; answer?: Commentable | undefined }
+>();
 
 /**
  * Each view's places whose drafts were dropped here, until main says so: drafts it sent before it
@@ -582,24 +590,65 @@ function commentableOf(
   previous: string | null,
 ): Promise<Commentable> {
   const key = JSON.stringify([view, commit, path, previous]);
-  let asked = commentables.get(key)?.asked;
-  if (!asked) {
-    const asking: Promise<Commentable> = main()
+  const known = commentables.get(key);
+  if (known && known.answer?.kind !== 'unknown') return known.asked;
+  const entry: { view: string; asked: Promise<Commentable>; answer?: Commentable } = {
+    view,
+    asked: main()
       .commentable({ id: view, commit, path, previous })
       .catch((error: unknown): Commentable => {
         console.error("Lo couldn't read which lines take a comment:", error);
         return { kind: 'unknown' };
       })
       .then((answer) => {
-        if (answer.kind === 'unknown' && commentables.get(key)?.asked === asking) {
-          commentables.delete(key);
-        }
+        entry.answer = answer;
         return answer;
-      });
-    asked = asking;
-    commentables.set(key, { view, asked });
-  }
-  return asked;
+      }),
+  };
+  commentables.set(key, entry);
+  return entry.asked;
+}
+
+/**
+ * What main last said of which comments a file takes at a revision, once it has, asked as
+ * `commentableOf` asks: "can't tell" too, until something that writes a comment asks again.
+ */
+function commentableNow(
+  view: string,
+  commit: string,
+  path: string,
+  previous: string | null,
+): Commentable | undefined {
+  const known = commentables.get(JSON.stringify([view, commit, path, previous]));
+  if (known) return known.answer;
+  void commentableOf(view, commit, path, previous);
+  return undefined;
+}
+
+/** A file none of whose lines take a comment. */
+const NO_LINES_TAKEN: CommentLines = { on: () => undefined };
+
+/**
+ * Which lines of file `id` in view `view`'s diff take a comment, as main says, for a drag from the
+ * `+`: nothing until main has said, which it's asked. What a comment on lines goes on is in the
+ * words its box's head says, as `comment` places it.
+ */
+export function linesTaken(view: string, id: string): CommentLines | undefined {
+  const diff = writingDiff(view);
+  if (!diff) return undefined;
+  const drawn = diff.drawn();
+  const file = drawn.files.find((each) => each.id === id);
+  const path = file && githubPath(file);
+  if (!file || path === undefined) return NO_LINES_TAKEN;
+  const answer = commentableNow(view, drawn.at, path, previousOf(file));
+  if (!answer) return undefined;
+  const takes = commentableOn(screenFor(view, diff, file.since), answer);
+  return {
+    on(span) {
+      const on = linesAt(takes, span);
+      return on && whereText(placeOf(drawn.at, path, on));
+    },
+  };
 }
 
 /** The events of a box the diff draws. */

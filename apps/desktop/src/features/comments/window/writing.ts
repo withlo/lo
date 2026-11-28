@@ -201,6 +201,19 @@ export function whereText(place: DraftPlaceRow): string {
   return lineRefText({ lines: place.lines });
 }
 
+/**
+ * What Comment's row in the right-click menu of lines selected says: "Comment on lines 35–38", in
+ * `where`, the words a box on them would say, or where GitHub takes no comment on them, or main
+ * hasn't said, the lines as they're selected.
+ */
+export function commentOnText(span: Span, where: string | undefined): string {
+  const side = githubSide(span.side);
+  const lines =
+    where ??
+    lineRefText({ lines: { start: Line.of(side, span.from), end: Line.of(side, span.to) } });
+  return `Comment on ${lines.charAt(0).toLowerCase()}${lines.slice(1)}`;
+}
+
 /** What a box's note offers to do about what it says. */
 export type Offer = 'showLatest' | 'loadNewer' | 'onFile' | 'sendAgain' | 'checkAgain' | 'discard';
 
