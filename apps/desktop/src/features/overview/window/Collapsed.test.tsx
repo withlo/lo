@@ -1,54 +1,66 @@
 // @vitest-environment jsdom
 // Settings' Collapsed sections row: every repo's list and each repo's own, and what its field and
 // buttons write.
-import { act } from 'react';
+import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 
 import { Slot, Slots } from '../../../window/slots.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
-import type { SettingsState } from '../../settings/contract.ts';
 import { rows } from '../../settings/window/shared.ts';
-import { showSettings } from '../../settings/window/store.ts';
 import type { ScopedValue } from '../settings.ts';
-import CollapsedRow from './Collapsed.tsx';
+import CollapsedRow, { Add, Lists } from './Collapsed.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
 });
 
-/** Settings as main says them, with `overview.collapsed` set to `value`. */
-function shown(value: ScopedValue): void {
-  const state: SettingsState = {
-    file: '~/.config/lo/settings.json',
-    values: { 'overview.collapsed': value },
-    inFile: ['overview.collapsed'],
-    problems: [],
-  };
-  showSettings(state);
-}
-
-/** The row, drawn in Settings' slot, with what it asks main to write. */
-function drawn(value: ScopedValue) {
-  shown(value);
-  const bridge = installBridge({ 'settings.set': () => undefined });
+/** Draws `element` in a container of its own, taken away as the test ends. */
+function draw(element: ReactNode): HTMLElement {
   const container = document.createElement('div');
   document.body.append(container);
   const root = createRoot(container);
-  act(() =>
-    root.render(
-      <Slots views={[CollapsedRow]}>
-        <Slot slot={rows} props={{}} />
-      </Slots>,
-    ),
-  );
+  act(() => root.render(element));
   onTestFinished(() => {
     act(() => root.unmount());
     container.remove();
   });
+  return container;
+}
+
+/**
+ * The row, drawn in Settings' slot, with what it asks main to write. Main hasn't said what the file
+ * holds, so the row shows the setting's default: no collapsed sections.
+ */
+function drawn() {
+  const bridge = installBridge({ 'settings.set': () => undefined });
+  const container = draw(
+    <Slots views={[CollapsedRow]}>
+      <Slot slot={rows} props={{}} />
+    </Slots>,
+  );
   const writes = () =>
     bridge.calls.filter(([channel]) => channel === 'settings.set').map(([, input]) => input);
   return { container, writes };
+}
+
+/** One of the row's controls, given `value`, with the values it changes the setting to. */
+function control(
+  Control: typeof Lists | typeof Add,
+  value: ScopedValue,
+): { container: HTMLElement; changes: ScopedValue[] } {
+  const changes: ScopedValue[] = [];
+  const container = draw(
+    <div role="group">
+      <Control
+        value={value}
+        change={(next) => changes.push(next)}
+        note={() => undefined}
+        noteId={undefined}
+      />
+    </div>,
+  );
+  return { container, changes };
 }
 
 function click(element: Element | null | undefined): void {
@@ -87,16 +99,64 @@ function scopes(container: HTMLElement): string[][] {
 }
 
 describe('the Collapsed sections row', () => {
-  it('lists every repo’s headings, then each repo’s own by name, each heading once', () => {
-    const { container } = drawn({
-      'rozed-dev/lo': ['Rollout', 'Testing'],
-      '*': ['Testing', 'testing'],
-      'fieldwork/atlas-api': [],
-    });
+  it('says what it holds, and that there are none with nothing listed', () => {
+    const { container } = drawn();
     expect(container.textContent).toContain('Collapsed sections');
     expect(container.textContent).toContain(
       'Overview sections that start collapsed, by heading. The tl;dr always shows.',
     );
+    expect(container.textContent).toContain('No collapsed sections');
+  });
+
+  it('adds a heading typed in its field to every repo’s list, with Add or ⏎', async () => {
+    const { container, writes } = drawn();
+    const field = container.querySelector<HTMLInputElement>('input')!;
+    expect(field.placeholder).toBe('Heading');
+    type(field, '  How   it works ');
+    enter(field);
+    await settle();
+    expect(writes()).toEqual([{ key: 'overview.collapsed', value: { '*': ['How it works'] } }]);
+    expect(field.value).toBe('');
+    type(field, 'Rollout');
+    const add = [...container.querySelectorAll('button')].find(
+      (each) => each.textContent === 'Add',
+    );
+    click(add);
+    await settle();
+    expect(writes()).toHaveLength(2);
+  });
+
+  it('refuses the tl;dr, saying why under its line', async () => {
+    const { container, writes } = drawn();
+    const field = container.querySelector<HTMLInputElement>('input')!;
+    type(field, 'TL;DR');
+    enter(field);
+    await settle();
+    expect(writes()).toEqual([]);
+    const note = container.querySelector('[role="alert"]');
+    expect(note?.textContent).toBe('The tl;dr can’t collapse.');
+    expect(field.getAttribute('aria-describedby')).toBe(note?.id);
+    expect(field.getAttribute('aria-invalid')).toBe('true');
+    // Typing again clears it.
+    type(field, 'Testing');
+    expect(container.querySelector('[role="alert"]')?.textContent ?? '').toBe('');
+  });
+
+  it('writes nothing for a heading every repo’s list has', () => {
+    const { container, changes } = control(Add, { '*': ['Testing'] });
+    const field = container.querySelector<HTMLInputElement>('input')!;
+    type(field, 'testing');
+    enter(field);
+    expect(changes).toEqual([]);
+    expect(field.value).toBe('');
+  });
+
+  it('lists every repo’s headings, then each repo’s own by name, each heading once', () => {
+    const { container } = control(Lists, {
+      'rozed-dev/lo': ['Rollout', 'Testing'],
+      '*': ['Testing', 'testing'],
+      'fieldwork/atlas-api': [],
+    });
     expect(scopes(container)).toEqual([
       ['Every repo', 'TestingRemove'],
       ['fieldwork/atlas-api · replaces every repo’s list'],
@@ -110,52 +170,11 @@ describe('the Collapsed sections row', () => {
     expect(container.textContent).toContain('None in this repo');
   });
 
-  it('says there are none with nothing listed', () => {
-    const { container } = drawn({});
-    expect(container.textContent).toContain('No collapsed sections');
-  });
-
-  it('adds a heading typed in its field to every repo’s list, with Add or ⏎', async () => {
-    const { container, writes } = drawn({ '*': ['Testing'] });
-    const field = container.querySelector<HTMLInputElement>('input')!;
-    expect(field.placeholder).toBe('Heading');
-    type(field, '  How   it works ');
-    enter(field);
-    await settle();
-    expect(writes()).toEqual([
-      { key: 'overview.collapsed', value: { '*': ['Testing', 'How it works'] } },
-    ]);
-    expect(field.value).toBe('');
-    type(field, 'Rollout');
-    const add = [...container.querySelectorAll('button')].find(
-      (each) => each.textContent === 'Add',
-    );
-    click(add);
-    await settle();
-    expect(writes()).toHaveLength(2);
-  });
-
-  it('refuses the tl;dr, saying why under its line, and writes nothing for a heading listed', async () => {
-    const { container, writes } = drawn({ '*': ['Testing'] });
-    const field = container.querySelector<HTMLInputElement>('input')!;
-    type(field, 'TL;DR');
-    enter(field);
-    await settle();
-    expect(writes()).toEqual([]);
-    const note = container.querySelector('[role="alert"]');
-    expect(note?.textContent).toBe('The tl;dr can’t collapse.');
-    expect(field.getAttribute('aria-describedby')).toBe(note?.id);
-    expect(field.getAttribute('aria-invalid')).toBe('true');
-    // Typing again clears it.
-    type(field, 'testing');
-    expect(container.querySelector('[role="alert"]')?.textContent ?? '').toBe('');
-    enter(field);
-    await settle();
-    expect(writes()).toEqual([]);
-  });
-
-  it('removes an entry, puts a repo’s in every list, and resets a repo', async () => {
-    const { container, writes } = drawn({ '*': ['Testing'], 'rozed-dev/lo': ['Rollout'] });
+  it('removes an entry, puts a repo’s in every list, and resets a repo', () => {
+    const { container, changes } = control(Lists, {
+      '*': ['Testing'],
+      'rozed-dev/lo': ['Rollout'],
+    });
     const button = (name: string) =>
       [...container.querySelectorAll('button')].find(
         (each) => each.getAttribute('aria-label') === name,
@@ -163,14 +182,10 @@ describe('the Collapsed sections row', () => {
     click(button('Remove Testing'));
     click(button('Collapse Rollout in every repo'));
     click(button('Reset rozed-dev/lo'));
-    await settle();
-    expect(writes()).toEqual([
-      { key: 'overview.collapsed', value: { '*': [], 'rozed-dev/lo': ['Rollout'] } },
-      {
-        key: 'overview.collapsed',
-        value: { '*': ['Testing', 'Rollout'], 'rozed-dev/lo': ['Rollout'] },
-      },
-      { key: 'overview.collapsed', value: { '*': ['Testing'] } },
+    expect(changes).toEqual([
+      { '*': [], 'rozed-dev/lo': ['Rollout'] },
+      { '*': ['Testing', 'Rollout'], 'rozed-dev/lo': ['Rollout'] },
+      { '*': ['Testing'] },
     ]);
   });
 });

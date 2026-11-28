@@ -41,7 +41,7 @@ function rowsOf(scoped: Scoped, entries: readonly string[], repo: boolean): Scop
 }
 
 /** The lists, under the row's words: every repo's, then each repo's own, by name. */
-function Lists({ value, change }: ControlProps<ScopedValue>) {
+export function Lists({ value, change }: ControlProps<ScopedValue>) {
   const { scoped } = readScoped(value, collapsed.key);
   const repos: ScopedRepo[] = scoped.repos
     .toSorted((one, other) => one.repo.localeCompare(other.repo, 'en', { sensitivity: 'base' }))
@@ -69,7 +69,7 @@ function Lists({ value, change }: ControlProps<ScopedValue>) {
  * A heading every repo's list has already is shown there, with the Land move, rather than added
  * twice.
  */
-function Add({ value, change, note, noteId }: ControlProps<ScopedValue>) {
+export function Add({ value, change, note, noteId }: ControlProps<ScopedValue>) {
   const [text, setText] = useState('');
   const [refused, setRefused] = useState(false);
   const own = useRef<HTMLDivElement>(null);
