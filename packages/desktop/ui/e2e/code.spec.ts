@@ -1994,9 +1994,9 @@ test('on one line the one end of a box’s bracket is both, a drag up moving its
   const tip = page.locator('.lo-tip[role="tooltip"]');
   await expect(tip).toHaveText('First and last lineCtrl+Alt+Shift+↑Ctrl+Alt+↓');
   // Over the end, never under it, where the box is: `y` is 10 px under the end's top.
-  const drawn = (await tip.boundingBox())!;
-  expect(drawn.y + drawn.height).toBeLessThanOrEqual(both!.y - 10);
-  expect(drawn.y + drawn.height).toBeLessThan((await boxBy(page, 'After', 'a 7')).top!);
+  const shownAt = (await tip.boundingBox())!;
+  expect(shownAt.y + shownAt.height).toBeLessThanOrEqual(both!.y - 10);
+  expect(shownAt.y + shownAt.height).toBeLessThan((await boxBy(page, 'After', 'a 7')).top!);
 
   await page.mouse.down();
   await dragTo(page, 'After', 'a 5');

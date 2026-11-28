@@ -129,32 +129,37 @@ for (const [what, quiet] of [
   });
 }
 
+/** A box `width` wide and `height` tall, `top` from the window's top. */
+function rect(top: number, height: number, width: number): DOMRect {
+  return DOMRect.fromRect({ x: 100, y: top, width, height });
+}
+
+/** Where the tip on `ball` shows from the window's top, asked for on `side`, and takes it away. */
+function tipTop(side: 'top' | undefined): string | undefined {
+  stop();
+  stop = tips(root, () => ({ label: 'First line', side }));
+  move(ball, 'mouseover');
+  vi.advanceTimersByTime(TIP_DELAY);
+  const at = document.querySelector<HTMLElement>('.lo-tip')?.style.top;
+  ball.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: root }));
+  return at;
+}
+
 test('a tip asked for over its control shows over it where it fits, else under it, as one with no side shows under it', () => {
-  const rect = (top: number, height: number, width: number): DOMRect =>
-    DOMRect.fromRect({ x: 100, y: top, width, height });
   let control = rect(300, 20, 20);
   const measured = vi
     .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
     .mockImplementation(function (this: HTMLElement) {
       return this.classList.contains('lo-tip') ? rect(0, 24, 80) : control;
     });
-  const top = (side: 'top' | undefined): string | undefined => {
-    stop();
-    stop = tips(root, () => ({ label: 'First line', side }));
-    move(ball, 'mouseover');
-    vi.advanceTimersByTime(TIP_DELAY);
-    const at = document.querySelector<HTMLElement>('.lo-tip')?.style.top;
-    ball.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: root }));
-    return at;
-  };
   try {
     expect(window.innerHeight).toBeGreaterThan(400);
     // 6 px from the control, either way.
-    expect(top('top')).toBe('270px');
-    expect(top(undefined)).toBe('326px');
+    expect(tipTop('top')).toBe('270px');
+    expect(tipTop(undefined)).toBe('326px');
     // With no room over it, under it.
     control = rect(10, 20, 20);
-    expect(top('top')).toBe('36px');
+    expect(tipTop('top')).toBe('36px');
   } finally {
     measured.mockRestore();
   }
