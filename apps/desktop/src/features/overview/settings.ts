@@ -1,7 +1,8 @@
 // The overview's settings: whether there are overviews at all, which the window shows in Settings ›
 // Pull requests before what a pull request's tab opens on, and main reads before it reads one;
-// whether coding agents write one by themselves, which the overview skill's hook reads; and which
-// sections of an overview start collapsed, kept per repo, and how Lo reads and writes such lists.
+// whether coding agents write one by themselves, which the overview skill's hook reads; which
+// sections of an overview start collapsed, and which glossary terms the reader ignores, each kept
+// per repo; and how Lo reads and writes such lists.
 
 import { z } from 'zod';
 
@@ -32,8 +33,8 @@ export const auto = defineSetting('overview.auto', z.boolean(), true, 'true or f
   description: 'Coding agents write one after opening or pushing to a pull request.',
 });
 
-// Lists kept per repo in the settings file, as the collapsed sections are: every repo's list under
-// `*`, and a repo's own under its name, which replaces every repo's there.
+// Lists kept per repo in the settings file, as the collapsed sections and the ignored terms are:
+// every repo's list under `*`, and a repo's own under its name, which replaces every repo's there.
 //
 //   { "*": ["Testing"], "rozed-dev/e2e": ["Testing", "Rollout"] }
 //
@@ -176,10 +177,14 @@ function keyOf(value: ScopedValue, repo: string): string | undefined {
   return Object.keys(value).find((scope) => scope !== EVERY && sameRepo(scope, repo));
 }
 
-/** `list`, a list the file holds, with `entry` in it or out of it; what Lo can't read stays. */
-function changed(list: readonly Json[], entry: string, listed: boolean) {
-  const key = entryKey(entry);
-  const without = list.filter((each) => !readable(each) || entryKey(each) !== key);
+/**
+ * `list`, a list the file holds, with `entry` in it or out of it, and none of `also`, the other
+ * names of what it names, such as a term's aliases, in it either way: it's listed once, by
+ * `entry`. What Lo can't read stays.
+ */
+function changed(list: readonly Json[], entry: string, listed: boolean, also: readonly string[]) {
+  const keys = new Set([entry, ...also].map(entryKey));
+  const without = list.filter((each) => !readable(each) || !keys.has(entryKey(each)));
   return listed ? [...without, entry.trim()] : without;
 }
 
@@ -208,17 +213,19 @@ function withEvery(value: ScopedValue, list: Json[]): ScopedValue {
  * `value` with `entry` in or out of the list that applies in `repo`, as "In this repo" writes it:
  * the repo's list with the change becomes its own, starting from every repo's where it has none,
  * and one that ends up the same as every repo's goes, since every repo's applies there then.
+ * `also` are the entry's other names, which go from the list too: see {@link changed}.
  */
 export function setInRepo(
   value: ScopedValue,
   repo: string,
   entry: string,
   listed: boolean,
+  also: readonly string[] = [],
 ): ScopedValue {
   const key = keyOf(value, repo);
   const every = listOf(value, EVERY) ?? [];
   const from = (key === undefined ? undefined : listOf(value, key)) ?? every;
-  const list = changed(from, entry, listed);
+  const list = changed(from, entry, listed, also);
   const next = { ...value };
   if (sameEntries(list, every)) {
     if (key !== undefined) delete next[key];
@@ -230,19 +237,26 @@ export function setInRepo(
 
 /**
  * `value` with `entry` in or out of every list, as "In every repo" writes it: on, it's added to
- * every repo's list and to each repo's own; off, it's taken out of all of them.
+ * every repo's list and to each repo's own; off, it's taken out of all of them. `also` are the
+ * entry's other names, which go from every list too: see {@link changed}.
  */
-export function setEverywhere(value: ScopedValue, entry: string, listed: boolean): ScopedValue {
+export function setEverywhere(
+  value: ScopedValue,
+  entry: string,
+  listed: boolean,
+  also: readonly string[] = [],
+): ScopedValue {
   const next: ScopedValue = {};
   for (const [scope, list] of Object.entries(value)) {
-    next[scope] = scope !== EVERY && Array.isArray(list) ? changed(list, entry, listed) : list;
+    next[scope] =
+      scope !== EVERY && Array.isArray(list) ? changed(list, entry, listed, also) : list;
   }
-  return withEvery(next, changed(listOf(value, EVERY) ?? [], entry, listed));
+  return withEvery(next, changed(listOf(value, EVERY) ?? [], entry, listed, also));
 }
 
 /** `value` with `entry` added to every repo's list, as Settings adds one. */
 export function addToEvery(value: ScopedValue, entry: string): ScopedValue {
-  return withEvery(value, changed(listOf(value, EVERY) ?? [], entry, true));
+  return withEvery(value, changed(listOf(value, EVERY) ?? [], entry, true, []));
 }
 
 /**
@@ -255,7 +269,7 @@ export function removeFrom(
   entry: string,
 ): ScopedValue {
   if (repo !== undefined) return setInRepo(value, repo, entry, false);
-  return withEvery(value, changed(listOf(value, EVERY) ?? [], entry, false));
+  return withEvery(value, changed(listOf(value, EVERY) ?? [], entry, false, []));
 }
 
 /** `value` without `repo`'s own list: every repo's applies there again. */
@@ -283,5 +297,25 @@ export const collapsed = defineSetting(
     label: 'Collapsed sections',
     description: 'Overview sections that start collapsed, by heading. The tl;dr always shows.',
     problems: (value) => readScoped(value, 'overview.collapsed').problems,
+  },
+);
+
+/**
+ * The glossary terms the reader ignores, by term, kept per repo as the collapsed sections are. A
+ * term ignored is plain text in every overview of the repo, with no underline, card or stop for
+ * `Tab`, and its row waits in the Glossary section's Ignored group. An entry matches a term by its
+ * name or any of its aliases, as plain text, ignoring case and runs of spaces. An entry Lo can't
+ * read is reported and ignored.
+ */
+export const ignored = defineSetting(
+  'overview.ignored',
+  scopedValue,
+  {},
+  'lists of terms, by repo or "*"',
+  {
+    group: 'pullRequests',
+    label: 'Ignored terms',
+    description: 'Glossary terms that show as plain text, without their definitions.',
+    problems: (value) => readScoped(value, 'overview.ignored').problems,
   },
 );

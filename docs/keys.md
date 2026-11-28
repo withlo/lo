@@ -75,14 +75,16 @@ menu: Go, Review, Comments, Code, View, Merge, Tabs and App. Each command's ID i
 
 ## Review
 
-| Command                  | Keys                                     | Where                                                                                  | ID                    |
-| ------------------------ | ---------------------------------------- | -------------------------------------------------------------------------------------- | --------------------- |
-| Mark viewed              | `e`                                      | In `diff`; in code views, only in normal mode                                          | `diff.markViewed`     |
-| Approve and ship…        | `⌘⇧⏎`                                    | Anywhere but `box`, `dialog`, `palette` and `menu`                                     | `merge.ship`          |
-| Go to glossary           | None: its control or the command palette | In `overview`                                                                          | `overview.goGlossary` |
-| Submit review…           | `⌘⏎`                                     | Anywhere but `box`, `dialog`, `palette` and `menu`                                     | `review.submit`       |
-| Convert to GitHub stack… | `g S`                                    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.convert`      |
-| Mark viewed              | `e`                                      | In `tree`                                                                              | `tree.markViewed`     |
+| Command                  | Keys                                              | Where                                                                                  | ID                    |
+| ------------------------ | ------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------- |
+| Mark viewed              | `e`                                               | In `diff`; in code views, only in normal mode                                          | `diff.markViewed`     |
+| Approve and ship…        | `⌘⇧⏎`                                             | Anywhere but `box`, `dialog`, `palette` and `menu`                                     | `merge.ship`          |
+| Go to glossary           | None: its control or the command palette          | In `overview`                                                                          | `overview.goGlossary` |
+| Submit review…           | `⌘⏎`                                              | Anywhere but `box`, `dialog`, `palette` and `menu`                                     | `review.submit`       |
+| Convert to GitHub stack… | `g S`                                             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.convert`      |
+| Ignore in this repo      | None: its right-click menu or the command palette | In `overview`                                                                          | `terms.ignoreHere`    |
+| Ignore in every repo     | None: its right-click menu or the command palette | In `overview`                                                                          | `terms.ignoreAll`     |
+| Mark viewed              | `e`                                               | In `tree`                                                                              | `tree.markViewed`     |
 
 ## Comments
 

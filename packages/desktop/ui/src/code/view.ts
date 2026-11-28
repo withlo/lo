@@ -3301,6 +3301,7 @@ class View implements DiffView {
       }
       case 'layer':
       case 'block':
+      case 'term':
       case 'tab':
       case 'row':
       case 'box':

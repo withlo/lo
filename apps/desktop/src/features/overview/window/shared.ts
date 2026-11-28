@@ -2,10 +2,11 @@
 // Settings turns off and on, and every view and command of the overview comes and goes with; what
 // one looks like, for the welcome to show; its mark for a tab, as the header's view switch shows
 // it, which the stack's tree shows for the layer on screen; the review threads another feature
-// places and draws on its code blocks, with their popover and the comments written there; and
-// whether a tab's overview has a block now, and when that may have changed.
+// places and draws on its code blocks, with their popover and the comments written there; whether
+// a tab's overview has a block now, and when that may have changed; and what a term's switches,
+// "Ignore in this repo" and "Ignore in every repo", do to a term in the overview on screen.
 
-import type { Target } from '@lo/ui/commands';
+import type { Target, TermTarget } from '@lo/ui/commands';
 import { createElement, type ReactNode } from 'react';
 
 import type { Presence } from '../../../window/slots.tsx';
@@ -16,6 +17,8 @@ import { Example } from './Example.tsx';
 import { markOf, newestHead, standingOf, type MarkKind } from './facts.ts';
 import { blockAt, drawnIn, onDrawn } from './follow.ts';
 import { useStanding } from './hooks.ts';
+import type { IgnoredWhere } from './ignored.ts';
+import { ignoreTerm, termIgnored, termReady } from './ignoring.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import type { CommentOnHead } from './mapping.ts';
 import { commentLinesOnHead } from './since.ts';
@@ -264,4 +267,28 @@ export function commentOnHead(
   lines: { readonly side: 'old' | 'new'; readonly from: number; readonly to: number },
 ): Promise<CommentOnHead> {
   return commentLinesOnHead(tab, commit, path, lines);
+}
+
+/** Where a term's switch ignores it: in the repo it's read in (`repo`), or in every repo. */
+export type TermIgnored = IgnoredWhere;
+
+/**
+ * Whether a term's switches can act on the term `target` names, in the overview of the pull
+ * request on screen, or why not.
+ */
+export function termSwitchReady(target: TermTarget): true | string {
+  return termReady(target);
+}
+
+/** Whether the term `target` names is ignored `where`: its switch there is on. */
+export function isTermIgnored(target: TermTarget, where: TermIgnored): boolean {
+  return termIgnored(target, where);
+}
+
+/**
+ * Turns "Ignore in this repo" or "Ignore in every repo" for the term `target` names: on, it's plain
+ * text at once, wherever it's used, and a toast says so, with Undo; off, it's a term again.
+ */
+export function turnTermIgnored(target: TermTarget, where: TermIgnored): void {
+  ignoreTerm(target, where);
 }

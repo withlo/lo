@@ -8,6 +8,7 @@ import {
   collapsed,
   entryKey,
   everywhere,
+  ignored,
   inRepo,
   listIn,
   readScoped,
@@ -124,6 +125,32 @@ describe('“Collapse in every repo”', () => {
       '*': ['Rollout'],
       'rozed-dev/e2e': ['Rollout'],
     });
+  });
+});
+
+describe('a term’s other names', () => {
+  it('go from the list as its switch writes its name, so a term is in each list once', () => {
+    const value = { '*': ['buckets'], 'rozed-dev/e2e': ['Token bucket', 'Lease'] };
+    expect(setInRepo(value, 'rozed-dev/e2e', 'Bucket', true, ['buckets', 'token bucket'])).toEqual({
+      '*': ['buckets'],
+      'rozed-dev/e2e': ['Lease', 'Bucket'],
+    });
+    expect(setInRepo(value, 'rozed-dev/e2e', 'Bucket', false, ['Token  bucket'])).toEqual({
+      '*': ['buckets'],
+      'rozed-dev/e2e': ['Lease'],
+    });
+    expect(setEverywhere(value, 'Bucket', false, ['buckets', 'token bucket'])).toEqual({
+      '*': [],
+      'rozed-dev/e2e': ['Lease'],
+    });
+  });
+
+  it('are kept in a setting of their own, whose problems name it', () => {
+    expect(ignored.key).toBe('overview.ignored');
+    expect(ignored.fallback).toEqual({});
+    expect(ignored.problems?.({ '*': [7] })).toEqual([
+      'overview.ignored’s entry 1 under “*” isn’t text, so Lo ignores it.',
+    ]);
   });
 });
 

@@ -67,6 +67,11 @@ export function currentMenu(): Open | undefined {
   return current;
 }
 
+/** Calls `listener` as a menu opens or closes. Returns a function that stops it. */
+export function followMenu(listener: () => void): () => void {
+  return subscribe(listener);
+}
+
 /**
  * Opens the menu of `target` at `anchor`. Returns whether it did: a target no command has a menu
  * item for has no menu.
@@ -188,6 +193,8 @@ function nameOf(kind: TargetKind): string {
       return 'Layer actions';
     case 'block':
       return 'Block actions';
+    case 'term':
+      return 'Term actions';
     case 'tab':
       return 'Tab actions';
     case 'row':

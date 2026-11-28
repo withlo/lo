@@ -117,6 +117,16 @@ export interface BlockTarget {
   block: string;
 }
 
+/**
+ * A term a glossary defines, by its key: one in an overview's text, its card, or its row in a
+ * glossary. With `block`, the overview's block it's in, which a block's commands take from it.
+ */
+export interface TermTarget {
+  kind: 'term';
+  term: string;
+  block?: string;
+}
+
 export interface TabTarget {
   kind: 'tab';
   tab: string;
@@ -171,6 +181,7 @@ export type Target =
   | NoteTarget
   | LayerTarget
   | BlockTarget
+  | TermTarget
   | TabTarget
   | RowTarget
   | BoxTarget
@@ -193,6 +204,7 @@ export const targetKinds: readonly TargetKind[] = [
   'note',
   'layer',
   'block',
+  'term',
   'tab',
   'row',
   'box',
@@ -206,8 +218,8 @@ export const NO_TARGET: NoTarget = { kind: 'none' };
 /**
  * `target` as one of `kinds`, which a command takes, or undefined if it's none of them. A target of
  * one of the kinds is taken as it is. Otherwise, in `kinds`' order: a line or a header gives its file, a line its
- * thread, a line or a header in a comment box the box, and a command that takes `none` takes
- * anything.
+ * thread, a line or a header in a comment box the box, a term in an overview's block the block, and
+ * a command that takes `none` takes anything.
  */
 export function fit<K extends TargetKind>(
   kinds: readonly K[],
@@ -272,10 +284,15 @@ function derive(kind: TargetKind, target: Target): Target | undefined {
         'line' in target.at
         ? { kind: 'note', at: target.at }
         : undefined;
+    // A term in an overview's block gives the block, so a block's keys work on it as on the block.
+    case 'block':
+      return target.kind === 'term' && target.block !== undefined
+        ? { kind: 'block', block: target.block }
+        : undefined;
     case 'line':
     case 'header':
     case 'layer':
-    case 'block':
+    case 'term':
     case 'tab':
     case 'row':
     case 'notice':
@@ -323,6 +340,10 @@ export function plainTarget(target: Target): Target {
       return { kind: 'layer', layer: target.layer };
     case 'block':
       return { kind: 'block', block: target.block };
+    case 'term':
+      return target.block === undefined
+        ? { kind: 'term', term: target.term }
+        : { kind: 'term', term: target.term, block: target.block };
     case 'tab':
       return { kind: 'tab', tab: target.tab };
     case 'row':

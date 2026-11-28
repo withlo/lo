@@ -58,6 +58,7 @@ describe('the blocks the block keys stop at', () => {
       'tabs',
       'details',
       'paragraph',
+      'glossary',
     ]);
     const link = stops[0]!.querySelector('.lo-term')!;
     expect(blockOf(article(page), link)).toBe(stops[0]);
@@ -78,9 +79,11 @@ describe('the blocks the block keys stop at', () => {
   it('hold the links and controls Tab goes between, as shown now', () => {
     const page = render(<OverviewDocument tree={example()} />);
     const stops = blockStops(article(page));
-    const last = stops.at(-1)!;
-    expect(linksIn(last).map(named)).toEqual(['limiter.test.ts', 'the rest']);
+    const [last, glossary] = stops.slice(-2);
+    expect(linksIn(last!).map(named)).toEqual(['limiter.test.ts', 'the rest']);
     expect(linksIn(stops[0]!).map(named)).toEqual(['bucket']);
+    // A glossary's rows' terms, which open each term's menu.
+    expect(linksIn(glossary!).map(named)).toEqual(['Bucket']);
 
     // A closed fold's body is hidden; its own title is the block's focus, not a link in it.
     const fold = stops.find((stop) => stop.localName === 'details')!;

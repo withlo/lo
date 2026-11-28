@@ -452,6 +452,10 @@ export function followOf(overview: DrawnOverview, block: HTMLElement): Follow | 
   const own = focusTargetOf(block);
   const active = document.activeElement;
   if (active && active !== own && (linksIn(block) as Element[]).includes(active)) {
+    // A term's row's term is a stop, for its menu's keys, and goes nowhere.
+    if (active.hasAttribute('data-lo-stop') && !active.hasAttribute('role')) {
+      return 'Nothing to open on a term';
+    }
     return { kind: 'activate', element: active };
   }
   if (block.localName === 'details') return { kind: 'activate', element: own };
