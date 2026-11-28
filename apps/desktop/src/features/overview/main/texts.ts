@@ -3,7 +3,9 @@
 // branched off the base branch, so the block can show what the pull request changed in it, as
 // GitHub diffs a pull request.
 //
-// - Where the diff starts is the commit's merge base with the base branch: see `baseOf`.
+// - Where the diff starts is the commit's merge base with the base branch: see `baseOf`. For a
+//   stack's overview, it's the commit's merge base with where the stack's bottom layer's changes
+//   start, which the copy fetches first when it doesn't have it: see `startOf`.
 // - What the pull request changed there, renames found, is worked out once for each commit and
 //   base, from the local copy, which downloads both sides of each changed file as the diff does.
 //   Past what's left to download, or when it fails, a file is looked for at the same path in the
@@ -28,6 +30,7 @@ export type TextsClone = Pick<
   Repo,
   | 'offline'
   | 'hasCommit'
+  | 'fetchCommit'
   | 'mergeBase'
   | 'compareRevisions'
   | 'fileVersions'
@@ -70,6 +73,21 @@ export async function baseOf(
   return clone.mergeBase(commit, forked);
 }
 
+/**
+ * Where a stack's diff at `commit` starts: the commit's merge base with `start`, where the stack's
+ * bottom layer's changes start, so the stack's diff holds every layer's changes and none of what's
+ * below it. The copy fetches `start` first when it doesn't have it, as it does a commit an overview
+ * names. With no history in common, there's none.
+ */
+export async function startOf(
+  clone: Pick<Repo, 'offline' | 'hasCommit' | 'fetchCommit' | 'mergeBase'>,
+  commit: Oid,
+  start: Oid,
+): Promise<Oid | undefined> {
+  if (!(await clone.hasCommit(start)) && !clone.offline) await clone.fetchCommit(start);
+  return clone.mergeBase(commit, start);
+}
+
 /** What's left to download for one commit's files, in bytes. */
 export interface Budget {
   left: number;
@@ -106,7 +124,8 @@ export class BlockTexts {
 
   /**
    * The file at `path` at `commit`, from the tab's local copy as `local` says it is, opened by
-   * `clone`; with `withBase`, where its diff starts too.
+   * `clone`; with `withBase`, where its diff starts too: where the commit branched off the base
+   * branch, or with `from`, a stack's start, where it branched off that.
    */
   async read(
     local: LocalState,
@@ -114,6 +133,7 @@ export class BlockTexts {
     commit: string,
     path: string,
     withBase: boolean,
+    from?: string,
   ): Promise<BlockText> {
     switch (local.kind) {
       case 'ready':
@@ -133,7 +153,8 @@ export class BlockTexts {
     const opening = clone();
     if (!opening) return unread('notReady');
     try {
-      return await this.#read(await opening, local, parseOid(commit), path, withBase);
+      const start = from === undefined ? undefined : parseOid(from);
+      return await this.#read(await opening, local, parseOid(commit), path, withBase, start);
     } catch (error) {
       if (this.#stopped.signal.aborted) return unread('unknown');
       this.#log(`reading the code a block of the overview shows: ${describe(error)}`);
@@ -152,6 +173,7 @@ export class BlockTexts {
     commit: Oid,
     path: string,
     withBase: boolean,
+    start: Oid | undefined,
   ): Promise<BlockText> {
     if (!(await clone.hasCommit(commit))) {
       return unread('noCommit');
@@ -161,7 +183,7 @@ export class BlockTexts {
     if (found === undefined || found === 'folder') {
       return unread('noFile');
     }
-    const changes = this.#changesAt(clone, local, commit, withBase);
+    const changes = this.#changesAt(clone, local, commit, withBase, start);
     const text = await readWhole(clone, found, changes.budget, this.#stopped.signal);
     if (typeof text !== 'string') return unread(text.why);
     if (!withBase) return { kind: 'text', text, base: null };
@@ -207,8 +229,14 @@ export class BlockTexts {
    * What the pull request changed at `commit`, worked out once for each commit and base, once a
    * read asks for where a diff starts (`withBase`); and what's left to download for the commit.
    */
-  #changesAt(clone: TextsClone, local: ReadyLocal, commit: Oid, withBase: boolean): Changes {
-    const key = [commit, local.base, local.mergeBase ?? ''].join(' ');
+  #changesAt(
+    clone: TextsClone,
+    local: ReadyLocal,
+    commit: Oid,
+    withBase: boolean,
+    start: Oid | undefined,
+  ): Changes {
+    const key = [commit, local.base, local.mergeBase ?? '', start ?? ''].join(' ');
     const known = this.#changes?.key === key ? this.#changes : undefined;
     if (known && (known.started || !withBase)) return known;
     const budget = known?.budget ?? { left: DOWNLOAD_LIMIT };
@@ -217,7 +245,7 @@ export class BlockTexts {
       return this.#changes;
     }
     const signal = this.#stopped.signal;
-    const base = baseOf(clone, local, commit);
+    const base = start === undefined ? baseOf(clone, local, commit) : startOf(clone, commit, start);
     const files = base
       .then(async (from) => {
         if (from === undefined || from === commit) return [];

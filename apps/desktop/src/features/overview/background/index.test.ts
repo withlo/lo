@@ -143,6 +143,17 @@ describe('overview.check', () => {
     });
   });
 
+  it("checks a stack's overview against its stack's ref, and refuses one on a pull request's", async () => {
+    const artifact = encoder.encode(
+      `---\nformat: 1\nstack: 9\ncommit: ${COMMIT}\n---\n\n## tl;dr\n\nThe stack.\n`,
+    );
+    const input = { artifact, entries: entriesOf(artifact), figures: [], code: null };
+    expect(parse({ ...input, stack: 9 })).toBe(true);
+    expect((await checkOverview({ ...input, stack: 9 })).outcome.kind).toBe('shown');
+    expect((await checkOverview({ ...input, stack: 8 })).outcome.kind).toBe('invalid');
+    expect((await checkOverview({ ...input, pr: 9 })).outcome.kind).toBe('invalid');
+  });
+
   it('leaves code unread before main has read it, or where it read less than the check reads', async () => {
     const artifact = artifactOf(block);
     const none = await checkOverview(inputOf(artifact));

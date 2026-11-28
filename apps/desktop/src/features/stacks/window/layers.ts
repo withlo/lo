@@ -14,8 +14,17 @@ export const STACK_CHANGED = 'The stack has changed';
 /** Each view's stack, as main last said: nothing until it has. */
 export const stacks = tabState<StackView | undefined>(() => undefined);
 
-/** The layer the keyboard is on in each view's stack tree, by number, once it's been on one. */
+/**
+ * The layer the keyboard is on in each view's stack tree, by number, once it's been on one; or
+ * {@link OVERVIEW_ROW}, the stack overview's row.
+ */
 export const focused = tabState<number | undefined>(() => undefined);
+
+/** The keyboard on the stack overview's row, first in the tree, rather than on a layer. */
+export const OVERVIEW_ROW = 0;
+
+/** The stack overview's row, as a key's or a menu's target. */
+export const OVERVIEW_TARGET = { kind: 'row', row: 'stack-overview' } as const;
 
 /** The layers being selected in each view's stack tree, while some are. */
 export const choosing = tabState<Choice | undefined>(() => undefined);

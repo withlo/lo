@@ -92,13 +92,14 @@ export default defineCommands(
     },
     /**
      * Shows the layer the keyboard is on, or the one right-clicked; while layers are selected,
-     * those layers, as one diff.
+     * those layers, as one diff. On the stack overview's row, first in the tree, the stack overview,
+     * as `g s` does.
      */
     show: {
       label: 'Show layer',
       group: 'Go',
       keys: ['enter'],
-      targets: ['layer'],
+      targets: ['layer', 'row'],
       when: tree,
       menu: { on: 'layer', order: 0 },
     },

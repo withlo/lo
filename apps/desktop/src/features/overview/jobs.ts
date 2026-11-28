@@ -94,8 +94,10 @@ export const checkInput = z.strictObject({
   artifact: byteArray(ARTIFACT_BYTES).nullable(),
   /** The overview's commit: its files and folders, as main listed them. */
   entries: z.array(entry).max(ENTRIES_LIMIT),
-  /** The pull request whose ref holds the overview. */
-  pr: z.number().int().positive(),
+  /** The pull request whose ref holds the overview: none for a stack's overview. */
+  pr: z.number().int().positive().optional(),
+  /** The stack whose ref holds the overview, for a stack's overview. */
+  stack: z.number().int().positive().optional(),
   /** Its figures, by path, as main's `files` answered them. */
   figures: z.array(z.strictObject({ path: namedPath, file: overviewFile })).max(FIGURES_LIMIT),
   /**

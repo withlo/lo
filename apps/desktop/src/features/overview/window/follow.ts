@@ -28,13 +28,15 @@ import { registry } from '../../../window/commands/registry.ts';
 import { showPlace, type ShowHow } from '../../diff/window/shared.ts';
 import { holdLimit } from '../../revisions/window/shared.ts';
 import { settingNow } from '../../settings/window/shared.ts';
-import { showInstead, showMiddle, tabState } from '../../tab/window/shared.ts';
+import { activeTab, showInstead, showMiddle, tabState } from '../../tab/window/shared.ts';
 import { on } from '../settings.ts';
 import { blockId, blockIn, codeOf, type CodeAt } from './blocks.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import { main } from './main.ts';
 import { openings, overviewPlace } from './opening.ts';
 import { placeOnHead, placing, writtenIn } from './since.ts';
+import { hasStackOverview, stackStandingOf, subjects } from './stack.ts';
+import { showWholeStackAt } from './stacked.ts';
 
 /** An overview drawn in a tab while it's on screen, as the keys act on it. */
 export interface DrawnOverview {
@@ -46,7 +48,12 @@ export interface DrawnOverview {
   readonly root: HTMLElement;
   /** The overview's scrolling element, once it's drawn. */
   scroller(): HTMLElement | null;
+  /** Whether it's the overview of the stack the tab's layer is in, rather than the layer's own. */
+  readonly stack?: boolean | undefined;
 }
+
+/** What a place in the stack's overview is in, as the tab's history keeps it. */
+export const IN_STACK = 'stack';
 
 const drawn = new Map<string, DrawnOverview>();
 
@@ -82,6 +89,9 @@ export function drawnIn(tab: string): DrawnOverview | undefined {
 
 /** The number Lo gave the tree each tab's overview last showed, whose blocks history can reveal. */
 export const trees = tabState<number | undefined>(() => undefined);
+
+/** The number Lo gave the tree each tab's stack's overview last showed, as {@link trees}. */
+export const stackTrees = tabState<number | undefined>(() => undefined);
 
 /**
  * How a tab's overview expands the collapsed section a block is in, by the tab and the block's
@@ -182,7 +192,12 @@ export function hereIn(overview: DrawnOverview): Entry | undefined {
     tops.set(at.block, block.getBoundingClientRect().top);
     left.set(overview.tab, tops);
   }
-  return at && { view: 'overview', at };
+  return at && entryOf(overview, at);
+}
+
+/** A place at `at` in `overview`, as the tab's history keeps it: in the stack's, saying so. */
+function entryOf(overview: DrawnOverview, at: Target): Entry {
+  return overview.stack ? { view: 'overview', at, within: IN_STACK } : { view: 'overview', at };
 }
 
 /**
@@ -496,7 +511,23 @@ export function follow(overview: DrawnOverview, block: HTMLElement): void {
     return;
   }
   if (!block.contains(document.activeElement)) focusTargetOf(block).focus({ preventScroll: true });
-  goToCode(overview.tab, found.code);
+  goToCodeFrom(overview, found.code);
+}
+
+/**
+ * Shows `code`, which `overview` points at: a layer's own overview's in the tab's diff, as
+ * {@link goToCode} does; the stack's in the stack shown as one diff, up to the layer whose head the
+ * stack's overview describes.
+ */
+function goToCodeFrom(overview: DrawnOverview, code: CodeAt): void {
+  if (!overview.stack) {
+    goToCode(overview.tab, code);
+    return;
+  }
+  const tab = activeTab();
+  const standing = stackStandingOf(overview.tab);
+  if (tab?.kind !== 'pull' || tab.id !== overview.tab || standing.kind !== 'shown') return;
+  showWholeStackAt(tab, code.path, code.lines, standing.header.commit);
 }
 
 /**
@@ -504,6 +535,8 @@ export function follow(overview: DrawnOverview, block: HTMLElement): void {
  * code it points at, as `⏎` would show it: nothing recorded, nothing said, and focus where it is.
  */
 export function followBlock(overview: DrawnOverview, block: HTMLElement): void {
+  // The code beside is the layer's: it doesn't follow the stack's overview.
+  if (overview.stack) return;
   const code = codeIn(overview, block);
   if (code) goToCode(overview.tab, code, 'follow');
 }
@@ -583,7 +616,7 @@ export function followCode(overview: DrawnOverview, from: Element, code: CodeAt)
   if (block && !block.contains(document.activeElement)) {
     focusTargetOf(block).focus({ preventScroll: true });
   }
-  goToCode(overview.tab, code);
+  goToCodeFrom(overview, code);
 }
 
 /** Records where a link was followed from in the overview, its block, as the place `⌃o` comes back to. */
@@ -594,7 +627,7 @@ export function recordFrom(overview: DrawnOverview, from: Element): void {
   if (!at) return;
   // The overview has already moved to where the link goes: the block is brought on screen again.
   if (at.kind === 'block') left.get(overview.tab)?.delete(at.block);
-  registry().history.record({ view: 'overview', at });
+  registry().history.record(entryOf(overview, at));
 }
 
 /**
@@ -662,10 +695,10 @@ const loading = new Map<string, { from: number | undefined }>();
  * Loads the newer overview pushed while tab `tab`'s was read. The blocks it replaces go, and with
  * them what had focus, so once it's drawn the overview itself takes focus: see `loadedNewer`.
  */
-export function loadNewer(tab: string): void {
-  loading.set(tab, { from: trees.get(tab) });
+export function loadNewer(tab: string, stack = false): void {
+  loading.set(tab, { from: (stack ? stackTrees : trees).get(tab) });
   main()
-    .load({ id: tab })
+    .load({ id: tab, stack })
     .catch((error: unknown) => console.error("Lo couldn't load the newer overview:", error));
 }
 
@@ -697,23 +730,31 @@ export function placesFor(tab: string): void {
   registry().history.register(
     tab,
     'overview',
-    (at) => {
+    (at, within) => {
       if (!settingNow(on)) return false;
+      // A place in the stack's overview shows it again, while the stack has one.
+      const stack = within === IN_STACK;
+      if (stack && !hasStackOverview(tab)) return false;
       if (at.kind === 'none') {
-        return overviewPlace(openings.get(tab)) === 'timeline'
+        subjects.set(tab, stack ? 'stack' : 'pull');
+        return !stack && overviewPlace(openings.get(tab)) === 'timeline'
           ? showInstead(tab)
           : showMiddle(tab, OVERVIEW_VIEW);
       }
-      const tree = trees.get(tab);
+      const tree = (stack ? stackTrees : trees).get(tab);
       const index = at.kind === 'block' && tree !== undefined ? blockIn(at.block, tree) : undefined;
       if (index === undefined) return false;
+      subjects.set(tab, stack ? 'stack' : 'pull');
       revealBlock(tab, index);
       return true;
     },
-    // A block the overview on screen no longer has is gone. Before one is drawn, it can't tell.
-    (at) => {
+    // A block the overview no longer has is gone, as is the stack's once there's none. Before one is
+    // drawn, it can't tell.
+    (at, within) => {
       if (!settingNow(on)) return false;
-      const tree = trees.get(tab);
+      const stack = within === IN_STACK;
+      if (stack && !hasStackOverview(tab)) return false;
+      const tree = (stack ? stackTrees : trees).get(tab);
       return at.kind !== 'block' || tree === undefined || blockIn(at.block, tree) !== undefined;
     },
   );

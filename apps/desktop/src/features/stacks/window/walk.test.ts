@@ -10,17 +10,22 @@ import { installBridge } from '../../../window/test/bridge.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { Row, StackView } from '../contract.ts';
-import { choosing, focused, runTrouble, stacks } from './layers.ts';
+import { choosing, focused, OVERVIEW_ROW, OVERVIEW_TARGET, runTrouble, stacks } from './layers.ts';
 import {
   back,
   backable,
+  branchFor,
   cancel,
   choose,
   goDown,
   goUp,
   moveFocus,
   runAgain,
+  showable,
+  showName,
+  showStackAt,
   showTarget,
+  stackTarget,
   upTo,
   upToNamed,
   upToReady,
@@ -37,8 +42,31 @@ vi.mock('../../tab/window/shared.ts', async (original) => ({
 }));
 const tree = vi.hoisted(() => ({ goToTree: vi.fn<(tab: string) => void>() }));
 vi.mock('../../tree/window/shared.ts', () => tree);
-const diff = vi.hoisted(() => ({ showDiff: vi.fn<(tab: string) => boolean>(() => true) }));
+const diff = vi.hoisted(() => ({
+  showDiff: vi.fn<(tab: string) => boolean>(() => true),
+  showPlace: vi.fn<(tab: string, path: string, line?: number, marked?: unknown) => void>(),
+}));
 vi.mock('../../diff/window/shared.ts', () => diff);
+// The overview, as the stack's tree sees it: which views' stacks have an overview, and which views
+// show it.
+const overview = vi.hoisted(() => {
+  const present = new Set<string>();
+  const subjects = new Map<string, 'pull' | 'stack'>();
+  return {
+    present,
+    subjects,
+    hasStackOverview: (id: string) => present.has(id),
+    showStackOverview: (tab: { id: string }) => {
+      if (!present.has(tab.id)) return false;
+      subjects.set(tab.id, 'stack');
+      return true;
+    },
+    showOwnOverview: (id: string) => {
+      subjects.set(id, 'pull');
+    },
+  };
+});
+vi.mock('../../overview/window/shared.ts', () => overview);
 const middle = vi.hoisted(() => {
   const run = vi.fn<(id: string, target: unknown) => void>();
   return {
@@ -47,14 +75,18 @@ const middle = vi.hoisted(() => {
     focusMiddle: vi.fn<() => void>(),
     escapeToMiddle: vi.fn<() => void>(),
     run,
-    registry: () => ({ run }),
+    here: () => undefined,
+    registry: () => ({ run, history: { record: vi.fn<(entry: unknown) => void>() } }),
   };
 });
 vi.mock('../../../window/commands/registry.ts', () => middle);
 vi.mock('../../../window/commands/overlays.tsx', () => ({ askedFrom: () => document.body }));
 
+/** The layer whose head is the commit a stack overview describes, as main finds it. */
+const described = vi.hoisted(() => ({ layer: null as number | null }));
 const bridge = installBridge({
   'stacks.run': () => 'run',
+  'stacks.layerAt': () => described.layer,
   'tab.layer': () => 'shown',
 });
 
@@ -83,6 +115,7 @@ function row(number: number, below: number[]): Row {
 const STACK: StackView = {
   kind: 'stack',
   root: 'stack/root',
+  start: null,
   githubStack: false,
   rows: [row(82, []), row(83, [82]), row(84, [82, 83]), row(85, [82])],
   notes: [],
@@ -119,6 +152,8 @@ beforeEach(() => {
   bridge.calls.length = 0;
   vi.clearAllMocks();
   middle.escapeInMiddle.mockReturnValue(false);
+  overview.present.clear();
+  overview.subjects.clear();
 });
 
 afterEach(() => {
@@ -146,6 +181,84 @@ describe('- in the file tree', () => {
     expect(tree.goToTree).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(drawn);
     expect(focused.get(tab.id)).toBe(84);
+  });
+});
+
+/** The stack's overview, which Lo has read. */
+function withOverview(tab: PullTab): void {
+  overview.present.add(tab.id);
+}
+
+describe('the stack overview’s row', () => {
+  it('is first for j and k while the stack has an overview, and ⏎ there shows it', () => {
+    const tab = showing(82, STACK);
+    moveFocus(-1);
+    // None yet: the bottom layer is as far as the keyboard goes.
+    expect(stackTarget(tab)).toEqual({ kind: 'layer', layer: 82 });
+    expect(showable(OVERVIEW_TARGET)).toBe('No stack overview yet');
+    withOverview(tab);
+    moveFocus(-1);
+    expect(focused.get(tab.id)).toBe(OVERVIEW_ROW);
+    expect(stackTarget(tab)).toEqual(OVERVIEW_TARGET);
+    moveFocus(-1);
+    expect(stackTarget(tab)).toEqual(OVERVIEW_TARGET);
+    expect(showable(OVERVIEW_TARGET)).toBe(true);
+    expect(showName(OVERVIEW_TARGET)).toBe('Show stack overview');
+    expect(showName({ kind: 'layer', layer: 82 })).toBe(undefined);
+    showTarget(OVERVIEW_TARGET);
+    expect(overview.subjects.get(tab.id)).toBe('stack');
+    moveFocus(1);
+    expect(stackTarget(tab)).toEqual({ kind: 'layer', layer: 82 });
+  });
+
+  it('gives way to the layer’s own overview as a layer is shown', async () => {
+    const tab = showing(82, STACK);
+    withOverview(tab);
+    overview.subjects.set(tab.id, 'stack');
+    showTarget({ kind: 'layer', layer: 82 });
+    expect(overview.subjects.get(tab.id)).toBe('pull');
+    // Another layer's view shows that layer's own too.
+    overview.subjects.set('shown', 'stack');
+    showTarget({ kind: 'layer', layer: 83 });
+    await answered();
+    expect(overview.subjects.get('shown')).toBe('pull');
+  });
+});
+
+describe('a stack overview’s code', () => {
+  const COMMIT = 'c'.repeat(40);
+
+  it('goes up to the layer whose head the overview describes, as one diff, at its lines', async () => {
+    described.layer = 85;
+    const tab = showing(84, STACK);
+    showStackAt(tab, 'src/limits.ts', { start: 3, end: 9 }, COMMIT);
+    await answered();
+    await answered();
+    expect(bridge.calls).toContainEqual(['stacks.layerAt', { id: tab.id, commit: COMMIT }]);
+    expect(bridge.calls).toContainEqual(['stacks.run', { id: tab.id, bottom: 82, top: 85 }]);
+    expect(diff.showPlace).toHaveBeenCalledWith('run', 'src/limits.ts', 3, { from: 3, to: 9 });
+  });
+
+  it('goes up the branch the writer goes up when no layer’s head is the commit', async () => {
+    described.layer = null;
+    const tab = showing(84, STACK);
+    showStackAt(tab, 'src/limits.ts', undefined, COMMIT);
+    await answered();
+    await answered();
+    expect(bridge.calls).toContainEqual(['stacks.run', { id: tab.id, bottom: 82, top: 84 }]);
+    expect(diff.showPlace).toHaveBeenCalledWith('run', 'src/limits.ts', undefined, undefined);
+  });
+
+  it('goes through the lowest-numbered layer wherever two sit on one, to the top', () => {
+    const rows = [row(90, []), row(95, [90]), row(91, [90]), row(93, [90, 91]), row(92, [90, 91])];
+    expect(branchFor(rows, undefined)).toEqual([90, 91, 92]);
+    expect(branchFor(rows, 93)).toEqual([90, 91, 93]);
+    expect(branchFor(rows, 95)).toEqual([90, 95]);
+    // A layer the stack doesn't have isn't the top, nor one that merged, which is in no branch.
+    expect(branchFor(rows, 7)).toEqual([90, 91, 92]);
+    const merged = { ...row(94, []), path: [] };
+    expect(branchFor([...rows, merged], 94)).toEqual([90, 91, 92]);
+    expect(branchFor([], undefined)).toEqual([]);
   });
 });
 
