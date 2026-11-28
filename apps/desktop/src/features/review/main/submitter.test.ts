@@ -11,7 +11,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { ThreadRow } from '../../comments/contract.ts';
 import type { DraftsService, ReviewsService, SummaryDraft } from '../../comments/service.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { Submission } from '../contract.ts';
+import { refusedAtOnce, type Submission } from '../contract.ts';
 import {
   pendingComments,
   type ReviewNode,
@@ -394,6 +394,29 @@ describe('submitting', () => {
     });
     expect(summary()).toMatchObject({ text: 'Kept', sent: null });
   });
+
+  test('says the review is on its way, then that it isn’t, before every refusal but those it gives at once', async () => {
+    const busy = setup({ answers: [lost()] });
+    await busy.made.submit('t1', 'COMMENT', 'Hm');
+    const asked: { given: ReturnType<typeof setup>; event?: 'APPROVE'; body: string }[] = [
+      { given: setup({ pending: pendingOn(OLDER) }), body: 'Fine' },
+      { given: setup(), body: ' ' },
+      { given: setup({ author: 'rozed-bot' }), event: 'APPROVE', body: 'Mine' },
+      { given: setup({ pending: { kind: 'unknown', why: 'left out' } }), body: 'Hm' },
+      { given: setup({ pending: pendingOn(HEAD), answers: [{ refusal: 'gone' }] }), body: 'Hm' },
+      { given: setup({ view: info({ run: [82, 83] }) }), body: 'Hm' },
+      { given: setup({ view: info({ acting: { kind: 'anonymous' } }) }), body: 'Hm' },
+      { given: busy, body: 'Hm' },
+    ];
+    for (const { given, event = 'COMMENT', body } of asked) {
+      const before = given.published.length;
+      const outcome = await given.made.submit('t1', event, body);
+      if (outcome.kind !== 'refused') throw new Error(`Not refused: ${JSON.stringify(outcome)}`);
+      const said = given.published.slice(before).map((each) => each.state);
+      expect(said).toEqual(refusedAtOnce(outcome.refusal) ? [] : ['sending', null]);
+    }
+    busy.made.stop();
+  });
 });
 
 /** A submitted review of yours, by GitHub's clock. */
@@ -513,15 +536,16 @@ describe('a lost answer', () => {
       refusal: { kind: 'busy', why: 'unknown' },
     });
     expect(sent).toHaveLength(1);
-    made.check('t1');
+    // It says it looks, having said so on `submitted`.
+    expect(made.check('t1')).toBe(true);
     expect(state()).toBe('checking');
     await vi.advanceTimersByTimeAsync(0);
     expect(readAt).toHaveLength(2);
     expect(sent).toHaveLength(1);
     // Not found, it wasn't submitted: now it can go again.
     expect(state()).toBe('notSubmitted');
-    // A look asked for while nothing is unknown does nothing.
-    made.check('t1');
+    // A look asked for while nothing is unknown does nothing, and says so.
+    expect(made.check('t1')).toBe(false);
     expect(readAt).toHaveLength(2);
     await expect(made.submit('t1', 'COMMENT', 'Reads well.')).resolves.toMatchObject({
       kind: 'submitted',

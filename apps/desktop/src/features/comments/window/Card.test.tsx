@@ -316,6 +316,48 @@ test('in a popover, only the box it holds takes a reply’s row or a comment’s
   expect(shows()).toBe(false);
 });
 
+test('a card says the lines it’s on in its head where it’s on more than one, as a popover always does', () => {
+  installBridge();
+  const tab: PullTab = {
+    id: 'view-lines',
+    kind: 'pull',
+    owner: 'rozed-dev',
+    repo: 'e2e',
+    number: 94,
+  };
+  const shown = (thread: ThreadRow) =>
+    held.set(tab.id, {
+      threads: {
+        id: tab.id,
+        status: 'ready',
+        threads: [thread],
+        missing: 0,
+        compared: null,
+        problem: null,
+      },
+    });
+  const element = document.createElement('div');
+  document.body.append(element);
+  const root = createRoot(element);
+  onTestFinished(() => {
+    act(() => root.unmount());
+    element.remove();
+    held.set(tab.id, {});
+  });
+  const head = (popover: boolean) => {
+    act(() =>
+      root.render(<Card tab={tab} id="T1" open popover={popover} onToggle={() => undefined} />),
+    );
+    return element.querySelector('[role="group"]')?.firstElementChild?.textContent ?? '';
+  };
+  shown(row());
+  expect(head(false)).not.toContain('Line');
+  expect(head(true)).toContain('Line 5');
+  shown(row({ startLine: 3, startSide: 'RIGHT', originalStartLine: 3 }));
+  expect(head(false)).toContain('Lines 3–5');
+  expect(head(true)).toContain('Lines 3–5');
+});
+
 test('when a comment was written, in the largest whole unit only', () => {
   const card = drawn(row({ comments: [comment({ createdAt: '2026-11-04T09:00:00Z' })] }), true);
   expect(card.textContent).toContain('9 d ago');

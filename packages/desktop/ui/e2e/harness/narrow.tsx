@@ -1,6 +1,7 @@
 // The page the narrow spec drives: an out-of-date overview's callout, and a code block whose lines
-// changed since, each in an overview's frame the spec narrows and widens, and a long path in a box
-// of its own.
+// changed since, each in an overview's frame the spec narrows and widens, a long path in a box of
+// its own, and a new thread's comment on its way beside the card that will take its place, between
+// lines and beside them in a popover.
 
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -8,7 +9,12 @@ import { createRoot } from 'react-dom/client';
 import { Button } from '../../src/Button.tsx';
 import { CodeBlock, CodeBody, CodeFlag } from '../../src/overview/CodeBlock.tsx';
 import { OutOfDate } from '../../src/overview/Stale.tsx';
+import { SentPost, Thread } from '../../src/Thread.tsx';
 import { WholePath } from '../../src/WholePath.tsx';
+
+/** What a new thread is on, as its head row says it where it's more than one line. */
+const LINES = 'Line 3, removed, to line 5';
+const SAID = 'This retries forever.';
 
 /** Says what changed since, as the spec asks, the way a local copy's answer would. */
 let say: (detail: string) => void = () => {};
@@ -52,6 +58,45 @@ function Scene() {
         <WholePath
           path="~/a-folder-whose-name-is-longer-than-the-line/e2e.git"
           className="text-fg code-small"
+        />
+      </div>
+      {/* The two at once, each as wide as the other. */}
+      <div id="sent" style={{ width: '480px' }}>
+        <SentPost state="Unresolved" lines={LINES} author="tess-okafor" body={<p>{SAID}</p>} />
+      </div>
+      <div id="landed" style={{ width: '480px' }}>
+        <Thread
+          comments={[
+            { id: 'c1', author: 'tess-okafor', when: 'just now', mine: true, body: <p>{SAID}</p> },
+          ]}
+          resolved={false}
+          open
+          lines={LINES}
+          canResolve
+          menu
+        />
+      </div>
+      {/* The same beside the lines, in a popover. */}
+      <div id="sentpop" className="bg-bg-overlay" style={{ width: '480px' }}>
+        <SentPost
+          state="Unresolved"
+          lines={LINES}
+          popover
+          author="tess-okafor"
+          body={<p>{SAID}</p>}
+        />
+      </div>
+      <div id="landedpop" className="bg-bg-overlay" style={{ width: '480px' }}>
+        <Thread
+          comments={[
+            { id: 'c1', author: 'tess-okafor', when: 'just now', mine: true, body: <p>{SAID}</p> },
+          ]}
+          resolved={false}
+          open
+          lines={LINES}
+          canResolve
+          menu
+          variant="popover"
         />
       </div>
     </>

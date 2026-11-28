@@ -352,10 +352,14 @@ the window find them with `import.meta.glob`.
   `<feature>.<name>`. Objects in an input are `z.strictObject`, so unknown keys are refused; a test
   checks every contract. A topic's values reach the window in the order main published them, but not
   in order with replies: one published before a reply can come after it, so a value that's older
-  than a reply the window has heard never undoes what the reply said. Where a topic says how what
-  the window asked stands, on its way and then not, before main answers, as the comments feature's
-  `drafts` and `acts` do, the window holds what comes after the answer until the value main sent
-  with it (`Answers`, in that feature's `window/answers.ts`). Main and the window both load
+  than a reply the window has heard never undoes what the reply said, and a reply never means that
+  what main published before it has come. Where a topic says how what the window asked stands, on
+  its way and then not, before main answers, as the comments feature's `drafts` and `acts` and the
+  review's `submitted` do, the window holds what comes after the answer until the value main sent
+  with it (`Answers`, in `src/window/answers.ts`). Where main answers once it has said what was
+  asked is on its way, and says how it goes after, as `merge.autoMergeOff` and `review.check` do,
+  the control that asked stays at work until that value comes; and a reply the window judges by
+  carries what it judges, as `queue.look` replies with what it read. Main and the window both load
   contracts, so lint keeps Electron, Node and either side's code out of them.
 - `main/index.ts` exports `defineFeature(contract, { uses, handlers, provide, start, stop })` by
   default: the other features' services it `uses`; a handler for every request; optionally a
@@ -1818,12 +1822,15 @@ may say something after its label (`detail`).
   when, as a comment's draft is. When GitHub's answer is lost, nothing more is sent until a fresh
   read of your reviews (`YourReviews`), made 10 s or more after the send, says whether it was
   submitted, by GitHub's clock, even after a restart; when GitHub refuses that read, the dialog says
-  "Review not confirmed" and offers "Check again" (`review.check`), which only reads again. Only a
-  read that finds it wasn't submitted lets it go again. Once it's submitted, the summary goes, and
-  the threads and the timeline read again: an approval's dialog stays open, done, with the mark's
-  kiss, and any other review's closes, with a toast that names the verdict, as an approval's does
-  once its dialog was closed before the end. A tab acting as nobody or showing a run of layers can't
-  submit, nor can one offline, or while GitHub asked Lo to hold off.
+  "Review not confirmed" and offers "Check again" (`review.check`), which only reads again, and is
+  at work until main says what the read found. Only a read that finds it wasn't submitted lets it go
+  again. What `review.submitted` said of a review on its way before main's answer, coming after it,
+  changes nothing (`Answers`), so a refusal stays put, and main's immediate refusals, which say
+  nothing first, are listed in one place (`refusedAtOnce`). Once it's submitted, the summary goes,
+  and the threads and the timeline read again: an approval's dialog stays open, done, with the
+  mark's kiss, and any other review's closes, with a toast that names the verdict, as an approval's
+  does once its dialog was closed before the end. A tab acting as nobody or showing a run of layers
+  can't submit, nor can one offline, or while GitHub asked Lo to hold off.
 
 ### Whether it can merge
 

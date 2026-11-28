@@ -208,6 +208,19 @@ describe('ThreadList', () => {
     expect(onChange).toHaveBeenCalledWith('all');
   });
 
+  it('says its choices alone until there are threads to count', () => {
+    const host = render(
+      <ThreadFilter
+        value="unresolved"
+        counts={undefined}
+        keys={['f']}
+        onChange={vi.fn<(value: ThreadsFilter) => void>()}
+      />,
+    );
+    const tabs = [...host.querySelectorAll('[role="tab"]')];
+    expect(tabs.map((each) => each.textContent)).toEqual(['Unresolved', 'All', 'Yours']);
+  });
+
   it("only uses utilities that Lo's stylesheet has", async () => {
     const host = render(
       <>

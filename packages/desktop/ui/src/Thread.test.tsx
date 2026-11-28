@@ -54,6 +54,13 @@ function buttons(host: HTMLElement, label: string): HTMLButtonElement[] {
 // A thread's head row, the one row drawn with a border under it.
 const headRow = (host: HTMLElement) => host.querySelector('.border-b');
 
+/** What each button in `row` is named. */
+function names(row: Element | null | undefined): string[] {
+  return [...(row?.querySelectorAll('button') ?? [])].map(
+    (each) => each.getAttribute('aria-label') ?? each.textContent,
+  );
+}
+
 describe('Thread', () => {
   it('shows an unresolved thread open: its state, its comments and the slots for their text', () => {
     const host = render(<Thread {...PROPS} />);
@@ -170,6 +177,62 @@ describe('Thread', () => {
     expect(headRow(sent)?.textContent).toBe('Pending1 comment');
     expect(headRow(thread)?.textContent).toContain('Pending1 comment');
     expect(sent.querySelector('[data-sent]')?.previousElementSibling).toBe(headRow(sent));
+  });
+
+  it('keeps the room of the buttons a sent new thread’s card will have in its head row, out of reach', () => {
+    const body = <p>On its way</p>;
+    // Its words wrap where the card's will, in the room its buttons leave them.
+    for (const [state, pending] of [
+      ['Unresolved', false],
+      ['Pending', true],
+    ] as const) {
+      const sent = render(<SentPost state={state} author="tess-okafor" body={body} />);
+      const thread = render(
+        <Thread {...PROPS} comments={[{ ...MINE, pending, body }]} canResolve menu />,
+      );
+      const room = headRow(sent)?.lastElementChild;
+      expect(names(room)).toEqual(names(headRow(thread)?.lastElementChild));
+      expect(room?.hasAttribute('inert')).toBe(true);
+      expect(room?.getAttribute('aria-hidden')).toBe('true');
+      expect(room?.classList.contains('invisible')).toBe(true);
+    }
+  });
+
+  it('draws a sent new thread’s head beside lines as its popover’s, one line that gives up as it does', () => {
+    const body = <p>On its way</p>;
+    const sent = render(
+      <SentPost state="Unresolved" lines="Line 5" popover author="tess-okafor" body={body} />,
+    );
+    const thread = render(
+      <Thread
+        {...PROPS}
+        comments={[{ ...MINE, body }]}
+        lines="Line 5"
+        canResolve
+        menu
+        variant="popover"
+      />,
+    );
+    const [mine, theirs] = [headRow(sent), headRow(thread)];
+    // The same row, by the same classes, with the same words and the same buttons' room.
+    expect(mine?.hasAttribute('data-pop-head')).toBe(true);
+    expect(mine?.className).toBe(theirs?.className);
+    expect(mine?.firstElementChild?.textContent).toBe('UnresolvedLine 51 comment');
+    expect(theirs?.firstElementChild?.textContent).toBe('UnresolvedLine 51 comment');
+    expect(names(mine?.lastElementChild)).toEqual(names(theirs?.lastElementChild));
+    expect(mine?.lastElementChild?.hasAttribute('inert')).toBe(true);
+  });
+
+  it('says the lines a sent new thread is on in its head row, as its card will', () => {
+    const body = <p>On its way</p>;
+    const sent = render(
+      <SentPost state="Pending" lines="Lines 4–6" author="tess-okafor" body={body} />,
+    );
+    const thread = render(
+      <Thread {...PROPS} lines="Lines 4–6" comments={[{ ...MINE, pending: true, body }]} />,
+    );
+    expect(headRow(sent)?.textContent).toBe('PendingLines 4–61 comment');
+    expect(headRow(thread)?.textContent).toContain('PendingLines 4–61 comment');
   });
 
   it('draws a sent reply over the row its card will have that offers a reply, which takes nothing', () => {
@@ -426,6 +489,21 @@ describe('Thread in a popover', () => {
     const close = pinned.querySelector('[aria-label="Close thread"]')!;
     expect(close.closest('[aria-hidden="true"]')).toBeNull();
     expect(close.hasAttribute('tabindex')).toBe(false);
+  });
+
+  it('keeps the room of the first’s Close in the threads after it, so their controls line up', () => {
+    const host = render(
+      <ThreadPopover
+        label="Unresolved thread · lines 10–35"
+        threads={[
+          { id: 'one', card: popover(true) },
+          { id: 'two', card: <Thread {...PROPS} variant="popover" lines="Line 35" /> },
+        ]}
+      />,
+    );
+    const [, second] = host.querySelectorAll('[data-pop-head]');
+    expect(second?.querySelector('[aria-label="Close thread"]')).toBeNull();
+    expect(second?.querySelector('[aria-hidden="true"].w-control-h-sm')).not.toBeNull();
   });
 
   it("only uses utilities that Lo's stylesheet has", async () => {

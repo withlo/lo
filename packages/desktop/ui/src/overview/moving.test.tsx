@@ -92,6 +92,13 @@ describe('the blocks the block keys stop at', () => {
     // Only the tab chosen takes focus, and a panel not shown hides what's in it.
     const tabs = stops.find((stop) => stop.querySelector('.lo-tabs'))!;
     expect(linksIn(tabs).map(named)).toEqual(['Before']);
+
+    // What's out of reach, as the room a flag holds for its widest button, isn't one.
+    const room = document.createElement('span');
+    room.setAttribute('inert', '');
+    room.innerHTML = '<button>Compare 45e4f22 → 57cc4a6</button>';
+    last.append(room);
+    expect(linksIn(last).map(named)).toEqual(['limiter.test.ts', 'the rest']);
   });
 });
 

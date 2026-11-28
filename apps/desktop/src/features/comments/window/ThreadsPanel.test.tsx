@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // The threads panel when its threads couldn't be read: why, and a way to read them again, which
-// waits as the first read did, focus staying in the list, and says so again if it couldn't even
-// be asked for.
+// waits as the first read did, focus staying in the list, and says it waits so the panel holds it
+// as it holds the first, and says so again if it couldn't even be asked for.
 
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -27,8 +27,11 @@ test('a read again that can’t be asked for shows why the threads can’t be sh
     act(() => root.unmount());
     element.remove();
   });
-  act(() => root.render(<Failed view="view-1" reason="Offline." />));
+  const asking: boolean[] = [];
+  const onAsking = (now: boolean) => asking.push(now);
+  act(() => root.render(<Failed view="view-1" reason="Offline." onAsking={onAsking} />));
   expect(element.textContent).toContain('Can’t show the threads');
+  expect(asking.at(-1)).toBe(false);
   const again = [...element.querySelectorAll('button')].find(
     (each) => each.textContent === 'Try again',
   )!;
@@ -38,6 +41,9 @@ test('a read again that can’t be asked for shows why the threads can’t be sh
     await Promise.resolve();
   });
   expect(document.activeElement).toBe(element);
+  // It waited as the first read does, and said so, for the panel to hold its wait as it holds the
+  // first's: busy, and cut off at its foot.
+  expect(asking).toContain(true);
   expect(bridge.calls.map(([channel]) => channel)).toEqual(
     expect.arrayContaining([expect.stringContaining('reread')]),
   );
@@ -45,6 +51,7 @@ test('a read again that can’t be asked for shows why the threads can’t be sh
     await new Promise((resolve) => setTimeout(resolve));
   });
   expect(element.textContent).toContain('Can’t show the threads');
+  expect(asking.at(-1)).toBe(false);
   expect(element.textContent).toContain('Offline.');
   // What came back is behind Details.
   expect([...element.querySelectorAll('button')].map((each) => each.textContent)).toContain(

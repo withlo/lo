@@ -85,6 +85,35 @@ describe('a code block', () => {
     expect(flag.querySelector('button')?.textContent).toBe('Compare r3 → r5');
   });
 
+  it('holds the room of its widest words and button, out of sight and out of reach', () => {
+    const page = render(
+      <CodeFlag
+        action={<button>Compare r3 → r5</button>}
+        widest={{
+          text: 'Line 12 changed in 57cc4a6.',
+          action: <button>Compare 45e4f22 → 57cc4a6</button>,
+        }}
+      >
+        Line 12 changed in r5.
+      </CodeFlag>,
+    );
+    const flag = page.querySelector('.lo-codeblock__flag')!;
+    // What it says, read first, and measured whole, as its widest is.
+    expect(
+      [...flag.querySelectorAll('[data-fit]')].map((each) => [
+        each.textContent,
+        each.getAttribute('aria-hidden'),
+      ]),
+    ).toEqual([
+      ['Line 12 changed in r5.', null],
+      ['Line 12 changed in 57cc4a6.', 'true'],
+    ]);
+    const room = flag.querySelector('.lo-codeblock__flagaction .lo-codeblock__widest')!;
+    expect(room.getAttribute('aria-hidden')).toBe('true');
+    expect(room.hasAttribute('inert')).toBe(true);
+    expect(flag.querySelector('button')?.textContent).toBe('Compare r3 → r5');
+  });
+
   it('keeps what the reader can do in its head, whatever its body holds', () => {
     const page = render(
       <CodeBlock target={TARGET} variant="unresolved" actions={<button>Find</button>}>
@@ -354,6 +383,35 @@ describe('the banner over an overview written for an older push', () => {
     expect(sub.textContent).toBe('2 pushes since, touching 5 files.');
     // Cut short, it shows whole as its tooltip.
     expect(tipOf(sub, { cut: true })).toBe('2 pushes since, touching 5 files.');
+    expect(banner.querySelector('.lo-ov-stale__actions button')?.textContent).toBe(
+      'Compare r3 → r5',
+    );
+  });
+
+  it('holds the room of its widest title and actions, out of sight and out of reach', () => {
+    const page = render(
+      <OutOfDate
+        title="Written for r3 · now r5"
+        detail=""
+        actions={<button>Compare r3 → r5</button>}
+        widest={{
+          title: 'Written for 45e4f22 · now 57cc4a6',
+          actions: <button>Compare 45e4f22 → 57cc4a6</button>,
+        }}
+      />,
+    );
+    const banner = page.querySelector('.lo-ov-stale')!;
+    expect(banner.querySelector('.lo-ov-stale__title')?.textContent).toBe(
+      'Written for r3 · now r5',
+    );
+    // Measured whole as its title is, and drawn in its place, out of sight.
+    const title = banner.querySelector('.lo-ov-stale__head > .lo-ov-stale__widest')!;
+    expect(title.textContent).toBe('Written for 45e4f22 · now 57cc4a6');
+    expect(title.getAttribute('aria-hidden')).toBe('true');
+    expect(title.hasAttribute('data-fit')).toBe(true);
+    const actions = banner.querySelector('.lo-ov-stale__actions > .lo-ov-stale__widest')!;
+    expect(actions.getAttribute('aria-hidden')).toBe('true');
+    expect(actions.hasAttribute('inert')).toBe(true);
     expect(banner.querySelector('.lo-ov-stale__actions button')?.textContent).toBe(
       'Compare r3 → r5',
     );

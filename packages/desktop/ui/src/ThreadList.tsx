@@ -10,14 +10,15 @@ export type ThreadsFilter = 'unresolved' | 'all' | 'yours';
 
 export interface ThreadFilterProps {
   value: ThreadsFilter;
-  /** How many threads each choice would list. */
-  counts: Readonly<Record<ThreadsFilter, number>>;
+  /** How many threads each choice would list: none until the threads are read. */
+  counts: Readonly<Record<ThreadsFilter, number>> | undefined;
   onChange: (value: ThreadsFilter) => void;
   /** The key that steps through the choices, as this system shows it. */
   keys?: readonly string[] | undefined;
 }
 
-function Counted({ word, count }: { word: string; count: number }) {
+function Counted({ word, count }: { word: string; count: number | undefined }) {
+  if (count === undefined) return word;
   return (
     <>
       {word} <span className="lo-num text-fg-muted">{count}</span>
@@ -25,7 +26,10 @@ function Counted({ word, count }: { word: string; count: number }) {
   );
 }
 
-/** The panel's filter: "Unresolved 6 · All 9 · Yours 3", with the key that steps through them. */
+/**
+ * The panel's filter: "Unresolved 6 · All 9 · Yours 3", with the key that steps through them, and
+ * its words alone until the threads are read.
+ */
 export function ThreadFilter({ value, counts, onChange, keys }: ThreadFilterProps) {
   return (
     <SegmentedControl
@@ -36,9 +40,9 @@ export function ThreadFilter({ value, counts, onChange, keys }: ThreadFilterProp
       onChange={onChange}
       keys={keys}
       items={[
-        { value: 'unresolved', label: <Counted word="Unresolved" count={counts.unresolved} /> },
-        { value: 'all', label: <Counted word="All" count={counts.all} /> },
-        { value: 'yours', label: <Counted word="Yours" count={counts.yours} /> },
+        { value: 'unresolved', label: <Counted word="Unresolved" count={counts?.unresolved} /> },
+        { value: 'all', label: <Counted word="All" count={counts?.all} /> },
+        { value: 'yours', label: <Counted word="Yours" count={counts?.yours} /> },
       ]}
     />
   );
@@ -255,24 +259,30 @@ function RowSkeleton({ where, words }: { where: string; words: string }) {
   );
 }
 
+/** The files' headings and their threads' rows a skeleton of the list draws, by their widths. */
+const SKELETON_GROUPS: readonly { readonly file: string; readonly rows: readonly string[] }[] = [
+  { file: 'w-1/2', rows: ['w-1/4', 'w-1/3'] },
+  { file: 'w-2/5', rows: ['w-1/3'] },
+  { file: 'w-1/3', rows: ['w-1/4', 'w-2/5', 'w-1/3'] },
+  { file: 'w-1/2', rows: ['w-1/4'] },
+];
+
 /**
- * The threads panel's rows as they lay out while the threads are read: a file's heading and its
- * threads' rows, twice, at their heights, with bars where the words will be. Put it in
- * `Skeletons`, which says what's read.
+ * The threads panel's rows as they lay out while the threads are read: files' headings and their
+ * threads' rows, at their heights, with bars where the words will be: as many as fill the panel in
+ * a window of the usual height, cut off at its foot. Put it in `Skeletons`, which says what's read.
  */
 export function ThreadListSkeleton() {
   return (
     <div className="flex flex-col gap-2 px-6 pb-12">
-      {[
-        { file: 'w-1/2', rows: ['w-1/4', 'w-1/3'] },
-        { file: 'w-2/5', rows: ['w-1/3'] },
-      ].map((group) => (
-        <div key={group.file}>
+      {SKELETON_GROUPS.map((group, at) => (
+        // By its place: the list is fixed, and its widths repeat.
+        <div key={at}>
           <div className="box-content flex h-1lh items-center px-8 pt-12 pb-4 code-small">
             <Skeleton className={group.file} />
           </div>
-          {group.rows.map((where) => (
-            <RowSkeleton key={where} where={where} words="w-3/5" />
+          {group.rows.map((where, row) => (
+            <RowSkeleton key={row} where={where} words="w-3/5" />
           ))}
         </div>
       ))}

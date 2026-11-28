@@ -19,8 +19,9 @@
 //
 // One range is lit in a code view at a time (`lightOf`): a popover's pinned, else where a key
 // landed, else what the pointer is on. Its stem and mark take their lit colours, and its rows the
-// selected ground across the line numbers, the lanes and the code (`setLit`); the lines of a comment
-// box being written take the ground `v` gives instead. The pointer's range takes its stem's lit
+// selected ground across the line numbers, the lanes and the code (`setLit`): its lines, and the
+// folds and empty space between them, so it reads as one block. The lines of a comment box being
+// written take the ground `v` gives instead. The pointer's range takes its stem's lit
 // colour whatever else is lit, and lights no lines while another does.
 //
 // While a new comment's box is open on lines, its bracket's two ends are handles: the cell of its
@@ -46,10 +47,13 @@ import {
   EditorView,
   gutterLineClass,
   GutterMarker,
+  gutterWidgetClass,
+  ViewPlugin,
+  type ViewUpdate,
   type WidgetType,
 } from '@codemirror/view';
 
-import { CollapsedWidget, FileNoteWidget, HeaderWidget } from './widgets.ts';
+import { CollapsedWidget, FileNoteWidget, HeaderWidget, SpacerWidget } from './widgets.ts';
 
 /**
  * A range's colour: amber while its thread is unresolved or pending, grey once it's resolved or
@@ -749,6 +753,127 @@ const litLine = Decoration.line({ class: 'lo-lit move-tint' });
 const pickedLine = Decoration.line({ class: 'lo-picked move-tint' });
 
 /**
+ * Whether what `widget` draws between lines is filler of the lit rows `lit`: a fold that holds any
+ * of their lines, or empty space between two of them, which takes their ground. Not a thread, a box
+ * or a note drawn between them, which has its own, nor a file's own rows.
+ */
+function litFiller(
+  view: EditorView,
+  widget: WidgetType | null | undefined,
+  block: BlockInfo,
+  lit: LitRows | null,
+): boolean {
+  if (!lit || lit.rows.length === 0) return false;
+  const { doc } = view.state;
+  if (widget instanceof CollapsedWidget) {
+    const first = doc.lineAt(block.from).number;
+    const last = doc.lineAt(block.to).number;
+    return lit.rows.some((run) => run.from <= last && run.to >= first);
+  }
+  if (!(widget instanceof SpacerWidget) || widget.look === 'under') return false;
+  const { line, after } = lineBeside(view, block);
+  const half = after ? line + 0.5 : line - 0.5;
+  return lit.rows.some((run) => run.from < half && half < run.to);
+}
+
+/**
+ * The fold or empty space drawn by `element`, a block between lines, as its editor has it: its
+ * widget and where it is. None for anything else.
+ */
+function fillerBlock(
+  view: EditorView,
+  element: HTMLElement,
+): { widget: WidgetType; block: BlockInfo } | undefined {
+  let at: number;
+  try {
+    at = view.posAtDOM(element);
+  } catch {
+    return undefined;
+  }
+  const line = view.lineBlockAt(at);
+  const blocks = Array.isArray(line.type) ? (line.type as readonly BlockInfo[]) : [line];
+  const kind = element.classList.contains('lo-collapsed') ? CollapsedWidget : SpacerWidget;
+  let found = blocks.filter((each) => each.widget instanceof kind && each.from === at);
+  // An empty line's blocks before it and after it are at one place in the text: the one drawn is
+  // on the side of the line's own element that it's on.
+  const text = blocks.find((each) => each.type === BlockType.Text);
+  if (found.length > 1 && text) {
+    const node = view.domAtPos(text.from).node;
+    const own = (node instanceof Element ? node : node.parentElement)?.closest('.cm-line');
+    const before =
+      own !== null &&
+      own !== undefined &&
+      (element.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    found = found.filter((each) => each.top < text.top === before);
+  }
+  const [pick] = found;
+  return pick?.widget ? { widget: pick.widget, block: pick } : undefined;
+}
+
+/**
+ * The folds and empty space between the lit rows take their ground, the selected or the picked,
+ * in the code and beside it: each block's element there is marked as it's drawn, and unmarked as
+ * the rows move on. The gutters beside them take it as a widget's class (`gutterWidgetClass`).
+ */
+const litFillers = ViewPlugin.fromClass(
+  class {
+    #marked = new Set<HTMLElement>();
+    readonly #view: EditorView;
+
+    constructor(view: EditorView) {
+      this.#view = view;
+      this.#mark();
+    }
+
+    update(update: ViewUpdate): void {
+      const before = update.startState.field(litField, false)?.rows ?? null;
+      const after = update.state.field(litField, false)?.rows ?? null;
+      // Drawn again, they're marked once the view has drawn them (`docViewUpdate`); lit anew with
+      // nothing drawn again, as when the lines are out of view, once the view has updated.
+      if (before !== after) {
+        update.view.requestMeasure({ key: this, read: () => null, write: () => this.#mark() });
+      }
+    }
+
+    docViewUpdate(): void {
+      this.#mark();
+    }
+
+    destroy(): void {
+      for (const element of this.#marked) unmarkFiller(element);
+      this.#marked.clear();
+    }
+
+    #mark(): void {
+      const view = this.#view;
+      const lit = view.state.field(litField, false)?.rows ?? null;
+      const marked = new Set<HTMLElement>();
+      if (lit && lit.rows.length > 0) {
+        for (const element of view.contentDOM.querySelectorAll<HTMLElement>(
+          ':scope > .lo-spacer, :scope > .lo-collapsed',
+        )) {
+          const found = fillerBlock(view, element);
+          if (found && litFiller(view, found.widget, found.block, lit)) marked.add(element);
+        }
+      }
+      for (const element of this.#marked) if (!marked.has(element)) unmarkFiller(element);
+      const picked = lit?.picked ?? false;
+      for (const element of marked) {
+        element.classList.toggle('is-lit', !picked);
+        element.classList.toggle('is-picked', picked);
+        element.classList.add('move-tint');
+      }
+      this.#marked = marked;
+    }
+  },
+);
+
+/** Takes the lit rows' ground off a fold or empty space. */
+function unmarkFiller(element: HTMLElement): void {
+  element.classList.remove('is-lit', 'is-picked', 'move-tint');
+}
+
+/**
  * Rows lit before the text changed: mapped, they may no longer be the range's, so they're the same
  * as no rows, and the next lighting sets them again.
  */
@@ -809,12 +934,18 @@ const litField = StateField.define<{
   provide: (field) => [
     gutterLineClass.from(field, (lit) => lit.cells),
     EditorView.decorations.from(field, (lit) => lit.lines),
+    // Beside a fold or empty space between the lit rows, the gutters take their ground too.
+    gutterWidgetClass.of((view, widget, block) => {
+      const lit = view.state.field(field).rows;
+      if (!litFiller(view, widget, block, lit)) return null;
+      return lit?.picked ? pickedCell : litCell;
+    }),
   ],
 });
 
 /** The rows a code view's lit range covers in an editor, from `setLit`. */
 export function litRows(): Extension {
-  return litField;
+  return [litField, litFillers];
 }
 
 /** The rows lit in an editor's state, as they were last set, or stale ones once the text changed. */

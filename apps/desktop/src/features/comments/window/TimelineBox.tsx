@@ -3,11 +3,12 @@
 // request itself, and the box that edits your comment there, in the comment's card. Each keeps its
 // draft as main does. From the moment the box at the end sends its comment, the comment is the
 // timeline's last row, and the box stands empty, as it will be once GitHub has the comment, taking
-// nothing until then. As it shrinks, sends or closes, nothing on screen moves: the timeline keeps
-// its end where it was, as room that goes as the reader scrolls it off screen. Under a comment
-// whose delete's answer was lost, the card says how that stands.
+// nothing until then; a box whose foot was on screen as it sent stays on screen under the row, in
+// the frame that draws it. Otherwise, as it shrinks, sends or closes, nothing on screen moves: the
+// timeline keeps its end where it was, as room that goes as the reader scrolls it off screen. Under
+// a comment whose delete's answer was lost, the card says how that stands.
 
-import { Button, CommentBoxFootBar, CommentBoxHeadBar, Key } from '@lo/ui';
+import { Button, CommentBoxFootBar, CommentBoxHeadBar, Key, reveal, scrollPane } from '@lo/ui';
 import { createComposer } from '@lo/ui/code';
 import {
   useEffect,
@@ -17,6 +18,7 @@ import {
   useRef,
   useSyncExternalStore,
   type ReactNode,
+  type RefObject,
 } from 'react';
 
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
@@ -113,6 +115,47 @@ function noSubscription(): () => void {
   return () => {};
 }
 
+/** Whether `element`'s foot is on screen in its pane, as far as the pane shows. */
+function footShown(element: Element): boolean {
+  const pane = scrollPane(element);
+  const foot = element.getBoundingClientRect().bottom;
+  if (!pane) return foot <= window.innerHeight;
+  const frame = pane.getBoundingClientRect();
+  const top = frame.top + pane.clientTop;
+  // A pixel's slack, for a foot that rests on the pane's at a fraction of one.
+  return foot > top && foot <= top + pane.clientHeight + 1;
+}
+
+/**
+ * As `box`'s comment goes to the timeline's last row, which pushes the box down by the row's
+ * height: where the box's foot was on screen as it sent, the box is brought back on screen whole,
+ * at once, in the frame that draws the row, so the row never pushes it under the pane's foot.
+ * `outer` holds the box.
+ */
+function useKeptOnScreen(
+  box: Box | undefined,
+  outer: RefObject<HTMLDivElement | null>,
+  sent: boolean,
+): void {
+  const shown = useRef(false);
+  useLayoutEffect(() => {
+    if (!box) return undefined;
+    let was = sendingNow(box.state);
+    // Told as it goes, before the timeline draws the row: what's on screen is as it was.
+    return box.subscribe(() => {
+      const now = sendingNow(box.state);
+      if (now && !was) shown.current = outer.current !== null && footShown(outer.current);
+      was = now;
+    });
+  }, [box, outer]);
+  useLayoutEffect(() => {
+    if (!sent || !shown.current) return;
+    shown.current = false;
+    const frame = outer.current?.querySelector('.lo-diffcomposer');
+    if (frame) reveal(frame, { block: 'nearest' });
+  }, [sent, outer]);
+}
+
 /**
  * The box at the timeline's end as it stands while its comment is on its way, which the timeline's
  * last row shows: empty, as it will be once GitHub has the comment, and taking nothing, its height
@@ -187,6 +230,7 @@ export function PullBox({ tab, leave, keys }: PullBoxProps): ReactNode {
   const own = useTabState(timelineBoxes, view, (boxes) => boxes.own);
   const away = useTabState(timelineBoxes, view, (boxes) => boxes.away);
   const box = own ?? (away ? undefined : timelineBox(view, ON_PULL));
+  const outer = useRef<HTMLDivElement>(null);
   const drawn = useRef<HTMLDivElement>(null);
   // Its comment on its way is the timeline's last row: the box stands empty meanwhile.
   const sent = useAway(box);
@@ -229,8 +273,9 @@ export function PullBox({ tab, leave, keys }: PullBoxProps): ReactNode {
     if (inputsSoFar() !== was.inputs) return;
     was.box.composer?.focus();
   }, [sent, leave, box]);
+  useKeptOnScreen(box, outer, sent);
   return (
-    <div data-lo-timeline="box">
+    <div ref={outer} data-lo-timeline="box">
       {box ? (
         <>
           {sent && <Away number={tab.number} height={emptyHeight.current} />}

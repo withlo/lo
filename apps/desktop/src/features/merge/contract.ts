@@ -952,9 +952,10 @@ export const contract = defineContract('merge', {
     /**
      * Asks GitHub again how the merge from the plan named `key` went, when Lo couldn't tell: about
      * the merge itself while GitHub still answers about it, or else by reading the pull request
-     * again. A read: nothing is sent again.
+     * again. A read: nothing is sent again. Replies whether it asks about the merge itself, which
+     * `jobs` has said is pending again by then, though that can come after the reply.
      */
-    askAgain: { input: byKey, reply: reply<void>() },
+    askAgain: { input: byKey, reply: reply<boolean>() },
     /** Forgets the merge from the plan named `key` once it has ended, as when the reader has seen how. */
     dismiss: { input: byKey, reply: reply<void>() },
     /**
