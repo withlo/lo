@@ -279,7 +279,7 @@ export function SentPost({
     <>
       {state !== undefined && (
         <ThreadHead popover={popover}>
-          <span className="flex min-w-0 flex-1 items-center gap-8">
+          <HeadWords>
             <Tag tone="warning">{state}</Tag>
             {lines !== undefined && (
               <span data-fit className="min-w-cut truncate">
@@ -289,7 +289,7 @@ export function SentPost({
             <span data-gives="detail" className="lo-num flex-none">
               1 comment
             </span>
-          </span>
+          </HeadWords>
           {room}
         </ThreadHead>
       )}
@@ -415,6 +415,20 @@ function ThreadHead({ popover, children }: { popover: boolean; children: ReactNo
     >
       <Iconic value={iconic}>{children}</Iconic>
     </div>
+  );
+}
+
+/**
+ * Where a thread's head holds its tags, its lines and its count, in the room its buttons leave. It's
+ * kept whole (`data-fit`), so the head gives a step up as soon as they don't fit, lines or none,
+ * and as a key chip takes room on focus. Once the head has nothing left to give up, it cuts them
+ * at its end, never drawing them under the buttons.
+ */
+function HeadWords({ children }: { children: ReactNode }) {
+  return (
+    <span data-fit className="flex min-w-0 flex-1 items-center gap-8 overflow-hidden">
+      {children}
+    </span>
   );
 }
 
@@ -608,7 +622,7 @@ export function Thread({
       }
     >
       <ThreadHead popover={popover}>
-        <span className="flex min-w-0 flex-1 items-center gap-8">
+        <HeadWords>
           {tagged}
           {lines !== undefined && (
             <span data-fit className="min-w-cut truncate">
@@ -619,7 +633,7 @@ export function Thread({
           <span data-gives="detail" className="lo-num flex-none">
             {counted(comments, pendingAll)}
           </span>
-        </span>
+        </HeadWords>
         <span className="flex flex-none items-center gap-2">
           {resolve}
           {menu && <MoreButton />}

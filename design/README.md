@@ -258,18 +258,23 @@ where the action's target is.
   marked `data-fit` is measured by its box alone, as what's heard and what a part cuts lay out past
   it. Keep the room after such a group as a margin, not a padding: what a part in it draws past its
   own box shows in the padding with the group not overflowing, so it keeps what it hasn't room for.
-  What's cut only at a step of its own is marked `data-cuts`, and drawn whole until the row gives up
-  `cut`. The PR header's first row gives up "Submit review…"'s key chip, then the merge status's
-  detail, then cuts its title, then gives up the status's words, which leave its ball with the
-  verdict and the reasons as its tooltip, so nothing overlaps it. The diff bar is the revisions
-  note, then Compare revisions and the view's own controls, 16 px apart, one `HintRow`: narrow, it
-  drops the hint's chips, then the hint, then the note's facts after its first `·`, last first, so
-  "base → r2" never cuts and no two groups touch. A diff's file header gives up what follows its
-  name (the counts, where a rename was, the tags), then cuts its folders, then drops them, leaving
-  the name with the whole path as its tooltip, and only then cuts the name at its end; its end, from
-  the threads to the `⋯`, is never cut. A thread's head is one line on its card and in a popover:
-  the card's gives up its count, then Resolve's words for its icon, and the popover's Resolve's
-  words, then its count, before either cuts its lines.
+  A group that narrows to leave room for what follows it (`min-w-0`) never runs past the row's end
+  itself: what it holds spills out of it, under what follows. Mark such a group `data-fit`, whatever
+  is in it, so the row gives a step up as soon as it overflows, and have it cut what it holds
+  (`overflow-hidden`) for when nothing is left to give up, as a thread's head's words do. What's cut
+  only at a step of its own is marked `data-cuts`, and drawn whole until the row gives up `cut`. The
+  PR header's first row gives up "Submit review…"'s key chip, then the merge status's detail, then
+  cuts its title, then gives up the status's words, which leave its ball with the verdict and the
+  reasons as its tooltip, so nothing overlaps it. The diff bar is the revisions note, then Compare
+  revisions and the view's own controls, 16 px apart, one `HintRow`: narrow, it drops the hint's
+  chips, then the hint, then the note's facts after its first `·`, last first, so "base → r2" never
+  cuts and no two groups touch. A diff's file header gives up what follows its name (the counts,
+  where a rename was, the tags), then cuts its folders, then drops them, leaving the name with the
+  whole path as its tooltip, and only then cuts the name at its end; its end, from the threads to
+  the `⋯`, is never cut. A thread's head is one line on its card and in a popover: as soon as its
+  tags, lines and count don't fit, lines or none, the card's gives up its count, then Resolve's
+  words for its icon, and the popover's Resolve's words, then its count, before either cuts its
+  lines. With nothing left to give up, it cuts its words at their end: never under its buttons.
 - **A choice of two to four is one `SegmentedControl`,** never buttons or pills drawn by hand: the
   header's view switch, the Files panel's Tree and Review order, the threads' filter, a comment
   box's Write and Preview, and Settings' choices are all one. Its thumb slides to the segment
