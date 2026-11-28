@@ -47,9 +47,10 @@ export const MARKDOWN_ELEMENTS: Readonly<Record<string, readonly string[]>> = Ob
   // An image for each theme: the window's color scheme picks the source.
   picture: [],
   source: ['media', 'srcset'],
-  // The fold's chevron, Lo's own icon.
+  // Lo's own icons: the fold's chevron, and an alert's before its word.
   svg: ['viewBox', 'aria-hidden'],
   path: ['d'],
+  circle: ['cx', 'cy', 'r'],
 });
 
 /** Whether the renderer may write `attribute` on `element`. */

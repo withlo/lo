@@ -1012,6 +1012,12 @@ coming, or when the reader just sent or saved it: their own text never leaves th
 was drawn before, as before an edit, it keeps that height meanwhile. Draw a comment's text with the
 comments feature's `Post`, which does this.
 
+**GitHub's alerts look as GitHub draws them,** wherever Markdown is drawn: a comment, an overview, a
+hover card. Each starts with its icon, 16 px, then its word, both in its tone, with Lucide's nearest
+to GitHub's octicons: Note (`info`) and Important (`message-square-exclamation-point`) in `lo-info`,
+Tip (`lightbulb`) in `lo-success`, Warning (`triangle-exclamation-point`) in `lo-warning`, and
+Caution (`octagon-exclamation-point`) in `lo-danger`. The Markdown renderer draws them.
+
 ## Overviews
 
 - The overview is a document: an outline on the left, the article at reading measure, wide blocks

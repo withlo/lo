@@ -17,6 +17,8 @@ import { act } from 'react';
 
 import { buildCss, hasRule } from '../../scripts/stylesheet.ts';
 import { cleanUp, click, disallowed, ids, press, render } from '../../test/dom.ts';
+import { Icon } from '../Icon.tsx';
+import type { IconName } from '../icons.ts';
 import {
   Anchors,
   drawBlock,
@@ -168,6 +170,39 @@ describe('Markdown', () => {
     const page = render(<Markdown tree={made} />);
     expect(page.querySelectorAll('*').length).toBeGreaterThan(50);
     expect(disallowed(page.firstElementChild!, allowed)).toEqual([]);
+  });
+
+  it('starts each of GitHub’s alerts with its icon, then its word, from GitHub’s HTML and from Markdown', () => {
+    const markdown = readFileSync(new URL('constructs.md', GITHUB), 'utf8');
+    const html = readFileSync(new URL('constructs.html', GITHUB), 'utf8');
+    // Lucide's nearest to GitHub's octicons: info, light-bulb, report, alert and stop.
+    const expected: [word: string, icon: IconName, tone: string][] = [
+      ['Note', 'info', 'text-info'],
+      ['Tip', 'lightbulb', 'text-success'],
+      ['Important', 'message-square-exclamation-point', 'text-info'],
+      ['Warning', 'triangle-exclamation-point', 'text-warning'],
+      ['Caution', 'octagon-exclamation-point', 'text-danger'],
+    ];
+    for (const made of [markdownTree(markdown, OPTIONS), githubTree({ html, markdown }, OPTIONS)]) {
+      const page = render(<Markdown tree={made} />);
+      const titles = [...page.querySelectorAll('div[role="note"] > p:first-child')];
+      // The icon is hidden from screen readers, which hear the word beside it.
+      expect(
+        titles.map((title) => [
+          title.textContent,
+          title.firstElementChild?.outerHTML,
+          // The icon and the word are in the alert's tone, which never shows without them.
+          [...title.classList].find((name) => /^text-(info|success|warning|danger)$/.test(name)),
+        ]),
+      ).toEqual(
+        expected.map(([word, icon, tone]) => [
+          word,
+          renderToStaticMarkup(<Icon name={icon} size={16} />),
+          tone,
+        ]),
+      );
+      expect(disallowed(page.firstElementChild!, allowed)).toEqual([]);
+    }
   });
 
   it('draws a code block across the post’s width, as code in a comment is set', () => {
