@@ -226,9 +226,10 @@ describe('reading the queues', () => {
     // Read a moment ago, both are read again all the same.
     const looking = queues.look('q');
     await vi.advanceTimersByTimeAsync(0);
-    expect(await looking).toBeUndefined();
+    // What it read is in its answer, as the tab has it: what's on `queue` can come after.
+    expect(await looking).toEqual({ read: queues.state('q')?.read, failed: undefined });
     expect(asked).toEqual(['q view main', 'q waiting main']);
-    expect(await queues.look('closed')).toBeUndefined();
+    expect(await queues.look('closed')).toEqual({ read: undefined, failed: undefined });
   });
 
   it('reads nothing once Lo quits', async () => {

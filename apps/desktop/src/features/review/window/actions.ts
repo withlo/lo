@@ -10,12 +10,21 @@
 import type { Composer } from '@lo/ui/code';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import { Answers } from '../../../window/answers.ts';
 import { announce, refuse } from '../../../window/commands/notices.tsx';
 import { offlineLabel } from '../../../window/explain.ts';
 import { type Attachable, endUploads, uploadsHold } from '../../comments/window/shared.ts';
 import { shipShowing } from '../../merge/window/shared.ts';
-import { pullOf, runOf, activeTab, type PullTab } from '../../tab/window/shared.ts';
-import { IN_A_LAYER, SIGN_IN, type ReviewEventRow, type Submission } from '../contract.ts';
+import { pullOf, runOf, activeTab, tabState, type PullTab } from '../../tab/window/shared.ts';
+import {
+  IN_A_LAYER,
+  refusedAtOnce,
+  SIGN_IN,
+  type ReviewEventRow,
+  type Submission,
+  type SubmitOutcome,
+  type Submitting,
+} from '../contract.ts';
 import { main, revisions as revisionsClient, tabs } from './main.ts';
 import {
   pausedReason,
@@ -271,6 +280,31 @@ export function stepNow(now = Date.now()): Step | undefined {
 }
 
 /**
+ * What main says on `submitted` of the reviews each view submits, against its answers: main says a
+ * review is on its way (`sending`), then how it stands, before it answers, but what it says can
+ * come after the answer, and then changes nothing of what the answer said.
+ */
+const submits = tabState(() => new Answers());
+
+/**
+ * How submitting stands once main gave `outcome`, as main said with it: nothing for a refusal it
+ * gave at once, before it said anything.
+ */
+function saidWith(outcome: SubmitOutcome): { state: Submitting | null } | undefined {
+  switch (outcome.kind) {
+    case 'submitted':
+      return { state: null };
+    case 'refused':
+      return refusedAtOnce(outcome.refusal) ? undefined : { state: null };
+    case 'lost':
+      return { state: 'checking' };
+    default:
+      outcome satisfies never;
+      return undefined;
+  }
+}
+
+/**
  * Submits the review the dialog shows, as its main button or `⌘⏎` does: only while that button
  * submits and can be pressed.
  */
@@ -287,8 +321,16 @@ export async function submit(): Promise<void> {
     saving = undefined;
   }
   changeDialog(view, { busy: true, sent: event, checking: false, refusal: undefined });
+  const answers = submits.get(view);
+  const asked = answers.ask(view);
+  let answeredYet = false;
   try {
     const outcome = await main().submit({ id: view, event, body: text });
+    answeredYet = true;
+    // What main said of it before its answer, coming after, changes nothing: from the answer on,
+    // it stands as main said with it, which may come later.
+    const said = saidWith(outcome);
+    if (answers.answered(asked, said !== undefined) && said) submitting.set(view, said.state);
     switch (outcome.kind) {
       case 'submitted':
         // The toast, where there is one, comes with what main says of it, for every view of the
@@ -305,6 +347,7 @@ export async function submit(): Promise<void> {
         outcome satisfies never;
     }
   } catch (error) {
+    if (!answeredYet) answers.answered(asked, false);
     changeDialog(view, { refusal: { kind: 'github', message: messageOf(error) } });
   } finally {
     changeDialog(view, { busy: false });
@@ -321,16 +364,21 @@ export function checkAgain(): void {
   if (!dialog || submitting.get(dialog.view) !== 'unknown') return;
   const { view } = dialog;
   changeDialog(view, { checking: true });
-  const stop = () => {
-    // Main looks only while it can't tell; if it didn't, the button is its own again.
-    if (submitting.get(view) === 'unknown') changeDialog(view, { checking: false });
-  };
+  // Main looks only while it can't tell. One it makes it says on `submitted`, which can come after
+  // its answer, so the button is at work until main says what the look found; with none, the
+  // button is its own again.
+  const stop = () => changeDialog(view, { checking: false });
   main()
     .check({ id: view })
-    .then(stop, (error: unknown) => {
-      console.error("Lo couldn't ask to look for a review again:", error);
-      stop();
-    });
+    .then(
+      (looks) => {
+        if (!looks) stop();
+      },
+      (error: unknown) => {
+        console.error("Lo couldn't ask to look for a review again:", error);
+        stop();
+      },
+    );
 }
 
 /** Does what the dialog's main button says, as a click or `⌘⏎` does. */
@@ -367,8 +415,12 @@ function reached(view: string, event: ReviewEventRow | null): boolean {
  * it did, as it does once the dialog was closed before the end.
  */
 export function heard(submission: Submission): void {
-  takeSubmission(submission);
   const { id } = submission;
+  // What main said before its answer to a review submitted from here, coming after the answer,
+  // changes nothing.
+  const older = submits.get(id).take(() => submission.state === 'sending');
+  if (older.has(id)) return;
+  takeSubmission(submission);
   if (submission.state !== 'checking') changeDialog(id, { checking: false });
   if (!submission.submitted) return;
   // The summary went with it, and its files.

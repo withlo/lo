@@ -15,7 +15,15 @@ import { notice } from '../../../window/commands/notices.tsx';
 import { IpcError } from '../../../ipc/contract.ts';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
-import type { Acted, ActPlan, ActPlanned, Entry, QueueRead, QueueState } from '../contract.ts';
+import type {
+  Acted,
+  ActPlan,
+  ActPlanned,
+  Entry,
+  Looked,
+  QueueRead,
+  QueueState,
+} from '../contract.ts';
 import {
   acting,
   actOn,
@@ -34,7 +42,7 @@ import {
 } from './acting.ts';
 import feature from './index.ts';
 import { QueueConfirm } from './QueueConfirm.tsx';
-import { showQueue } from './store.ts';
+import { queueOf, showQueue } from './store.ts';
 
 const HEAD = 'a'.repeat(40);
 
@@ -42,12 +50,14 @@ const HEAD = 'a'.repeat(40);
 let confirming: () => Acted = () => ({ kind: 'removed', numbers: [260] });
 /** How main answers a plan: the plan a test sets. */
 let planning: () => ActPlanned = () => ({ kind: 'plan', plan: planOf() });
+/** How main answers a look: with what the tab has read, unless a test says. */
+let looking: () => Looked = () => ({ read: queueOf('q')?.read, failed: undefined });
 
 const bridge = installBridge({
   'queue.plan': () => planning(),
   'queue.confirm': () => confirming(),
   'queue.cancel': () => undefined,
-  'queue.look': () => undefined,
+  'queue.look': () => looking(),
 });
 
 beforeAll(() => {
@@ -58,6 +68,7 @@ beforeAll(() => {
 beforeEach(() => {
   confirming = () => ({ kind: 'removed', numbers: [260] });
   planning = () => ({ kind: 'plan', plan: planOf() });
+  looking = () => ({ read: queueOf('q')?.read, failed: undefined });
   bridge.calls.length = 0;
   acting.setState({ dialog: undefined, working: new Map(), problems: new Map() });
 });
@@ -443,6 +454,24 @@ describe('confirming', () => {
     expect(triangle()).toContain('text-danger');
     expect(calls('queue.look')).toBe(1);
     expect(calls('queue.confirm')).toBe(1);
+  });
+
+  it('judges by what the look read, though what main sent of it comes after its answer', async () => {
+    confirming = () => ({ kind: 'unknown', why: 'GitHub didn’t respond.' });
+    showQueue(stateOf([entry(1, 259), entry(2, 260)]));
+    draw(<QueueConfirm />);
+    ask();
+    await until(() => dialog() !== null);
+    await later();
+    act(() => {
+      dialog()!.dispatchEvent(enter());
+    });
+    await until(() => stepKind() === 'unknown');
+    // The read it made has #260 gone; the tab hasn't heard it yet.
+    looking = () => ({ read: stateOf([entry(1, 259)]).read, failed: undefined });
+    act(() => button('Check again')!.click());
+    await until(() => acting.getState().dialog === undefined);
+    expect(notice()).toMatchObject({ title: 'Removed #260 from merge queue' });
   });
 
   it('closes once a look finds the change went', async () => {
