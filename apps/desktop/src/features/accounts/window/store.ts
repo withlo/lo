@@ -18,6 +18,12 @@ export interface SignInDialog {
   readonly error?: string | undefined;
   /** What main said when it couldn't open GitHub's page, as it came. */
   readonly unopened?: string | undefined;
+  /**
+   * The accounts listed as it opened, when it adds one to them: it then says so, and whether the
+   * account GitHub's page signed in is new. Not for signing in a given account, as "Sign in again"
+   * does.
+   */
+  readonly adding?: readonly Listed[] | undefined;
 }
 
 /** The dialog open. Lo never stacks two. */
@@ -44,6 +50,23 @@ export const accountsStore = createStore<AccountsState>()(() => ({
 /** Shows the accounts main sent. */
 export function showAccounts(accounts: readonly AccountSummary[]): void {
   accountsStore.setState({ accounts, unlisted: false });
+}
+
+/** An account listed: its login in lower case, and whether GitHub signed it out. */
+export interface Listed {
+  readonly login: string;
+  readonly signedOut: boolean;
+}
+
+/**
+ * The accounts listed, signed in or not. While there are some, a sign-in adds one to them, and
+ * Settings, the palette and the sign-in dialog say "Add account".
+ */
+export function listedAccounts(): Listed[] {
+  return (accountsStore.getState().accounts ?? []).map(({ login, signedOut }) => ({
+    login: login.toLowerCase(),
+    signedOut: signedOut !== null,
+  }));
 }
 
 /** Main couldn't be asked for the accounts. */

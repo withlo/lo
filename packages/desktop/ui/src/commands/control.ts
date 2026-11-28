@@ -28,7 +28,10 @@ export function heldRegistry(): Registry | undefined {
 /** What a control shows of the command it runs. */
 export interface CommandControl {
   readonly id: string;
-  /** The command's label, which names the control. */
+  /**
+   * The command's label, which names the control: what the palette calls it on the control's
+   * target now (its handler's `labelled`), as "Add account…" once an account is listed.
+   */
   readonly label: string;
   /** Its first key now, as labels in this system's form, if it has one. */
   readonly keys: readonly string[] | undefined;
@@ -52,7 +55,7 @@ export function controlOf(
   const ready = registry.enabled(id, target);
   return {
     id,
-    label: command.label,
+    label: registry.labelled(id, target) ?? command.label,
     keys: liveKeys(registry, command)[0],
     shortcut: liveShortcut(registry, command),
     off: ready === true ? undefined : ready,
