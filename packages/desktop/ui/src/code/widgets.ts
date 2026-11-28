@@ -850,11 +850,7 @@ export class ThreadWidget extends WidgetType {
     this.peek?.attach(block);
     drawUnder(block, this.threads, this.boxes, this.#draw, this.notes);
     // Each card's height, as drawn at the editor's width, and what its words wrap at.
-    for (const note of this.notes) {
-      this.sizes.observe(note.dom);
-      const text = note.dom.querySelector(`[${NOTE_TEXT}]`);
-      if (text) this.sizes.observe(text);
-    }
+    for (const note of this.notes) note.watch(this.sizes);
     return block;
   }
 
@@ -862,10 +858,7 @@ export class ThreadWidget extends WidgetType {
     // A card that's moved into another block is that block's to watch.
     for (const note of this.notes) {
       const parent = note.dom.parentElement;
-      if (parent !== null && parent !== dom) continue;
-      this.sizes.unobserve(note.dom);
-      const text = note.dom.querySelector(`[${NOTE_TEXT}]`);
-      if (text) this.sizes.unobserve(text);
+      if (parent === null || parent === dom) note.unwatch();
     }
   }
 

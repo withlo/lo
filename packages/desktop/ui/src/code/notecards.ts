@@ -4,7 +4,14 @@
 // the caller drew stays drawn from one block to the next. Beside lines a note opens in the threads'
 // popover instead (`beside.ts`), and none is drawn in the flow.
 
+import { NOTE_TEXT } from '../edits.ts';
 import type { NotesContent, NoteView, RenderNotes } from './api.ts';
+
+/** What measures a card in the editor whose block holds it: its height, and its words' width. */
+export interface CardWatcher {
+  observe(target: Element): void;
+  unobserve(target: Element): void;
+}
 
 /** About how tall a card's head is, and each line of its words, before it's been measured. */
 const HEAD = 49;
@@ -20,6 +27,8 @@ export class NoteCard {
   /** Whether the keyboard is on it: the cursor on its lines, where `g o` acts on it. */
   #focused = false;
   #content: NotesContent | undefined;
+  /** What measures it now, and the elements it measures: the editor whose block holds it. */
+  #watched: { by: CardWatcher; targets: readonly Element[] } | undefined;
 
   /**
    * Draws `note` at once with `render`, as a card that `label` names, whose control that collapses
@@ -72,7 +81,29 @@ export class NoteCard {
     return HEAD + Math.max(1, Math.ceil(this.#note.text.length / chars)) * LINE;
   }
 
+  /**
+   * Has `by` measure it, as the editor whose block it's in now, and stops the one that did, whose
+   * block it has left, as one in the other layout's editor.
+   */
+  watch(by: CardWatcher): void {
+    if (this.#watched?.by === by) return;
+    this.unwatch();
+    const text = this.dom.querySelector(`[${NOTE_TEXT}]`);
+    const targets = text ? [this.dom, text] : [this.dom];
+    for (const target of targets) by.observe(target);
+    this.#watched = { by, targets };
+  }
+
+  /** Nothing measures it: it's in no editor's block. */
+  unwatch(): void {
+    const watched = this.#watched;
+    if (!watched) return;
+    for (const target of watched.targets) watched.by.unobserve(target);
+    this.#watched = undefined;
+  }
+
   destroy(): void {
+    this.unwatch();
     this.#content?.destroy();
     this.#content = undefined;
     this.dom.remove();

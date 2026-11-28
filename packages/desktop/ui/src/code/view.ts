@@ -2047,11 +2047,18 @@ class View implements DiffView {
       const open = this.#beside.notesOpen;
       return (open ? this.#endingAt(open) : []).find((mark) => covers(this.#shownOf(mark)));
     }
-    const order = (key: string): number => this.#markKeys.get(key)?.order ?? Infinity;
-    return this.#notes
+    return this.#openInOrder()
       .filter(({ shown }) => this.#drawable(shown) && covers(shown))
-      .toSorted((a, b) => order(a.key) - order(b.key))
       .map(({ key, shown }) => ({ key, block: shown.block }))[0];
+  }
+
+  /**
+   * The open notes in the overview's order, as their cards stand under a line and as `g o` takes
+   * the first: one whose mark has gone, held as it was on screen, after the rest.
+   */
+  #openInOrder(): OpenNote[] {
+    const order = (key: string): number => this.#markKeys.get(key)?.order ?? Infinity;
+    return this.#notes.toSorted((a, b) => order(a.key) - order(b.key));
   }
 
   closeNote(): boolean {
@@ -5251,7 +5258,7 @@ class View implements DiffView {
     }
     // Between lines, each open note's card, after the line's threads.
     this.#dropCards();
-    for (const note of this.#mode === 'between' ? this.#notes : []) {
+    for (const note of this.#mode === 'between' ? this.#openInOrder() : []) {
       const { shown: mark } = note;
       const { side, line } = mark;
       if (mark.file !== file || !this.#drawable(mark)) continue;
@@ -5633,8 +5640,8 @@ class View implements DiffView {
   }
 
   /**
-   * Draws the files with threads, comment boxes, a peek or a `Problem` again, so the editors
-   * showing take them.
+   * Draws the files with threads, comment boxes, a peek, a note's card or a `Problem` again, so
+   * the editors showing take them.
    */
   #moveBoxes(): void {
     this.#drawing++;
@@ -5647,6 +5654,8 @@ class View implements DiffView {
       if (byPlace.size > 0) files.add(file);
     });
     for (const file of this.#problems.keys()) files.add(file);
+    // A note's card between lines, alone under its line or not.
+    for (const note of this.#notes) files.add(note.shown.file);
     for (const file of files) this.#refresh(file);
   }
 
@@ -6340,7 +6349,6 @@ function viewFile(file: DiffFile): ViewFile {
   return shown;
 }
 
-/** What a mark's note shows, under its last line. */
 /** Overview marks in the overview's order. */
 function byOrder(a: OverviewAt, b: OverviewAt): number {
   return a.order - b.order;

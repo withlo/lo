@@ -4690,6 +4690,41 @@ describe('overview notes between lines', () => {
     expect(note.closest('.cm-content > *')!.previousElementSibling?.textContent).toBe(aNew.at(-1));
   });
 
+  test('cards under a line stand in the overview’s order, whichever opened first, as `g o` takes them', () => {
+    const on = { ...events(), explained: vi.fn<NonNullable<DiffEvents['explained']>>() };
+    const shown = open(on);
+    shown.setMarks([overview('new', 4, 6), overview('new', 5, 6, 'two', 'The second.')]);
+    // On line 5, the shortest over it; on line 6, both that end there.
+    shown.openNote(at('a', 'new', 5));
+    expect(noted('After')).toEqual([expect.stringContaining('The second.')]);
+    shown.openNote(at('a', 'new', 6));
+    expect(noted('After')).toEqual([
+      expect.stringContaining('A query'),
+      expect.stringContaining('The second.'),
+    ]);
+    expect(shown.showInOverview(at('a', 'new', 6))).toBe(true);
+    expect(on.explained).toHaveBeenLastCalledWith('one', at('a', 'new', 6));
+  });
+
+  test('a card alone under its line goes with it from one layout to the other, leaving no block', () => {
+    const shown = open();
+    shown.setMarks([overview('new', 4, 6)]);
+    shown.openNote(at('a', 'new', 6));
+    const card = parent!.querySelector('.lo-diffthread__note')!;
+    shown.setLayout('inline');
+    expect(noted('Changes')).toHaveLength(1);
+    expect(noted('After')).toEqual([]);
+    shown.setLayout('split');
+    expect(noted('After')).toHaveLength(1);
+    expect(noted('Changes')).toEqual([]);
+    // The same card, what the caller drew in it kept, and no block left empty on screen where it
+    // was: one in the layout that's hidden is drawn again as that layout shows.
+    expect(parent!.querySelector('.lo-diffthread__note')).toBe(card);
+    const blocks = [...parent!.querySelectorAll('.lo-diffthread')];
+    const shownEmpty = blocks.filter((block) => !block.closest('[hidden]') && !block.firstChild);
+    expect(shownEmpty).toEqual([]);
+  });
+
   test('threads going beside lines close the notes open under their lines', () => {
     const shown = open();
     shown.setMarks([overview('new', 4, 6)]);

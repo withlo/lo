@@ -13,6 +13,7 @@ import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { registry } from '../../../window/commands/registry.ts';
 import { defineView } from '../../../window/slots.tsx';
+import { takeFileOffer } from '../../comments/window/shared.ts';
 import { blockWithFocus, followOverviews } from '../../overview/window/shared.ts';
 import { changeSetting, settingNow, settingRow } from '../../settings/window/shared.ts';
 import { contract as tabContract, viewIds } from '../../tab/contract.ts';
@@ -419,6 +420,9 @@ export default {
     },
     overviewNote: {
       run: withDiff(({ view }, target: LineTarget | NoteTarget) => {
+        // `⏎` just after `c` was refused here takes the toast's offer of a comment on the file.
+        const tab = activeTab();
+        if (tab?.kind === 'pull' && takeFileOffer(tab)) return;
         view.openNote(placeOf(target.at));
       }),
       enabled: noteNow,
