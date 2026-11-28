@@ -14,13 +14,17 @@ export type HandleEnd = 'first' | 'last' | 'both';
 /**
  * What an end of an open box's bracket says under the pointer, by the end: which it is, and the
  * keys that move it, by the commands they run. On one line, those that add a line either way. It
- * shows over its line, never under it, where the box, or the popover the box is in, is.
+ * shows over its line, where the box, between the lines or in a popover, is mostly under it, and
+ * never over the box: under its line where the box is over it.
  */
 const HANDLE_TIPS = {
   first: { label: 'First line', commands: ['comments.lineAbove', 'comments.dropFirst'] },
   last: { label: 'Last line', commands: ['comments.lineBelow', 'comments.dropLast'] },
   both: { label: 'First and last line', commands: ['comments.lineAbove', 'comments.lineBelow'] },
 } as const;
+
+/** What an end's tip never covers: a comment box, and the popover one is in, with its threads. */
+const BOXES = '.lo-diffcomposer, .lo-threadpop';
 
 /** Which end handle `control` is, if it's one. */
 export function handleEnd(control: HTMLElement): HandleEnd | undefined {
@@ -31,7 +35,12 @@ export function handleEnd(control: HTMLElement): HandleEnd | undefined {
 /** What handle `end` says under the pointer: which end it is, and its keys. */
 export function handleTip(end: HandleEnd): Tip {
   const { label, commands } = HANDLE_TIPS[end];
-  return { label, keys: commands.flatMap((id) => controlOf(id)?.keys ?? []), side: 'top' };
+  return {
+    label,
+    keys: commands.flatMap((id) => controlOf(id)?.keys ?? []),
+    side: 'top',
+    clear: BOXES,
+  };
 }
 
 /** The lane's name for the draft of a box under `place`, from line `from` where it starts above. */

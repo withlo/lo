@@ -134,10 +134,13 @@ function rect(top: number, height: number, width: number): DOMRect {
   return DOMRect.fromRect({ x: 100, y: top, width, height });
 }
 
-/** Where the tip on `ball` shows from the window's top, asked for on `side`, and takes it away. */
-function tipTop(side: 'top' | undefined): string | undefined {
+/**
+ * Where the tip on `ball` shows from the window's top, asked for on `side`, clear of what `clear`
+ * finds, and takes it away.
+ */
+function tipTop(side: 'top' | undefined, clear?: string): string | undefined {
   stop();
-  stop = tips(root, () => ({ label: 'First line', side }));
+  stop = tips(root, () => ({ label: 'First line', side, clear }));
   move(ball, 'mouseover');
   vi.advanceTimersByTime(TIP_DELAY);
   const at = document.querySelector<HTMLElement>('.lo-tip')?.style.top;
@@ -161,6 +164,37 @@ test('a tip asked for over its control shows over it where it fits, else under i
     control = rect(10, 20, 20);
     expect(tipTop('top')).toBe('36px');
   } finally {
+    measured.mockRestore();
+  }
+});
+
+test('a tip kept clear of a box shows on its other side where its own would cover it, and stays on its own where both would', () => {
+  const control = rect(300, 20, 20);
+  let box = rect(250, 40, 200);
+  const measured = vi
+    .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    .mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('lo-tip')) return rect(0, 24, 80);
+      return this.classList.contains('box') ? box : control;
+    });
+  const drawn = document.createElement('div');
+  drawn.className = 'box';
+  document.body.append(drawn);
+  try {
+    // The box over the control: under it.
+    expect(tipTop('top', '.box')).toBe('326px');
+    // Under it: over it, as asked, and one asked for under it goes over it.
+    box = rect(330, 100, 200);
+    expect(tipTop('top', '.box')).toBe('270px');
+    expect(tipTop(undefined, '.box')).toBe('270px');
+    // On both sides: where it was asked for.
+    box = rect(200, 200, 200);
+    expect(tipTop('top', '.box')).toBe('270px');
+    // Nothing it keeps clear of drawn: as asked.
+    drawn.remove();
+    expect(tipTop(undefined, '.box')).toBe('326px');
+  } finally {
+    drawn.remove();
     measured.mockRestore();
   }
 });
