@@ -1,5 +1,5 @@
 import { cva } from 'class-variance-authority';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
 import { Key } from './Key.tsx';
@@ -149,6 +149,52 @@ export function Loading({
             )}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+export interface SkeletonsProps {
+  /** The wait, as a progress label, which a screen reader hears: "Reading timeline…". */
+  status: string;
+  /**
+   * When the wait began, as `Date.now()` gives it, where that was before this was drawn, as for
+   * `Loading`: a wait that has run its first 300 ms shows its skeletons at once.
+   */
+  since?: number | undefined;
+  /** Classes for the box, which holds the skeletons. */
+  className?: string | undefined;
+  /** The skeletons, `Skeleton` blocks laid out as the content will be. */
+  children: ReactNode;
+}
+
+/**
+ * How a view whose shape is known waits: `Skeleton` blocks laid out as its content will be, which
+ * the content replaces in one Swap. Like `Loading`, it shows nothing for the wait's first 300 ms,
+ * so a quick load shows nothing at all, then the skeletons come in one Swap; and a switch to a view
+ * showing it holds what that view replaces meanwhile (`loadingIn`). A screen reader hears the wait
+ * and waits for the content.
+ */
+export function Skeletons({ status, since, className = '', children }: SkeletonsProps) {
+  const [drawn] = useState(Date.now);
+  const began = since ?? drawn;
+  const [found] = useState(() => Date.now() - began >= LOADING_DELAY_MS);
+  const [shows, setShows] = useState(found);
+  useEffect(() => {
+    if (shows) return undefined;
+    const timer = setTimeout(
+      () => setShows(true),
+      Math.max(0, began + LOADING_DELAY_MS - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [began, shows]);
+  return (
+    <div role="status" aria-busy="true" className={className} {...{ [LOADING_ATTRIBUTE]: '' }}>
+      <span className="sr-only">{status}</span>
+      {shows && (
+        <div aria-hidden="true" className={found ? undefined : 'move-swap'}>
+          {children}
+        </div>
       )}
     </div>
   );

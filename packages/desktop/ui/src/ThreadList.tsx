@@ -2,6 +2,7 @@ import { useId, type HTMLAttributes, type ReactNode, type Ref } from 'react';
 
 import { Avatar } from './Avatar.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
+import { Skeleton } from './Spinner.tsx';
 import { Tag } from './Tag.tsx';
 
 /** Which threads the panel lists: the unresolved ones, every one, or those you wrote or are in. */
@@ -228,6 +229,53 @@ export function ThreadList({
             ))}
           </div>
         ))}
+    </div>
+  );
+}
+
+/** A thread's row's place while the list is read: its avatar's disc, where it is, and its lines. */
+function RowSkeleton({ where, words }: { where: string; words: string }) {
+  return (
+    <div className="flex items-start gap-8 px-8 py-8">
+      <span className="mt-2 size-20 flex-none rounded-pill bg-hover" />
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex h-1lh items-center code-small">
+          <Skeleton className={where} />
+        </div>
+        <div className="text-small">
+          <div className="flex h-1lh items-center">
+            <Skeleton className="w-full" />
+          </div>
+          <div className="flex h-1lh items-center">
+            <Skeleton className={words} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The threads panel's rows as they lay out while the threads are read: a file's heading and its
+ * threads' rows, twice, at their heights, with bars where the words will be. Put it in
+ * `Skeletons`, which says what's read.
+ */
+export function ThreadListSkeleton() {
+  return (
+    <div className="flex flex-col gap-2 px-6 pb-12">
+      {[
+        { file: 'w-1/2', rows: ['w-1/4', 'w-1/3'] },
+        { file: 'w-2/5', rows: ['w-1/3'] },
+      ].map((group) => (
+        <div key={group.file}>
+          <div className="box-content flex h-1lh items-center px-8 pt-12 pb-4 code-small">
+            <Skeleton className={group.file} />
+          </div>
+          {group.rows.map((where) => (
+            <RowSkeleton key={where} where={where} words="w-3/5" />
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
