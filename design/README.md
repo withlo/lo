@@ -429,12 +429,14 @@ changes in the same frame.
   does).
 - `Skeleton` is the `skeleton` utility on a block. Give each the size of what it stands for, and lay
   them out as the content will be, at its heights, with its rows' insets, markers and frames
-  (`TimelineSkeleton`, `ThreadListSkeleton`). Lay out enough to fill the view in a window of the
-  usual height, not a screenful's start, and have the view cut them off at its foot: a wait never
-  scrolls. Put them in `Skeletons`, which names the wait to a screen reader and shows nothing for
-  the wait's first 300 ms, then the skeletons in one Swap; a switch to a view showing it holds what
-  that view replaces, as for `Loading`. In a tab's middle, give them to `MiddlePlaceholder` as its
-  `skeleton`, which carries the tab's wait.
+  (`TimelineSkeleton`, `ThreadListSkeleton`, `OverviewSkeleton`). Lay out enough to fill the view in
+  a window of the usual height, not a screenful's start, and have the view cut them off at its foot:
+  a wait never scrolls. Put them in `Skeletons`, which names the wait to a screen reader and shows
+  nothing for the wait's first 300 ms, then the skeletons in one Swap; a switch to a view showing it
+  holds what that view replaces, as for `Loading`. In a tab's middle, give them to
+  `MiddlePlaceholder` as its `skeleton`, which carries the tab's wait: once GitHub hasn't answered
+  for eight seconds, the mark takes the skeletons' place to say so and offer Cancel, as `Loading`
+  does.
 - A view that shows `Loading` or skeletons sets `aria-busy` on its own box until its content is in,
   so a screen reader waits for the content rather than reading the wait.
 - Pass `busy={false}` to a button that can be busy, not nothing, and its `working` too, so it holds

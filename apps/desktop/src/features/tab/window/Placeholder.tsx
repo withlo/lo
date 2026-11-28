@@ -9,12 +9,13 @@
 // screen, and only its line changes, swapping in what the view reads. With the code beside, while
 // both views wait, the tab draws one of them across the middle, so it's one wait there too.
 
-import { Loading, LOADING_DELAY_MS, Skeletons } from '@lo/ui';
+import { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS, Skeletons } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
 import {
   createContext,
   use,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -166,6 +167,26 @@ function useHeldPlace(tab: string): RefObject<HTMLDivElement | null> {
   return box;
 }
 
+/**
+ * Whether a wait that began at `since` has run eight seconds, as `Loading` says what's slow: from
+ * then while `counting`, and at once for a wait that has already.
+ */
+function useSlow(since: number, counting: boolean): boolean {
+  const after = () => ({ since, slow: Date.now() - since >= LOADING_SLOW_MS });
+  const [wait, setWait] = useState(after);
+  if (wait.since !== since) setWait(after());
+  const { slow } = wait;
+  useEffect(() => {
+    if (!counting || slow) return undefined;
+    const timer = setTimeout(
+      () => setWait({ since, slow: true }),
+      since + LOADING_SLOW_MS - Date.now(),
+    );
+    return () => clearTimeout(timer);
+  }, [since, counting, slow]);
+  return slow;
+}
+
 /** The key that closes a tab now, as this system shows it, if it has one. */
 function closeKeys(): string[] | undefined {
   const [first] = registry().keysOf('tab.close');
@@ -176,10 +197,11 @@ function closeKeys(): string[] | undefined {
  * What the middle shows until a middle view is there, or has something to draw. Nothing for the
  * wait's first moments, so a pull request that opens at once shows no wait at all. Its line is
  * "Opening pull request…" unless the view that draws it gives its own `status`, for what it reads
- * once the pull request is there. One GitHub hasn't answered for after eight seconds says so. From
- * then it offers to give up, which closes its tab. A tab that can't open draws nothing here: its
- * banner says why, once. A read that fails once the pull request is drawn leaves the wait going, as
- * the header's chip says why: the read tried again may bring what the view waits for.
+ * once the pull request is there. One GitHub hasn't answered for after eight seconds says so, with
+ * the mark, even where the view gives its skeleton. From then it offers to give up, which closes
+ * its tab. A tab that can't open draws nothing here: its banner says why, once. A read that fails
+ * once the pull request is drawn leaves the wait going, as the header's chip says why: the read
+ * tried again may bring what the view waits for.
  */
 export function Placeholder({
   tab,
@@ -191,7 +213,8 @@ export function Placeholder({
   /**
    * The view's skeleton, laid out as it will be, which shows in place of the mark, with `status`
    * for a screen reader: a view whose shape is known waits as that. It shows no line, so a view
-   * that waits after it shows its own at once.
+   * that waits after it shows its own at once. Without a `status`, it gives way to the mark once
+   * GitHub hasn't answered for eight seconds, and comes back once it has.
    */
   skeleton?: ReactNode;
 }) {
@@ -219,7 +242,13 @@ export function Placeholder({
   );
   useKeys();
   const waiting = !blocked(view);
-  if (shaped) {
+  // With its header there, or a view reading what came with it, GitHub has answered, and what's
+  // left is Lo's own work.
+  const slowLine = view?.header || status !== undefined ? undefined : 'Waiting for GitHub…';
+  // A skeleton gives way to the mark once GitHub is slow to answer, which says so and offers to
+  // give up.
+  const slow = useSlow(since, shaped && slowLine !== undefined);
+  if (shaped && !(slow && slowLine !== undefined)) {
     // Laid out to fill the view, the skeleton is cut off at its foot: a wait never scrolls.
     return (
       <div className="h-full overflow-hidden" data-lo-placeholder aria-busy={waiting || undefined}>
@@ -239,9 +268,7 @@ export function Placeholder({
           before={before}
           onLine={shown}
           status={status ?? 'Opening pull request…'}
-          // With its header there, or a view reading what came with it, GitHub has answered, and
-          // what's left is Lo's own work.
-          slow={view?.header || status !== undefined ? undefined : 'Waiting for GitHub…'}
+          slow={slowLine}
           onCancel={() => {
             main()
               .close({ id: tab })
