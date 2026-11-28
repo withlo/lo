@@ -1,7 +1,7 @@
 /**
- * `install`: the skill it writes is the repository's, byte for byte; it goes where Claude Code and
- * Codex look for it; and it replaces only its own files, never writing through a link or deleting
- * anything.
+ * `install`: the skill it writes is a person's copy of the repository's, byte for byte, named
+ * `lo-explain`; it goes where Claude Code and Codex look for it; and it replaces only its own files,
+ * never writing through a link or deleting anything but a person's older copy, `lo-overview`.
  */
 
 import {
@@ -54,11 +54,11 @@ describe('install --dir', () => {
   test('writes the skill in its own folder, and run again, replaces only the skill’s own files', () => {
     const home = fresh();
     const skills = join(home, 'skills');
-    const folder = join(skills, 'lo-overview');
+    const folder = join(skills, 'lo-explain');
 
     expect(install(['--dir', skills], home)).toEqual({
       status: 0,
-      stdout: `Installed the lo-overview skill in ${folder}.\n`,
+      stdout: `Installed the lo-explain skill in ${folder}.\n`,
       stderr: '',
     });
     expect(listing(folder)).toEqual([...skillFiles(), 'references/'].toSorted());
@@ -66,7 +66,7 @@ describe('install --dir', () => {
 
     // Changed, removed and added since: the skill's own files are put back, and nothing else is
     // touched.
-    writeFileSync(join(folder, 'SKILL.md'), '---\nname: lo-overview\n---\n\nEdited.\n');
+    writeFileSync(join(folder, 'SKILL.md'), '---\nname: lo-explain\n---\n\nEdited.\n');
     rmSync(join(folder, 'references/figures.md'));
     writeFileSync(join(folder, 'notes.md'), 'Mine.\n');
     writeFileSync(join(folder, 'references/mine.md'), 'Mine too.\n');
@@ -74,7 +74,7 @@ describe('install --dir', () => {
 
     expect(install(['--dir', skills], home)).toEqual({
       status: 0,
-      stdout: `Installed the lo-overview skill in ${folder}.\n`,
+      stdout: `Installed the lo-explain skill in ${folder}.\n`,
       stderr: '',
     });
     expect(listing(folder)).toEqual(
@@ -91,14 +91,14 @@ describe('install --dir', () => {
     const ran = runChecker(['install', '--dir=skills', '--json'], home, userEnvironment(home));
     expect(ran.status).toBe(0);
     expect(JSON.parse(ran.stdout)).toEqual({
-      installed: [{ agent: null, folder: join(home, 'skills', 'lo-overview') }],
+      installed: [{ agent: null, folder: join(home, 'skills', 'lo-explain') }],
     });
-    expectSkill(join(home, 'skills', 'lo-overview'));
+    expectSkill(join(home, 'skills', 'lo-explain'));
   });
 
   test('finishes an install that was cut short, with no SKILL.md yet', () => {
     const home = fresh();
-    const folder = join(home, 'skills', 'lo-overview');
+    const folder = join(home, 'skills', 'lo-explain');
     mkdirSync(join(folder, 'references'), { recursive: true });
     writeFileSync(join(folder, 'LICENSE'), 'Part.\n');
     writeFileSync(join(folder, 'references/format.md'), 'Part.\n');
@@ -108,15 +108,82 @@ describe('install --dir', () => {
   });
 });
 
+/** An older copy, as an earlier install wrote it, in `skills`: its folder. */
+function olderCopy(skills: string): string {
+  const folder = join(skills, 'lo-overview');
+  mkdirSync(join(folder, 'references'), { recursive: true });
+  writeFileSync(
+    join(folder, 'SKILL.md'),
+    '---\nname: lo-overview\ndescription: Old.\n---\n\nOld.\n',
+  );
+  for (const path of ['LICENSE', 'references/format.md', 'references/figures.md']) {
+    writeFileSync(join(folder, path), 'Old.\n');
+  }
+  return folder;
+}
+
+describe('install, beside an older copy named lo-overview', () => {
+  test('removes it, holding only the files it had, and says so', () => {
+    const home = fresh();
+    const skills = join(home, '.claude', 'skills');
+    const old = olderCopy(skills);
+    // An install of it cut short left this.
+    writeFileSync(join(old, '.lo-overview-0123456789abcdef.tmp'), 'Part.\n');
+    expect(install(['--claude'], home)).toEqual({
+      status: 0,
+      stdout: `Installed the lo-explain skill for Claude Code, in ${join(skills, 'lo-explain')}.\nRemoved its older copy, named lo-overview, from ${old}.\n`,
+      stderr: '',
+    });
+    expect(existsSync(old)).toBe(false);
+    expectSkill(join(skills, 'lo-explain'));
+  });
+
+  test('keeps it, holding anything else, a repository’s copy among them, and says so', () => {
+    const home = fresh();
+    const skills = join(home, 'skills');
+    const old = olderCopy(skills);
+    writeFileSync(join(old, 'hook.mjs'), '// A repository’s copy has a hook.\n');
+    const ran = runChecker(['install', '--dir', skills, '--json'], home, userEnvironment(home));
+    expect(JSON.parse(ran.stdout)).toEqual({
+      installed: [
+        { agent: null, folder: join(skills, 'lo-explain'), old: { kind: 'kept', path: old } },
+      ],
+    });
+    expect(readFileSync(join(old, 'hook.mjs'), 'utf8')).toContain('hook');
+    expect(install(['--dir', skills], home).stdout).toContain(
+      `${old} holds a skill named lo-overview with files of its own, so Lo left it.`,
+    );
+  });
+
+  test('leaves alone a link named for it, and another skill there', () => {
+    const home = fresh();
+    const skills = join(home, 'skills');
+    const elsewhere = olderCopy(join(home, 'elsewhere'));
+    mkdirSync(skills);
+    symlinkSync(elsewhere, join(skills, 'lo-overview'));
+    expect(install(['--dir', skills], home).stdout).toContain('so Lo left it.');
+    expect(readFileSync(join(elsewhere, 'SKILL.md'), 'utf8')).toContain('Old.');
+
+    const other = fresh();
+    const theirs = join(other, 'skills', 'lo-overview');
+    mkdirSync(theirs, { recursive: true });
+    writeFileSync(join(theirs, 'SKILL.md'), '---\nname: review\n---\n');
+    expect(install(['--dir', join(other, 'skills')], other).stdout).toBe(
+      `Installed the lo-explain skill in ${join(other, 'skills', 'lo-explain')}.\n`,
+    );
+    expect(existsSync(join(theirs, 'SKILL.md'))).toBe(true);
+  });
+});
+
 describe('install for an agent', () => {
   test('puts the skill in Claude Code’s and Codex’s skills folders', () => {
     const home = fresh();
     const ran = install(['--claude', '--codex'], home);
-    const claude = join(home, '.claude', 'skills', 'lo-overview');
-    const codex = join(home, '.agents', 'skills', 'lo-overview');
+    const claude = join(home, '.claude', 'skills', 'lo-explain');
+    const codex = join(home, '.agents', 'skills', 'lo-explain');
     expect(ran).toEqual({
       status: 0,
-      stdout: `Installed the lo-overview skill for Claude Code, in ${claude}.\nInstalled the lo-overview skill for Codex, in ${codex}.\n`,
+      stdout: `Installed the lo-explain skill for Claude Code, in ${claude}.\nInstalled the lo-explain skill for Codex, in ${codex}.\n`,
       stderr: '',
     });
     expectSkill(claude);
@@ -127,7 +194,7 @@ describe('install for an agent', () => {
     const home = fresh();
     const config = join(home, 'elsewhere');
     expect(install(['--claude'], home, { CLAUDE_CONFIG_DIR: config }).status).toBe(0);
-    expectSkill(join(config, 'skills', 'lo-overview'));
+    expectSkill(join(config, 'skills', 'lo-explain'));
     expect(existsSync(join(home, '.claude'))).toBe(false);
   });
 
@@ -144,16 +211,16 @@ describe('install for an agent', () => {
 
     mkdirSync(join(home, '.claude'));
     expect(install([], home).stdout).toBe(
-      `Installed the lo-overview skill for Claude Code, in ${join(home, '.claude/skills/lo-overview')}.\n`,
+      `Installed the lo-explain skill for Claude Code, in ${join(home, '.claude/skills/lo-explain')}.\n`,
     );
     expect(existsSync(join(home, '.agents'))).toBe(false);
 
     const codex = join(home, 'codex');
     mkdirSync(codex);
     expect(install([], home, { CODEX_HOME: codex }).stdout).toContain(
-      `Installed the lo-overview skill for Codex, in ${join(home, '.agents/skills/lo-overview')}.\n`,
+      `Installed the lo-explain skill for Codex, in ${join(home, '.agents/skills/lo-explain')}.\n`,
     );
-    expectSkill(join(home, '.agents/skills/lo-overview'));
+    expectSkill(join(home, '.agents/skills/lo-explain'));
   });
 
   test('follows a link to the skills folder, as kept with someone’s other settings', () => {
@@ -163,7 +230,7 @@ describe('install for an agent', () => {
     mkdirSync(join(home, '.claude'));
     symlinkSync(kept, join(home, '.claude', 'skills'));
     expect(install(['--claude'], home).status).toBe(0);
-    expectSkill(join(kept, 'lo-overview'));
+    expectSkill(join(kept, 'lo-explain'));
   });
 });
 
@@ -192,12 +259,12 @@ describe('install refuses', () => {
     const home = fresh();
     const source = join(home, 'source');
     mkdirSync(join(source, 'references'), { recursive: true });
-    writeFileSync(join(source, 'SKILL.md'), '---\nname: lo-overview\n---\n\nMy own copy.\n');
+    writeFileSync(join(source, 'SKILL.md'), '---\nname: lo-explain\n---\n\nMy own copy.\n');
     const skills = join(home, 'skills');
     mkdirSync(skills);
-    symlinkSync(source, join(skills, 'lo-overview'));
+    symlinkSync(source, join(skills, 'lo-explain'));
     const before = listing(home);
-    expect(attempt(skills, home)).toEqual(refusal(join(skills, 'lo-overview'), LINK, before));
+    expect(attempt(skills, home)).toEqual(refusal(join(skills, 'lo-explain'), LINK, before));
     expect(readFileSync(join(source, 'SKILL.md'), 'utf8')).toContain('My own copy.');
   });
 
@@ -206,7 +273,7 @@ describe('install refuses', () => {
     const outside = join(home, 'outside');
     mkdirSync(outside);
     const skills = join(home, 'skills');
-    const folder = join(skills, 'lo-overview');
+    const folder = join(skills, 'lo-explain');
     mkdirSync(folder, { recursive: true });
     symlinkSync(outside, join(folder, 'references'));
     const before = listing(home);
@@ -219,7 +286,7 @@ describe('install refuses', () => {
     const outside = join(home, 'outside.md');
     writeFileSync(outside, 'Mine.\n');
     const skills = join(home, 'skills');
-    const folder = join(skills, 'lo-overview');
+    const folder = join(skills, 'lo-explain');
     mkdirSync(folder, { recursive: true });
     for (const path of ['SKILL.md', 'LICENSE']) {
       const at = join(folder, path);
@@ -234,7 +301,7 @@ describe('install refuses', () => {
   test('a folder or file where it expects the other', () => {
     const home = fresh();
     const skills = join(home, 'skills');
-    const folder = join(skills, 'lo-overview');
+    const folder = join(skills, 'lo-explain');
     mkdirSync(skills);
     writeFileSync(folder, 'A file.\n');
     const notFolder = `isn't a folder, so the skill can't go there. ${INSTEAD}`;
@@ -251,7 +318,7 @@ describe('install refuses', () => {
   test('a folder holding another skill, or files that aren’t the skill’s', () => {
     const home = fresh();
     const skills = join(home, 'skills');
-    const folder = join(skills, 'lo-overview');
+    const folder = join(skills, 'lo-explain');
     mkdirSync(folder, { recursive: true });
     writeFileSync(join(folder, 'SKILL.md'), '---\nname: "review"\ndescription: Mine.\n---\n');
     const named = `holds another skill, "review", so Lo left it alone. ${INSTEAD}`;
@@ -264,15 +331,15 @@ describe('install refuses', () => {
     rmSync(join(folder, 'SKILL.md'));
     mkdirSync(join(folder, 'references'));
     writeFileSync(join(folder, 'references', 'notes.md'), 'Mine.\n');
-    const others = `holds files that aren't the lo-overview skill's, and no SKILL.md, so Lo left it alone. ${INSTEAD}`;
+    const others = `holds files that aren't the lo-explain skill's, and no SKILL.md, so Lo left it alone. ${INSTEAD}`;
     expect(attempt(skills, home)).toEqual(refusal(folder, others, listing(home)));
   });
 
   test('everything, when any one folder refuses', () => {
     const home = fresh();
     const skills = join(home, 'skills');
-    mkdirSync(join(skills, 'lo-overview'), { recursive: true });
-    writeFileSync(join(skills, 'lo-overview', 'SKILL.md'), '---\nname: review\n---\n');
+    mkdirSync(join(skills, 'lo-explain'), { recursive: true });
+    writeFileSync(join(skills, 'lo-explain', 'SKILL.md'), '---\nname: review\n---\n');
     const before = listing(home);
     const ran = install(['--claude', '--dir', skills], home);
     expect(ran.status).toBe(2);

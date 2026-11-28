@@ -1,7 +1,7 @@
-// The overview skill's rows in the app: the step on the welcome screen, the rows in Settings' Command
-// line, and the command in the palette. Each test starts Lo with a home folder of
-// its own, so the skill goes into folders the test made and never into the real ~/.claude or
-// ~/.agents, and with the variables that move an agent's folder cleared.
+// The overview skill's rows in the app: the step on the welcome screen, the rows in Settings'
+// Integrations, the switch for automatic overviews in Pull requests, and the command in the palette. Each test starts
+// Lo with a home folder of its own, so the skill goes into folders the test made and never into the
+// real ~/.claude or ~/.agents, and with the variables that move an agent's folder cleared.
 
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -9,7 +9,7 @@ import { join } from 'node:path';
 
 import type { Page } from '@playwright/test';
 
-import { expect, test as base } from './app.ts';
+import { dataFolder, expect, settingsPath, test as base } from './app.ts';
 
 const mac = process.platform === 'darwin';
 /** ⌘ on macOS, Ctrl on Linux. */
@@ -52,12 +52,21 @@ const row = (page: Page) => page.locator('[data-settings-row="overview.skillRow"
 const lines = (page: Page) => row(page).getByRole('status').locator('li');
 
 /** Where an agent's copy of the skill's `SKILL.md` goes in `home`. */
-const claudeSkill = (home: string) => join(home, '.claude', 'skills', 'lo-overview', 'SKILL.md');
-const codexSkill = (home: string) => join(home, '.agents', 'skills', 'lo-overview', 'SKILL.md');
+const claudeSkill = (home: string) => join(home, '.claude', 'skills', 'lo-explain', 'SKILL.md');
+const codexSkill = (home: string) => join(home, '.agents', 'skills', 'lo-explain', 'SKILL.md');
 
 /** Whether `path` is the overview skill's `SKILL.md`. */
 function isSkill(path: string): boolean {
-  return existsSync(path) && readFileSync(path, 'utf8').includes('name: lo-overview');
+  return existsSync(path) && readFileSync(path, 'utf8').includes('name: lo-explain');
+}
+
+/** The settings file as an object, or nothing while there's none. */
+function saved(): unknown {
+  try {
+    return JSON.parse(readFileSync(settingsPath(dataFolder()), 'utf8'));
+  } catch {
+    return undefined;
+  }
 }
 
 /** Asks main to install the skill for `agents`, as the rows do. */
@@ -155,6 +164,29 @@ test.describe('in Settings, from a terminal', () => {
     await page.keyboard.press('c');
     await expect(terminal.getByRole('button', { name: 'Copied' })).toBeVisible();
     await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe(command);
+  });
+});
+
+test.describe('in Settings, automatic overviews', () => {
+  test('turn off and on again, in the settings file the skill’s hook reads', async ({ page }) => {
+    await openSettings(page);
+    await page
+      .getByRole('navigation', { name: 'Settings' })
+      .getByRole('button', { name: 'Pull requests' })
+      .click();
+    const auto = page.locator('[data-settings-row="overview.auto"]');
+    await expect(auto).toContainText(
+      'Coding agents write one after opening or pushing to a pull request.',
+    );
+    const toggle = auto.getByRole('switch', { name: 'Write overviews automatically' });
+    await expect(toggle).toBeChecked();
+    await toggle.focus();
+    await page.keyboard.press('Space');
+    await expect(toggle).not.toBeChecked();
+    await expect.poll(saved).toEqual({ 'overview.auto': false });
+    await page.keyboard.press('Space');
+    await expect(toggle).toBeChecked();
+    await expect.poll(saved).toEqual({ 'overview.auto': true });
   });
 });
 

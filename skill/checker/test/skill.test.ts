@@ -1,13 +1,22 @@
 /**
- * The skill's `SKILL.md`: the front matter Claude Code and Codex read, links only to what the skill
- * carries, the git commands it runs in a clone of its own, and the checker's commands, which run as
- * it says they do.
+ * The skill's `SKILL.md`: the front matter Claude Code and Codex read, for a repository's copy and,
+ * from `explain.md`, a person's; links only to what the skill carries; the git commands it runs in a
+ * clone of its own; and the checker's commands, which run as it says they do.
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
+import { cloneLink, pullOf, takeLock } from '@lo/skill/hook.mjs';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 import { git, gitBytes, testGitEnvironment } from '@lo/testing/git';
@@ -22,9 +31,37 @@ import {
   scratch,
   SKILL,
   skillFiles,
+  splitMatter,
 } from './support.ts';
 
 const text = readFileSync(join(SKILL, 'SKILL.md'), 'utf8');
+const explain = readFileSync(join(SKILL, 'explain.md'), 'utf8');
+
+/**
+ * The keys of the front matter `matter` names, each with its value, in order: a value may go on over
+ * indented lines, as YAML allows, joined by spaces. Throws on a line that's neither.
+ */
+function keysOf(matter: string): [string, string][] {
+  const lines = matter.split('\n').slice(1, -2);
+  const keys: [string, string][] = [];
+  for (const line of lines) {
+    const key = /^([a-z][a-z-]*):(.*)$/.exec(line);
+    if (key) keys.push([key[1]!, key[2]!.trim()]);
+    else if (line.startsWith('  ') && keys.length > 0) {
+      const last = keys.at(-1)!;
+      last[1] = `${last[1]} ${line.trim()}`.trim();
+    } else throw new Error(`A line front matter doesn't take: ${JSON.stringify(line)}`);
+  }
+  return keys;
+}
+
+/** What a description must be for every reader of skills: long enough, short enough, no tags. */
+function expectDescription(description: string): void {
+  expect(description.length).toBeGreaterThan(100);
+  expect(description.length).toBeLessThanOrEqual(1024);
+  // Nothing like a tag, which some readers of skills refuse.
+  expect(description).not.toMatch(/[<>]/);
+}
 
 /** Every line of SKILL.md's `sh` blocks, trimmed, in order. */
 const commands = [...text.matchAll(/^ *```sh\n([\s\S]*?)^ *```$/gm)].flatMap((match) =>
@@ -82,23 +119,34 @@ function run(
 }
 
 describe('SKILL.md', () => {
-  test('starts with front matter giving the skill’s name, and when to use it', () => {
-    const lines = text.split('\n');
-    expect(lines[0]).toBe('---');
-    const matter = lines.slice(1, lines.indexOf('---', 1));
-    expect(matter[0]).toBe('name: lo-overview');
-    expect(matter[1]).toMatch(/^description:/);
-    // The description may go on over indented lines, as YAML allows. Nothing else is there.
-    const rest = matter.slice(2);
-    expect(rest.every((line) => line.startsWith('  '))).toBe(true);
-    const description = [matter[1]!.slice('description:'.length), ...rest]
-      .map((line) => line.trim())
-      .join(' ')
-      .trim();
-    expect(description.length).toBeGreaterThan(100);
-    expect(description.length).toBeLessThanOrEqual(1024);
-    // Nothing like a tag, which some readers of skills refuse.
-    expect(description).not.toMatch(/[<>]/);
+  test('starts with a repository’s front matter: its name, when to start it, and how it runs', () => {
+    const keys = keysOf(splitMatter(text).matter);
+    expect(keys.map(([key]) => key)).toEqual(['name', 'description', 'argument-hint', 'context']);
+    const matter = Object.fromEntries(keys);
+    expect(matter.name).toBe('lo-overview');
+    expectDescription(matter.description!);
+    // An agent starts it by itself after it opens or pushes to a pull request, unless it's off.
+    expect(matter.description).toMatch(
+      /\bafter you open a pull request or push commits to an open one\b/,
+    );
+    expect(matter.description).toContain('overview.auto');
+    expect(matter.description).toContain('spawn_agent');
+    // In a subagent of its own, in the background, on Claude Code.
+    expect(matter.context).toBe('fork');
+    // Allowed nothing without asking: no rule could take in what it runs and nothing more.
+    expect(matter['allowed-tools']).toBeUndefined();
+  });
+
+  test('has a person’s front matter in explain.md, which never starts by itself', () => {
+    const { matter, body } = splitMatter(explain);
+    expect(body).toBe('');
+    const keys = keysOf(matter);
+    expect(keys.map(([key]) => key)).toEqual(['name', 'description']);
+    const { name, description = '' } = Object.fromEntries(keys);
+    expect(name).toBe('lo-explain');
+    expectDescription(description);
+    expect(description).toMatch(/\bonly when asked\b/);
+    expect(description).toMatch(/\bNever start it by yourself\b/);
   });
 
   test('links only to the references the skill carries', () => {
@@ -137,6 +185,10 @@ describe('SKILL.md', () => {
       "git init --quiet '<work>/clone'",
       'git config -z --get user.name',
       'git config -z --get user.email',
+      'git config -z --get author.name',
+      'git config -z --get author.email',
+      'git config -z --get committer.name',
+      'git config -z --get committer.email',
       'git remote -v',
     ]);
     expect(commands.filter((line) => line.includes('FETCH_HEAD'))).toEqual([]);
@@ -192,23 +244,49 @@ describe('SKILL.md', () => {
       "'<work>'": work,
       "'<n>'": '4797',
       "'<stack>'": '4790',
+      "'<link>'": 'https://github.com/acme/demo/pull/4797',
+      // The clone the hook named, whose lock the writer keeps.
+      "'<lock-clone>'": cloneLink(repo),
     };
     const said = npx.map((line) => {
       const [, spec, rest] = shape.exec(line) ?? [];
       const args = (rest ?? '').split(' ').map((arg) => values[arg] ?? arg);
       return { spec, args };
     });
+    const link = 'https://github.com/acme/demo/pull/4797';
     expect(said.map(({ spec, args }) => `${spec} ${args.join(' ')}`)).toEqual([
+      `${manifest.name}@{version} start ${link} --repo ${cloneLink(repo)}`,
       `${manifest.name}@{version} transcript --out ${work}`,
       `${manifest.name}@{version} check ${dir} --pr 4797 --repo ${repo}`,
       `${manifest.name}@{version} commit ${dir} --pr 4797 --repo ${repo}`,
       `${manifest.name}@{version} check ${stack} --stack 4790 --repo ${repo}`,
       `${manifest.name}@{version} commit ${stack} --stack 4790 --repo ${repo}`,
+      `${manifest.name}@{version} done ${link} --repo ${cloneLink(repo)}`,
     ]);
+
+    // Marked as being written, and done, with the hook's lock between, in the git folder of the
+    // clone the hook named, where it keeps it.
+    const pull = pullOf(link);
+    if (pull === undefined) throw new Error('Not a link.');
+    const [start, , , , , , done] = said;
+    const env = { ...testGitEnvironment(), LO_OVERVIEW_TMP: work };
+    expect(runChecker(start!.args, join(work, 'tools'), env)).toMatchObject({
+      status: 0,
+      stdout: expect.stringContaining(`Lo marked the overview of ${link} as being written`),
+    });
+    expect(takeLock(pull, { dir: repo, env })).toBe('held');
+    expect(runChecker(done!.args, join(work, 'tools'), env)).toMatchObject({
+      status: 0,
+      stdout: expect.stringContaining(`A push came in while you wrote`),
+    });
+    expect(runChecker(done!.args, join(work, 'tools'), env)).toMatchObject({
+      status: 0,
+      stdout: `Nothing came in while you wrote the overview of ${link}.\n`,
+    });
 
     // The transcript copy needs an agent's session, so only the checks and commits run here.
     const [checkPull, commitPull, checkStack, commitStack] = said
-      .slice(1)
+      .slice(2, 6)
       .map(({ args }) => runChecker(args, join(work, 'tools')));
     for (const check of [checkPull, checkStack]) {
       expect(check).toEqual({ status: 0, stdout: 'No errors or warnings.\n', stderr: '' });
@@ -224,16 +302,22 @@ describe('SKILL.md', () => {
   test('runs the checker it was installed with, by its exact version', () => {
     // In the source, only the checker's commands name a version, and by the placeholder.
     const runs = commands.filter((line) => /\bnpx\b/.test(line)).length;
-    expect(runs).toBe(5);
+    expect(runs).toBe(7);
     expect(text.match(/\{version\}/g)).toHaveLength(runs);
     expect(text.split(`${manifest.name}@{version} `)).toHaveLength(runs + 1);
 
     const skills = join(root.dir, 'pinned');
     expect(runChecker(['install', '--dir', skills], root.dir).status).toBe(0);
-    const shipped = readFileSync(join(skills, 'lo-overview', 'SKILL.md'), 'utf8');
-    expect(shipped).not.toContain('{version}');
-    expect(shipped).not.toContain('@latest');
-    expect(shipped.split(`${manifest.name}@${manifest.version} `)).toHaveLength(runs + 1);
+    const repo = join(root.dir, 'pinned-repo');
+    mkdirSync(repo);
+    repositoryOf(repo, { 'a.txt': 'a\n' });
+    expect(runChecker(['install', '--repo', repo], root.dir).status).toBe(0);
+    for (const path of [join(skills, 'lo-explain'), join(repo, '.claude/skills/lo-overview')]) {
+      const shipped = readFileSync(join(path, 'SKILL.md'), 'utf8');
+      expect(shipped).not.toContain('{version}');
+      expect(shipped).not.toContain('@latest');
+      expect(shipped.split(`${manifest.name}@${manifest.version} `)).toHaveLength(runs + 1);
+    }
   });
 });
 
@@ -449,6 +533,24 @@ describe('its git commands, run as written', () => {
     expect(promisor.stdout).not.toBe('');
   });
 
+  test('keep the lock of a shallow or partial clone it started in, which it makes no clone from', () => {
+    for (const depth of ['--depth=1', '--filter=blob:none']) {
+      const started = mkdtempSync(join(root.dir, 'started-'));
+      git(root.dir, 'clone', '-q', depth, `file://${remote}`, started);
+      const work = mkdtempSync(join(root.dir, 'work-'));
+      mkdirSync(join(work, 'tools'));
+      const env = { ...testGitEnvironment(), LO_OVERVIEW_TMP: work };
+      // Its git folder is still `<local>`, and the lock the writer keeps is its.
+      const common = run(command('--git-common-dir'), {}, started, env).stdout.trim();
+      expect(common).toBe(join(realpathSync(started), '.git'));
+      const values = { work, link: 'https://github.com/acme/demo/pull/4797', 'lock-clone': common };
+      expect(run(command("start '<link>'"), values, work, env).status).toBe(0);
+      expect(readdirSync(join(common, 'lo-overview'))).toEqual(['acme.demo.4797.lock']);
+      expect(run(command("done '<link>'"), values, work, env).stdout).toContain('Nothing came in');
+      expect(readdirSync(join(common, 'lo-overview'))).toEqual([]);
+    }
+  });
+
   test('stop when the clone it started in has no email address for its commits', () => {
     const work = mkdtempSync(join(root.dir, 'work-'));
     const values = { work };
@@ -457,6 +559,37 @@ describe('its git commands, run as written', () => {
     expect(run(command('--get user.email'), values, work, env)).toMatchObject({ stdout: '' });
     expect(run(command('user.useConfigOnly'), values, work, env).status).toBe(0);
     expect(run(command('var GIT_AUTHOR_IDENT'), values, work, env).status).not.toBe(0);
+  });
+
+  test('commit with the author and committer the clone it started in sets apart', () => {
+    const work = mkdtempSync(join(root.dir, 'work-'));
+    const values = { work };
+    const env = asThePerson();
+    const apart = join(root.dir, 'apart');
+    git(root.dir, 'init', '-q', apart);
+    for (const [key, value] of [
+      ['user.name', "Ann O'Hara"],
+      ['user.email', 'ann@lo.invalid'],
+      ['author.name', 'Bo Lee'],
+      ['committer.email', 'ci@lo.invalid'],
+    ] as const) {
+      git(apart, 'config', key, value);
+    }
+    expect(run(command('git init'), values, work, env).status).toBe(0);
+    for (const key of ['user', 'author', 'committer']) {
+      for (const field of ['name', 'email']) {
+        expect(run(command(`--get ${key}.${field}`), values, apart, env).status).toBe(0);
+      }
+    }
+    expect(run(command('user.useConfigOnly'), values, work, env).status).toBe(0);
+    expect(run(command('var GIT_AUTHOR_IDENT'), values, work, env).stdout).toMatch(
+      /^Bo Lee <ann@lo\.invalid> \d+ /,
+    );
+    const committer = spawnSync('git', ['-C', join(work, 'clone'), 'var', 'GIT_COMMITTER_IDENT'], {
+      env,
+      encoding: 'utf8',
+    });
+    expect(committer.stdout).toMatch(/^Ann O'Hara <ci@lo\.invalid> \d+ /);
   });
 
   test('delete the handoff file, and its folder only when nothing else is in it', () => {
