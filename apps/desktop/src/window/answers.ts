@@ -1,9 +1,10 @@
-// What main said on a topic of something the window asked of it, against main's answer. Main says
-// how a comment sent or a change to a thread stands on a topic (`drafts`, `acts`) as it goes: on
-// its way, then not, which it says last, just before it answers. A topic's values come in the order
-// main sent them, but not in order with replies, so any of them can come after the answer: once the
-// window has heard the answer, they're older than what it said, and change nothing of what was
-// asked, until the value main sent with its answer comes. Plain functions, tested alone.
+// What main said on a topic of something the window asked of it, against main's answer, for any
+// feature whose topic says how what it asked stands as it goes: on its way, then not, which main
+// says last, just before it answers, as the comments' `drafts` and `acts` say of a comment sent or
+// a change to a thread, and the review's `submitted` of a review. A topic's values come in the
+// order main sent them, but not in order with replies, so any of them can come after the answer:
+// once the window has heard the answer, they're older than what it said, and change nothing of
+// what was asked, until the value main sent with its answer comes. Plain functions, tested alone.
 
 /** One ask of main's, as {@link Answers.ask} made it, for its answer. */
 export interface Asked {

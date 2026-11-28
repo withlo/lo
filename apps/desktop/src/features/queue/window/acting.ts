@@ -660,18 +660,18 @@ function answered(sketch: Sketch, plan: ActPlan, acted: Acted): void {
 /**
  * Reads merge queue tab `id`'s queue and those waiting to join again, begun now, and gives what
  * `judge` makes of the read; or, where it can't tell, nothing, with why the read failed, if it did.
+ * The read is main's answer's: what it sent on `queue` can come after the answer.
  */
 async function look(
   id: string,
   judge: (read: QueueRead | undefined) => Acted | undefined,
 ): Promise<{ acted: Acted | undefined; details: string | undefined }> {
-  let details: string | undefined;
   try {
-    details = await main().look({ id });
+    const { read, failed } = await main().look({ id });
+    return { acted: judge(read), details: failed };
   } catch (error) {
-    details = messageOf(error);
+    return { acted: judge(queueOf(id)?.read), details: messageOf(error) };
   }
-  return { acted: judge(queueOf(id)?.read), details };
 }
 
 /**

@@ -179,9 +179,31 @@ export function autoMergeFromPanel(): void {
 }
 
 /**
+ * Waits for main's word on the merges it sends, from now, until `said` holds of them: main says on
+ * `jobs` how a merge write it sends stands as it answers, but that can come after the answer.
+ * `heard` resolves once it holds, at once if it holds now, or once `stop` ends the wait.
+ */
+function untilSaid(said: (jobs: ReadonlyMap<string, JobView>) => boolean): {
+  readonly heard: Promise<void>;
+  readonly stop: () => void;
+} {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  const stop = () => {
+    unsubscribe();
+    resolve();
+  };
+  const unsubscribe = merging.subscribe((state) => {
+    if (said(state.jobs)) stop();
+  });
+  if (said(merging.getState().jobs)) stop();
+  return { heard: promise, stop };
+}
+
+/**
  * Turns off auto-merge for `tab`'s pull request at once, asking nothing, since that merges nothing:
- * busy until main answers. What went wrong shows in its merge panel, which opens to say it. Resolves
- * to whether main sent it.
+ * busy until main answers, and once it's sent, until main says so on `jobs`, which can come after
+ * the answer. What went wrong shows in its merge panel, which opens to say it. Resolves to whether
+ * main sent it.
  */
 export async function turnOffAutoMerge(tab: {
   id: string;
@@ -191,6 +213,13 @@ export async function turnOffAutoMerge(tab: {
 }): Promise<boolean> {
   const { id } = tab;
   if (turningOff(tab)) return false;
+  const pull = pullKey(tab.owner, tab.repo, tab.number);
+  // Sent, it's a merge write of its own, under a key of its own.
+  const before = merging.getState().jobs.get(pull)?.key;
+  const sent = untilSaid((jobs) => {
+    const job = jobs.get(pull);
+    return job !== undefined && job.key !== before;
+  });
   const asking = (on: boolean) =>
     merging.setState(({ turningOff: was }) => {
       const next = new Set(was);
@@ -206,13 +235,17 @@ export async function turnOffAutoMerge(tab: {
   panels.update(id, (panel) => ({ ...panel, trouble: undefined }));
   try {
     const done = await main().autoMergeOff({ id });
-    if (done.kind !== 'refused') return true;
+    if (done.kind !== 'refused') {
+      await sent.heard;
+      return true;
+    }
     const { refusal } = done;
     const said = refusalText(refusal);
     return failed(said === '' ? undefined : withoutBidi(said), detailsOf(refusal));
   } catch (error) {
     return failed(undefined, messageOf(error));
   } finally {
+    sent.stop();
     asking(false);
   }
 }
@@ -552,15 +585,23 @@ function markChecking(key: string, on: boolean): void {
 
 /**
  * "Check again": asks GitHub again how the merge named `key` went, a read, nothing sent again. Its
- * button is busy until main answers, and how the merge stands then says the rest.
+ * button is busy until main answers, and while main asks about the merge itself, until main says
+ * on `jobs` that it's pending again, which can come after the answer; how the merge stands then
+ * says the rest.
  */
 export function askAgain(key: string): Promise<void> {
   if (checking(key)) return Promise.resolve();
   markChecking(key, true);
+  const before = jobsByKey(key);
+  const pending = untilSaid(() => jobsByKey(key) !== before);
   return main()
     .askAgain({ key })
+    .then((asks) => (asks ? pending.heard : undefined))
     .catch((error: unknown) => console.error('Lo couldn’t ask GitHub again:', error))
-    .finally(() => markChecking(key, false));
+    .finally(() => {
+      pending.stop();
+      markChecking(key, false);
+    });
 }
 
 /** How long "Check again" waits to hear how the last merge ended before its button is its own. */

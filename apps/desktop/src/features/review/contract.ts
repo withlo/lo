@@ -115,6 +115,31 @@ export type SubmitRefusal =
   | { kind: 'github'; message: string };
 
 /**
+ * Whether main gave `refusal` at once, before it said on `submitted` that the review was on its
+ * way: as nothing it can send (`signIn`, `run`), or while one is sent, looked for or can't be told
+ * of (`busy`). Main answers any other submit only once it has said there that the review was on
+ * its way (`sending`), then how it stands.
+ */
+export function refusedAtOnce(refusal: SubmitRefusal): boolean {
+  switch (refusal.kind) {
+    case 'signIn':
+    case 'run':
+    case 'busy':
+      return true;
+    case 'otherRevision':
+    case 'nothingToSubmit':
+    case 'pendingUnknown':
+    case 'ownPullRequest':
+    case 'paused':
+    case 'github':
+      return false;
+    default:
+      refusal satisfies never;
+      throw new Error(`A refusal Lo doesn’t know: ${JSON.stringify(refusal)}.`);
+  }
+}
+
+/**
  * What came of submitting: `submitted`, with its verdict; `refused`, the summary kept; or `lost`,
  * when GitHub's answer was lost, and Lo checks whether it was submitted, as `submitted` says.
  */
@@ -154,8 +179,10 @@ export const contract = defineContract('review', {
      * Looks again whether the review sent from view `id`'s pull request, whose answer was lost, was
      * submitted, once Lo couldn't tell (`unknown`): submitting is `checking` until a read of your
      * reviews says, on `submitted`. Nothing is sent, and nothing happens while it stands otherwise.
+     * Replies whether it looks, which it has said on `submitted` by then, though that can come
+     * after the reply.
      */
-    check: { input: z.strictObject({ id: tabId }), reply: reply<void>() },
+    check: { input: z.strictObject({ id: tabId }), reply: reply<boolean>() },
   },
   topics: {
     /** How submitting from a view stands, and each review submitted, as it changes. */
