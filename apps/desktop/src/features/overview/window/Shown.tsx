@@ -52,6 +52,7 @@ import { DefinitionsLine, useOverviewTerms } from './Glossary.tsx';
 import { useDefinitions, useNow } from './hooks.ts';
 import { openings } from './opening.ts';
 import { OutOfDateBanner } from './OutOfDate.tsx';
+import { useFolds } from './sections.ts';
 import { AuthorPicture, WhoWrote } from './Author.tsx';
 import { authorOf, copyLabel, linesOf, shortId } from './says.ts';
 import { labelOf, staleAgainst } from './stale.ts';
@@ -482,6 +483,7 @@ export function Shown({
   // seen only once it's shown.
   const [seen, setSeen] = useState(false);
   if (!seen && !drawing && onScreen) setSeen(true);
+  const folds = useFolds(tab, parsed.tree);
   return (
     <FirstDrawContext value={first}>
       <div className="relative h-full">
@@ -506,6 +508,7 @@ export function Shown({
           focused={focused}
           outlineFoot={<OutlineFoot drawing={drawing} />}
           hints={hints}
+          folds={folds}
           terms={terms}
           onFollow={follow}
         />

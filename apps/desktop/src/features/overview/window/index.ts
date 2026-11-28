@@ -1,11 +1,13 @@
 // The overview feature in the window: each pull request's tab's overview, checked as main reads
 // it, shown as the first of the tab's middle views, with its mark in the view switch and what it
 // says in the status bar; its markers in the diff; copying from its blocks' code, as in the diff;
-// the prompt `ya` copies; the overview skill's rows, with the command that installs it from a
-// terminal, which `yc` copies; and the setting that turns overviews off, which takes every one of
-// these away, and on again.
+// its sections, folded by hand and by the setting; the prompt `ya` copies; the overview skill's
+// rows, with the command that installs it from a terminal, which `yc` copies; and the setting that
+// turns overviews off, which takes every one of these away, and on again, with the reader's rows
+// for writing them automatically and for the sections that start collapsed.
 
 import { handlers, type Target } from '@lo/ui/commands';
+import type { OverviewSection } from '@lo/ui/overview';
 import { createElement } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
@@ -23,10 +25,12 @@ import {
   runOf,
   showingMiddle,
   status,
+  type PullTab,
 } from '../../tab/window/shared.ts';
 import { overviewRows, setup } from '../../welcome/window/shared.ts';
 import keys from '../keys.ts';
-import { on } from '../settings.ts';
+import { auto, on } from '../settings.ts';
+import CollapsedRow from './Collapsed.tsx';
 import { copyPrompt, promptNow } from './copy.ts';
 import { blockCode } from './copying.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
@@ -36,6 +40,19 @@ import { followMarkers, keepMarkersOnly } from './markers.ts';
 import { OverviewMark } from './Mark.tsx';
 import { OverviewView } from './Overview.tsx';
 import { InstallCommandRow, OverviewsRow, SkillRow, SkillStep } from './Rows.tsx';
+import {
+  foldAll,
+  foldIn,
+  foldSection,
+  inEveryRepo,
+  inThisRepo,
+  isCollapsed,
+  glossaryBlock,
+  isHeading,
+  openGlossary,
+  openShown,
+  sectionFor,
+} from './sections.ts';
 import { followOverviews, overviews, showStackOverview } from './shared.ts';
 import {
   blockAt,
@@ -46,7 +63,6 @@ import {
   follow,
   followName,
   followOf,
-  glossaryOf,
   goToGlossary,
   keepPlaces,
   loadNewer,
@@ -54,6 +70,7 @@ import {
   nextBlock,
   nextLink,
   scroll,
+  setOpener,
   step,
   stepName,
   stepsIn,
@@ -140,7 +157,9 @@ function blockOf(target: Target): { overview: DrawnOverview; block: HTMLElement 
   if (typeof overview === 'string') return overview;
   if (target.kind === 'none') return 'Go to a block first';
   const block = blockAt(overview, target);
-  return block ? { overview, block } : 'That block isn’t in this overview';
+  if (block) return { overview, block };
+  // An open section's heading isn't a block: what's under it is.
+  return isHeading(overview, target) ? 'Go to a block first' : 'That block isn’t in this overview';
 }
 
 /** Whether a block's command can run on `target`, as `check` says of it. */
@@ -223,6 +242,71 @@ function naming(act: (overview: DrawnOverview, block: HTMLElement) => string | u
   };
 }
 
+/** Whether `target` is a section's heading, whose menu lists only what folds sections. */
+function onHeading(target: Target): boolean {
+  const overview = onScreen();
+  return typeof overview !== 'string' && isHeading(overview, target);
+}
+
+/** Whether a block's menu, not a heading's, lists a command, as `listed` says otherwise. */
+function onBlockMenu(listed: (target: Target) => boolean = () => true) {
+  return (target: Target): boolean => !onHeading(target) && listed(target);
+}
+
+/** What a section's command acts on: the overview on screen, its tab and the section. */
+interface SectionAt {
+  tab: PullTab;
+  overview: DrawnOverview;
+  section: OverviewSection;
+}
+
+/**
+ * The section a command acts on in the overview on screen (`sectionFor`), or why there's none: in
+ * the tl;dr, or before any section, nothing folds, so its keys do nothing and say nothing.
+ */
+function sectionNow(target: Target): SectionAt | string {
+  const tab = activeTab();
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
+  const overview = drawnIn(tab.id);
+  if (!overview) return 'Go to the overview first';
+  const section = sectionFor(overview, target);
+  return section?.folds ? { tab, overview, section } : '';
+}
+
+/** Whether a section's command can run on `target`, or why not. */
+function sectionReady(target: Target): true | string {
+  const found = sectionNow(target);
+  return typeof found === 'string' ? found : true;
+}
+
+/** Runs `act` on the section `target` names. */
+function withSection(act: (at: SectionAt) => void) {
+  return (target: Target): void => {
+    const found = sectionNow(target);
+    if (typeof found !== 'string') act(found);
+  };
+}
+
+/** What a section's fold is called on `target` now: "Expand section" on one collapsed. */
+function foldName(target: Target): string | undefined {
+  const found = sectionNow(target);
+  if (typeof found === 'string') return undefined;
+  return isCollapsed(found.tab, found.overview.tree, found.section) ? 'Expand section' : undefined;
+}
+
+/** Folds every section of the overview on screen, or unfolds every one. */
+function folding(collapse: boolean) {
+  return {
+    run: () => {
+      const tab = activeTab();
+      const overview = tab?.kind === 'pull' ? drawnIn(tab.id) : undefined;
+      if (tab && overview) foldAll(tab.id, overview, collapse);
+    },
+    enabled: overviewNow,
+    listed: onHeading,
+  };
+}
+
 /** What main last said of the overview on screen, if it's said anything. */
 function stateNow() {
   const tab = activeTab();
@@ -271,19 +355,21 @@ export default {
     nextStep: { ...stepping(1), named: naming((_overview, block) => stepName(block)) },
     previousStep: stepping(-1),
     follow: {
+      // A control outside the blocks with focus, an open heading's chevron or `⋯` among them,
+      // takes `⏎` as a click.
       run: (target) => {
-        const loose = target.kind === 'none' ? looseOnScreen() : undefined;
+        const loose = target.kind === 'none' || onHeading(target) ? looseOnScreen() : undefined;
         if (loose) loose.click();
         else withBlock(follow)(target);
       },
       enabled: (target) => {
-        if (target.kind === 'none' && looseOnScreen()) return true;
+        if ((target.kind === 'none' || onHeading(target)) && looseOnScreen()) return true;
         return onBlock((overview, block) => {
           const found = followOf(overview, block);
           return typeof found === 'string' ? found : true;
         })(target);
       },
-      listed: hasCode,
+      listed: onBlockMenu(hasCode),
       named: naming(followName),
     },
     scrollDown: scrolling('down'),
@@ -293,11 +379,22 @@ export default {
     pageDown: scrolling('pageDown'),
     pageUp: scrolling('pageUp'),
     goGlossary: {
-      run: withOverview(goToGlossary),
+      // A collapsed Glossary expands first, at once, as anything going into a section does. Run
+      // from the palette, inside React's commit, it's drawn only once that's done: it's gone to
+      // then.
+      run: withOverview((overview) => {
+        const tab = activeTab();
+        if (tab?.kind === 'pull' && openGlossary(tab, overview)) {
+          queueMicrotask(() => goToGlossary(overview));
+        } else {
+          goToGlossary(overview);
+        }
+      }),
+      // By the overview's own blocks, which a collapsed Glossary still has.
       enabled: () => {
         const overview = onScreen();
         if (typeof overview === 'string') return overview;
-        return glossaryOf(overview) ? true : 'This overview has no glossary';
+        return glossaryBlock(overview.tree) === undefined ? 'This overview has no glossary' : true;
       },
     },
     loadNewer: {
@@ -306,7 +403,7 @@ export default {
         if (tab?.kind === 'pull') loadNewer(tab.id);
       },
       enabled: () => (stateNow()?.newer ? true : 'This is the latest overview'),
-      listed: () => Boolean(stateNow()?.newer),
+      listed: onBlockMenu(() => Boolean(stateNow()?.newer)),
     },
     retry: {
       run: () => {
@@ -315,7 +412,7 @@ export default {
       },
       // After a failed read, or where main reads the ref once and doesn't watch it: a look again.
       enabled: () => (lookAgain(stateNow()) ? true : 'Nothing to try again'),
-      listed: () => lookAgain(stateNow()),
+      listed: onBlockMenu(() => lookAgain(stateNow())),
     },
     copyPrompt: {
       run: async () => {
@@ -327,7 +424,37 @@ export default {
         const prompt = promptOnScreen();
         return typeof prompt === 'string' || prompt.why;
       },
+      listed: onBlockMenu(),
     },
+    foldSection: {
+      run: withSection(({ tab, overview, section }) =>
+        foldSection(tab.id, overview, section, !isCollapsed(tab, overview.tree, section)),
+      ),
+      enabled: sectionReady,
+      listed: onHeading,
+      named: foldName,
+      labelled: foldName,
+    },
+    foldHere: {
+      run: withSection(({ tab, overview, section }) => foldIn(tab, overview, section, 'repo')),
+      enabled: sectionReady,
+      listed: onHeading,
+      checked: (target) => {
+        const found = sectionNow(target);
+        return typeof found !== 'string' && inThisRepo(found.tab, found.section);
+      },
+    },
+    foldEverywhere: {
+      run: withSection(({ tab, overview, section }) => foldIn(tab, overview, section, 'every')),
+      enabled: sectionReady,
+      listed: onHeading,
+      checked: (target) => {
+        const found = sectionNow(target);
+        return typeof found !== 'string' && inEveryRepo(found.section);
+      },
+    },
+    unfoldAll: folding(false),
+    foldAll: folding(true),
     installSkill: {
       run: async () => {
         await installSkill();
@@ -360,6 +487,10 @@ export default {
     // Settings › Pull requests, first, before what a tab opens on (10). It stays while they're off,
     // to turn them on again.
     settingRow(on, { order: 5 }),
+    // After it: whether agents write them, which stays with overviews off, since it's about what
+    // agents do, not what Lo shows; then the sections that start collapsed, which goes with them.
+    settingRow(auto, { order: 6 }),
+    CollapsedRow,
     // The welcome's step that says what an overview is: first, before what a tab opens on (20).
     defineView(overviewRows, {
       id: 'overview.onRow',
@@ -380,6 +511,8 @@ export default {
   start() {
     followSkill();
     followMarkers();
+    // History and a note going into a collapsed section expand it first, drawn or not.
+    setOpener(openShown);
     // `yy` in a block's code copies from it, as in the diff.
     setCodeElsewhere(blockCode);
     // Off, the overview's commands go with its views, and what main said of each tab's overview;

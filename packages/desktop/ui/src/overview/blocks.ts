@@ -55,7 +55,8 @@ export function isStop(block: OverviewBlock): boolean {
 
 /**
  * What a focused block's chip offers, by its kind: the commands its keys run there. A fold's one
- * command reads as what it does to the fold, "Expand" or "Collapse".
+ * command reads as what it does to the fold, "Expand" or "Collapse". A heading the block keys stop
+ * at is a collapsed section's, whose one command expands it.
  */
 export function blockHints(block: OverviewBlock): readonly BlockHint[] {
   switch (block.kind) {
@@ -68,6 +69,7 @@ export function blockHints(block: OverviewBlock): readonly BlockHint[] {
     case 'tabs':
       return [STEP];
     case 'details':
+    case 'heading':
       return [FOLLOW];
     case 'paragraph':
     case 'list':
@@ -77,7 +79,6 @@ export function blockHints(block: OverviewBlock): readonly BlockHint[] {
     case 'footnotes':
     case 'glossary':
       return [LINK, FOLLOW];
-    case 'heading':
     case 'code':
     case 'rule':
     case 'suggestion':
