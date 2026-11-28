@@ -1,15 +1,25 @@
 // The comment boxes a pull request's timeline draws, outside any code view (`createComposer`), each
 // in the frame every comment box has: the box at the timeline's end, which comments on the pull
 // request itself, and the box that edits your comment there, in the comment's card. Each keeps its
-// draft as main does. The box at the end keeps the room it took when it shrinks with no input of
-// the reader's, as when it's cleared once a comment whose answer was lost turns out to have posted,
-// so nothing around it moves; the next key, click or scroll lets it go. Under a comment whose
-// delete's answer was lost, the card says how that stands.
+// draft as main does. From the moment the box at the end sends its comment, the comment is the
+// timeline's last row, and the box stands empty, as it will be once GitHub has the comment, taking
+// nothing until then. The box keeps the room it took when it shrinks with no input of the
+// reader's, so nothing around it moves; the next key, click or scroll lets it go. Under a comment
+// whose delete's answer was lost, the card says how that stands.
 
-import { Button, Key } from '@lo/ui';
+import { Button, CommentBoxFootBar, CommentBoxHeadBar, Key } from '@lo/ui';
 import { createComposer } from '@lo/ui/code';
 import { KEY_EVENT } from '@lo/ui/commands';
-import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { acting, checkAgain, closeAct, closedActs, noteKey, noteOf, threw } from './acts.ts';
@@ -19,17 +29,20 @@ import {
   catchUpDrafts,
   drawnInTimeline,
   hintOf,
+  inputsSoFar,
   knowPull,
   leftTimeline,
+  sendingNow,
   timelineBox,
   timelineBoxes,
   timelineEvents,
   timelineFrame,
 } from './boxes.ts';
+import { boxKeys } from './boxkeys.ts';
 import { ActCallout, ThrewProblem } from './Card.tsx';
 import { type PullComment, removeOnPull, setPullBoxFocus } from './conversation.ts';
 import { useNonce } from './page.ts';
-import { ON_PULL } from './writing.ts';
+import { ON_PULL, whereText } from './writing.ts';
 
 /**
  * `box`'s editor, in its frame, drawn in this element for as long as it's here: taken from wherever
@@ -86,13 +99,15 @@ function TimelineComposer({
  * Keeps `outer` as tall as `inner` has been since the reader's last key, click or scroll, so that
  * when `inner` shrinks with no input of theirs, nothing after it, and nothing scrolled to the end,
  * moves. A key counts once the key listener says it's the reader's input (`KEY_EVENT`), those Lo's
- * commands take, such as `j`, among them.
+ * commands take, such as `j`, among them. `away` changing lets it go too: the box's comment has
+ * gone to the timeline's last row, which takes its room.
  */
 function useHeldHeight(
   outer: RefObject<HTMLDivElement | null>,
   inner: RefObject<HTMLDivElement | null>,
+  away: boolean,
 ): void {
-  useEffect(() => {
+  useLayoutEffect(() => {
     const held = outer.current;
     const drawn = inner.current;
     if (!held || !drawn) return undefined;
@@ -114,7 +129,72 @@ function useHeldHeight(
       for (const event of events) document.removeEventListener(event, input, true);
       held.style.minHeight = '';
     };
-  }, [outer, inner]);
+  }, [outer, inner, away]);
+}
+
+/** Whether `box`'s comment is on its way, or looked for: the timeline's last row shows it. */
+function useAway(box: Box | undefined): boolean {
+  return useSyncExternalStore(
+    box?.subscribe ?? noSubscription,
+    () => box !== undefined && sendingNow(box.state),
+  );
+}
+
+/** Whether `box` holds no text. */
+function useEmpty(box: Box | undefined): boolean {
+  return useSyncExternalStore(
+    box?.subscribe ?? noSubscription,
+    () => box === undefined || box.state.text === '',
+  );
+}
+
+function noSubscription(): () => void {
+  return () => {};
+}
+
+/**
+ * The box at the timeline's end as it stands while its comment is on its way, which the timeline's
+ * last row shows: empty, as it will be once GitHub has the comment, and taking nothing, its height
+ * the box's own when it was last empty, so nothing moves as the box comes back.
+ */
+function Away({ number, height }: { number: number; height: number | undefined }): ReactNode {
+  const id = useId();
+  return (
+    <div
+      inert
+      aria-hidden="true"
+      data-lo-timeline="away"
+      className="lo-diffcomposer overflow-hidden"
+      style={height === undefined ? undefined : { height }}
+    >
+      <div className="lo-diffcomposer__head">
+        <CommentBoxHeadBar
+          head={{ where: whereText(ON_PULL), previewKeys: boxKeys('preview'), held: true }}
+        />
+      </div>
+      <div className="lo-diffcomposer__body">
+        <div className="cm-content py-4 ps-6 text-fg-subtle code-text">{`Comment on #${number}`}</div>
+      </div>
+      <div className="lo-diffcomposer__foot">
+        <CommentBoxFootBar
+          id={id}
+          foot={{
+            attach: { disabled: true },
+            discard: { disabled: true },
+            actions: [
+              {
+                label: 'Send',
+                icon: 'send',
+                keys: boxKeys('addToReview'),
+                primary: true,
+                disabled: true,
+              },
+            ],
+          }}
+        />
+      </div>
+    </div>
+  );
 }
 
 export interface PullBoxProps {
@@ -148,6 +228,11 @@ export function PullBox({ tab, leave, keys }: PullBoxProps): ReactNode {
   const box = own ?? (away ? undefined : timelineBox(view, ON_PULL));
   const outer = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
+  const drawn = useRef<HTMLDivElement>(null);
+  // Its comment on its way is the timeline's last row: the box stands empty meanwhile.
+  const sent = useAway(box);
+  const empty = useEmpty(box);
+  const emptyHeight = useRef<number | undefined>(undefined);
   useEffect(() => {
     knowPull(tab);
     catchUpDrafts(view);
@@ -158,17 +243,49 @@ export function PullBox({ tab, leave, keys }: PullBoxProps): ReactNode {
       setPullBoxFocus(view, () => box?.composer?.focus()),
     [view, box],
   );
-  useHeldHeight(outer, inner);
+  // How tall it is empty, which it stands as while its comment is on its way.
+  useLayoutEffect(() => {
+    const height = drawn.current?.getBoundingClientRect().height;
+    if (empty && !sent && height !== undefined && height > 0) emptyHeight.current = height;
+  }, [empty, sent, box]);
+  // Focus in it as its comment goes goes to the timeline, whose keyboard is then on the comment.
+  // Should the comment come back to the box, as when it couldn't be sent, focus left where it went,
+  // with no key, click or scroll of the reader's since, comes back with it, to the note and the
+  // text. A reader who moved on, as with `j`, stays where they went.
+  const focusedAsSent = useRef(false);
+  focusedAsSent.current = sent && (box?.state.focused ?? false);
+  const handed = useRef<
+    { readonly box: Box; readonly to: Element | null; readonly inputs: number } | undefined
+  >(undefined);
+  useLayoutEffect(() => {
+    if (sent) {
+      if (!focusedAsSent.current || !box) return;
+      leave();
+      handed.current = { box, to: document.activeElement, inputs: inputsSoFar() };
+      return;
+    }
+    const was = handed.current;
+    handed.current = undefined;
+    if (!was || was.box !== box || was.to === null || document.activeElement !== was.to) return;
+    if (inputsSoFar() !== was.inputs) return;
+    was.box.composer?.focus();
+  }, [sent, leave, box]);
+  useHeldHeight(outer, inner, sent);
   return (
     <div ref={outer} data-lo-timeline="box">
       <div ref={inner}>
         {box ? (
-          <TimelineComposer
-            box={box}
-            label={`Comment on #${tab.number}`}
-            hint={hintOf(box.state.place, tab.number)}
-            leave={leave}
-          />
+          <>
+            {sent && <Away number={tab.number} height={emptyHeight.current} />}
+            <div ref={drawn} hidden={sent}>
+              <TimelineComposer
+                box={box}
+                label={`Comment on #${tab.number}`}
+                hint={hintOf(box.state.place, tab.number)}
+                leave={leave}
+              />
+            </div>
+          </>
         ) : (
           <div className="flex flex-wrap items-center gap-x-8 gap-y-4 py-4 text-fg-muted text-small">
             <span>{AWAY[away ?? 'block']}</span>

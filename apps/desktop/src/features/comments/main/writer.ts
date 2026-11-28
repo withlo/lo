@@ -131,6 +131,12 @@ export interface WriterOptions {
   readonly readWait?: number;
   /** How long Lo waits to look again when it couldn't read the threads, as while offline. */
   readonly retryAfter?: number;
+  /**
+   * How far GitHub's clock is ahead of this computer's for the account, as its client last heard
+   * it, read from the client itself, waiting on nothing in its queue; without it, it's read
+   * through the poller.
+   */
+  readonly ahead?: (login: string) => Promise<number | undefined>;
 }
 
 /** How long after sending a comment whose answer was lost Lo waits before it looks for it. */
@@ -339,6 +345,13 @@ function readAgain(poller: WriterPoller, pull: PullRef, thread: string | null): 
   else poller.readAfresh(pull, REVIEW_THREADS);
 }
 
+/** Whether `kept` is marked sent, on the pull request itself: its own comment, or an edit there. */
+function sentOnPull(kept: Kept): boolean {
+  const { place } = kept;
+  if (kept.sent === null) return false;
+  return place.kind === 'conversation' || (place.kind === 'edit' && place.thread === null);
+}
+
 /** Whether a write starts or adds to your pending review, rather than posting at once. */
 function intoReview(write: ReviewWrite): boolean {
   return write.kind === 'startReview' || write.kind === 'addThread' || write.kind === 'addReply';
@@ -367,6 +380,13 @@ export class Writer {
    * one a thread at a time: kept until it's done, or another is asked of the thread.
    */
   readonly #acts = new Map<string, { target: Target; row: ActRow }>();
+  /**
+   * How far GitHub's clock is ahead of this computer's for each account, by login, as its client
+   * last heard it: what tells the window when a draft was sent by GitHub's clock.
+   */
+  readonly #ahead = new Map<string, number>();
+  /** The accounts whose clock is being read, or waits for their poller's next read to be. */
+  readonly #readingAhead = new Set<string>();
   #stopped = false;
 
   /**
@@ -403,10 +423,11 @@ export class Writer {
     const target = this.#targetOf(id);
     if (!target) return { id, drafts: [] };
     const { login, pull } = target;
-    return {
-      id,
-      drafts: this.#options.drafts.of(login, pull).map((kept) => this.#row(target, kept)),
-    };
+    const drafts = this.#options.drafts.of(login, pull);
+    // One on the pull request itself marked sent says when by GitHub's clock, once Lo knows it: the
+    // timeline tells GitHub's copy of it by that.
+    if (drafts.some(sentOnPull) && !this.#ahead.has(login.toLowerCase())) this.#readAhead(login);
+    return { id, drafts: drafts.map((kept) => this.#row(target, kept)) };
   }
 
   /**
@@ -839,7 +860,15 @@ export class Writer {
       return { kind: 'refused', refusal: writeRefusal(sent) };
     }
     this.#posted(target, key, place, text);
-    return { kind: 'sent', pending: false, joined: false, thread: null, landedOn: null };
+    // GitHub's copy, by its node ID, which the timeline takes for the comment.
+    return {
+      kind: 'sent',
+      pending: false,
+      joined: false,
+      thread: null,
+      landedOn: null,
+      comment: sent,
+    };
   }
 
   /**
@@ -903,8 +932,13 @@ export class Writer {
       this.#unsent(target, key, place);
       return { kind: 'refused', refusal: actRefusal(answer) };
     }
+    // When GitHub answered, by its clock, which its answer just told the account's client: a
+    // comment edited at that time or after shows this edit, or a newer one.
+    const ahead = await this.#aheadNow(login, poller).catch(() => undefined);
     this.#posted(target, key, place, text);
-    return { kind: 'done' };
+    return ahead === undefined
+      ? { kind: 'done' }
+      : { kind: 'done', editedAt: Math.max(0, Math.round(this.#now() + ahead)) };
   }
 
   /**
@@ -1225,6 +1259,7 @@ export class Writer {
         const ahead = await poller.readOnce((client) => Promise.resolve(client.githubAhead()));
         const sentThere = at + (ahead ?? 0);
         if (!still()) return undefined;
+        if (ahead !== undefined) this.#knowAhead(login, ahead);
         if (holdsPullComment(timeline, login, text, sentThere, CLOCK_SLACK)) {
           this.#posted(target, key, place, text);
         } else {
@@ -1242,6 +1277,7 @@ export class Writer {
         ahead: client.githubAhead(),
       }));
       if (!still()) return undefined;
+      if (read.ahead !== undefined) this.#knowAhead(login, read.ahead);
       // When it was sent, by GitHub's clock.
       const sentThere = at + (read.ahead ?? 0);
       const found = findComment(threadRows(read.list), login, place, text, sentThere);
@@ -1392,6 +1428,7 @@ export class Writer {
   }
 
   #row(target: Target, kept: Kept): DraftRow {
+    const ahead = this.#ahead.get(target.login.toLowerCase());
     return {
       place: kept.place,
       text: kept.text,
@@ -1399,6 +1436,10 @@ export class Writer {
       restored: kept.restored,
       sending: this.#standing(this.#key(target, kept.place), kept) ?? null,
       sent: kept.sent,
+      sentAt:
+        kept.sent === null || kept.sentAt === null || ahead === undefined
+          ? null
+          : Math.max(0, Math.round(kept.sentAt + ahead)),
       base: kept.base,
       home: kept.home,
     };
@@ -1411,6 +1452,67 @@ export class Writer {
       if (other && sameLogin(other.login, target.login) && other.pull.equals(target.pull)) {
         this.#publish(id);
       }
+    }
+  }
+
+  /**
+   * Reads how far GitHub's clock is ahead of this computer's for account `login`, as its client
+   * last heard it, and tells its views' drafts again once it's known. With no answer yet to go by,
+   * as just after Lo starts, it reads it again after its poller's next read.
+   */
+  #readAhead(login: string): void {
+    const key = login.toLowerCase();
+    if (this.#readingAhead.has(key) || this.#stopped) return;
+    this.#readingAhead.add(key);
+    const read = async (): Promise<void> => {
+      const poller = await this.#options.poller(login);
+      const ahead = await this.#aheadNow(login, poller);
+      if (ahead !== undefined) {
+        this.#readingAhead.delete(key);
+        this.#knowAhead(login, ahead);
+        return;
+      }
+      const stop = poller.onEvent((event: PollEvent) => {
+        if (event.kind !== 'read') return;
+        stop();
+        this.#readingAhead.delete(key);
+        this.#readAhead(login);
+      });
+    };
+    read().catch((error: unknown) => {
+      this.#readingAhead.delete(key);
+      this.#options.log(`reading GitHub's clock: ${describe(error)}`);
+    });
+  }
+
+  /**
+   * How far GitHub's clock is ahead of this computer's for account `login` now, as its client last
+   * heard it: from the client itself where Lo can, else through `poller`, after what's in flight.
+   */
+  #aheadNow(login: string, poller: WriterPoller): Promise<number | undefined> {
+    const { ahead } = this.#options;
+    if (ahead) return ahead(login);
+    return poller.readOnce(
+      (client) => Promise.resolve(client.githubAhead()),
+      undefined,
+      'foreground',
+    );
+  }
+
+  /**
+   * GitHub's clock is `ahead` of this computer's for account `login`: its views' drafts marked sent
+   * are told again, by it, where it says something new. `Date` is to the second, so a change
+   * within one says nothing.
+   */
+  #knowAhead(login: string, ahead: number): void {
+    const key = login.toLowerCase();
+    const was = this.#ahead.get(key);
+    if (was !== undefined && Math.abs(was - ahead) < 1000) return;
+    this.#ahead.set(key, ahead);
+    for (const id of this.#views) {
+      const target = this.#targetOf(id);
+      if (!target || !sameLogin(target.login, login)) continue;
+      if (this.#options.drafts.of(target.login, target.pull).some(sentOnPull)) this.#publish(id);
     }
   }
 

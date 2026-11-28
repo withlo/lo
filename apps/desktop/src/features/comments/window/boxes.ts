@@ -103,6 +103,8 @@ import { screenOf } from './placing.ts';
 import type { PostPull } from './Post.tsx';
 import { tell } from './Said.tsx';
 import { landed } from './landed.ts';
+import { beforeOnPull, noteOnPull, type SentBefore } from './onpull.ts';
+import { drawWritten } from './store.ts';
 import { held, shownAt } from './threads.ts';
 import {
   attachFiles,
@@ -393,6 +395,19 @@ export class Box {
   closedSending = false;
   /** What its view's threads held as it was last sent, to tell its comment's card by as it comes. */
   before: Before | undefined;
+  /** How many times it's been sent here: which send its comment on its way is. */
+  sends = 0;
+  /** When its comment on its way was sent, by GitHub's clock, as main says once it knows. */
+  sentAt: number | undefined;
+  /** GitHub's copy of its comment on the pull request itself, by its node ID, as its answer said. */
+  copy: string | undefined;
+  /** When GitHub answered its edit, by GitHub's clock, as its answer said. */
+  editedAt: number | undefined;
+  /**
+   * What its view's timeline on screen held as its comment on the pull request itself was last
+   * sent, while it had one, to tell GitHub's copy by.
+   */
+  sentBefore: SentBefore | undefined;
   retries = 0;
   /** Where it would rather be drawn. */
   home: Home = IN_DIFF;
@@ -444,8 +459,31 @@ export class Box {
     const was = this.#state;
     this.#state = { ...was, ...change };
     this.composer?.hold(sendingNow(this.#state));
+    this.#notePull();
     for (const listener of this.#listeners) listener();
     told(this, was);
+  }
+
+  /**
+   * Says how its comment stands, where it's on the pull request itself, or an edit of one there:
+   * the timeline's to show from the moment it's sent until the timeline has GitHub's copy.
+   */
+  #notePull(): void {
+    const { place, text, landing, sending } = this.#state;
+    noteOnPull({
+      key: this.id,
+      view: this.view,
+      place,
+      text,
+      held: sendingNow(this.#state),
+      landing,
+      sending,
+      send: this.sends,
+      sentAt: this.sentAt,
+      before: this.sentBefore,
+      copy: this.copy,
+      editedAt: this.editedAt,
+    });
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -1271,6 +1309,8 @@ export function takeDrafts(given: DraftsView): void {
  */
 function takeRow(box: Box, row: DraftRow): void {
   box.sentMark = row.sent !== null;
+  // When it went, by GitHub's clock, once main knows: a send here, or one before, as after a restart.
+  if (row.sentAt !== null) box.sentAt = row.sentAt;
   const { composer } = box;
   const blank = composer !== undefined && !box.saving && composer.text === '' && row.text !== '';
   const typed = (composer !== undefined || box.saving) && !blank;
@@ -1637,21 +1677,73 @@ export async function commentOnFile(tab: PullTab, key: string): Promise<void> {
 }
 
 /**
+ * Boxes whose comment's tree is being made as they're sent: held, as one on its way is, from the
+ * send, so nothing their notes offer, nor "Discard draft", nor a second send, takes them meanwhile.
+ */
+const drawing = new WeakSet<Box>();
+
+/** How long a box's comment waits for its tree as it's sent, at most, before it goes as it is. */
+const TREE_WAIT = 150;
+
+/** Settles once `work` does, or `ms` have passed, whichever is first. */
+async function within(work: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  try {
+    await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Whether box `box`'s comment can go now: it isn't on its way, nothing it attaches holds it, it has
+ * text, and its view can write. What's left of an upload that didn't finish is cleared from it
+ * first: that never goes to GitHub, nor holds the comment back.
+ */
+function sendable(box: Box): boolean {
+  const { view } = box;
+  if (sendingNow(box.state) || uploadsHold(box) !== undefined) return false;
+  clearStranded(box);
+  // Sent before, and nobody knows whether it posted: it's looked up first ("Check again").
+  if (box.state.sending === 'unknown') return false;
+  const { text } = box.state;
+  return text.trim() !== '' && offline(view) === undefined && canWrite(view) === true;
+}
+
+/**
  * Sends a box's text, as `⌘⏎` (`review`) or `⌥⏎` (`now`) asks: an edit's saves it over the
  * comment, either way.
  */
 export async function send(box: Box, how: Send): Promise<void> {
   const { view } = box;
-  if (sendingNow(box.state) || uploadsHold(box) !== undefined) return;
-  // What's left of an upload that didn't finish never goes to GitHub, nor holds the comment back.
-  clearStranded(box);
+  if (!sendable(box) || drawing.has(box)) return;
+  // Its tree is made first, for a moment at most, so what's sent draws formatted from its first
+  // frame, as its card from GitHub then does: the box shows it as it is meanwhile.
+  const pull = pullIn(view);
+  if (pull) {
+    // Saved as it is, in case it doesn't go.
+    box.saveNow();
+    drawing.add(box);
+    try {
+      await within(drawWritten(view, box.state.text, pull), TREE_WAIT);
+    } finally {
+      drawing.delete(box);
+    }
+    // Gone meanwhile, as with its tab: nothing goes.
+    if (boxesOf(view).get(box.key) !== box || !sendable(box)) return;
+  }
   const { place, text } = box.state;
-  // Sent before, and nobody knows whether it posted: it's looked up first ("Check again").
-  if (box.state.sending === 'unknown') return;
-  if (text.trim() === '' || offline(view) !== undefined || canWrite(view) !== true) return;
   box.dropSave();
   box.lastHow = how;
   box.before = beforeOf(view, place);
+  box.sends += 1;
+  box.sentAt = undefined;
+  box.copy = undefined;
+  box.editedAt = undefined;
+  box.sentBefore = place.kind === 'conversation' ? beforeOnPull(view, text) : undefined;
   box.set({ busy: true, refusal: undefined });
   try {
     const outcome: SendOutcome | ActOutcome =
@@ -1660,6 +1752,7 @@ export async function send(box: Box, how: Send): Promise<void> {
         : await main().send({ id: view, place, text, how });
     switch (outcome.kind) {
       case 'done':
+        box.editedAt = outcome.editedAt;
         closeOnceLanded(box, null);
         tell(sentWords(place, how));
         if (place.kind === 'edit' && place.thread === null) {
@@ -1670,6 +1763,7 @@ export async function send(box: Box, how: Send): Promise<void> {
         // A comment from a block that won't show under it says where it went, and its box goes.
         const { home } = box;
         const went = home.kind === 'block' ? wentFrom(view, home.block, place, outcome) : undefined;
+        box.copy = outcome.comment;
         if (went) closeSent(box);
         else closeOnceLanded(box, outcome.thread);
         if (place.kind === 'conversation') wrotePull(view, { kind: 'posted', text });
@@ -1698,6 +1792,7 @@ export async function send(box: Box, how: Send): Promise<void> {
       refusal: { kind: 'github', message: error instanceof Error ? error.message : String(error) },
     });
   } finally {
+    // What GitHub's answer said of its comment goes to the timeline with it, closed already or not.
     box.set({ busy: false });
   }
 }
@@ -2072,6 +2167,8 @@ function drawnAs(box: Box, rows: readonly ThreadRow[]): boolean {
 /** Does what a box's note offers. */
 export function act(box: Box, offer: Offer): void {
   const { view } = box;
+  // Being sent: it's held.
+  if (drawing.has(box)) return;
   switch (offer) {
     case 'discard':
       drop(box);
@@ -2752,7 +2849,8 @@ export const discarding: Handler<BoxTarget> = {
   enabled: (target) => {
     const box = boxNamed(target.box);
     if (box === undefined) return 'The comment box has closed.';
-    return discardable(box.state);
+    // Being sent, it's held as one on its way is.
+    return discardable(drawing.has(box) ? { ...box.state, busy: true } : box.state);
   },
   listed: (target) => boxNamed(target.box) !== undefined,
 };

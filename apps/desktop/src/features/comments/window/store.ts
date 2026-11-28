@@ -2,9 +2,9 @@
 // and the text of the comments the window itself sent or saved, for each view of a pull request's
 // tab, each forgotten as its tab closes.
 
-import type { Rendered } from '../jobs.ts';
+import { MARKDOWN_LIMIT, type Rendered } from '../jobs.ts';
 import { BodyStore, type PostRef } from './bodies.ts';
-import { main } from './main.ts';
+import { commentsJobs, main } from './main.ts';
 
 /** Posts' HTML, in the window's memory only. */
 export const bodies = new BodyStore({
@@ -65,9 +65,75 @@ export function wroteHere(view: string, text: string): boolean {
   return written.get(view)?.includes(plain(text)) ?? false;
 }
 
+/** The trees made of the comments the window sent or saved on each view, by their text. */
+const writtenTrees = new Map<string, Map<string, Rendered>>();
+
+/**
+ * Keeps the tree made of a comment of `text` the window sent or saved on view `view`, as its sent
+ * card drew it, so its card from GitHub draws the same from its first frame.
+ */
+export function keepWrittenTree(view: string, text: string, rendered: Rendered): void {
+  const own = writtenTrees.get(view) ?? new Map<string, Rendered>();
+  const kept = plain(text);
+  own.delete(kept);
+  own.set(kept, rendered);
+  for (const key of own.keys()) {
+    if (own.size <= WRITTEN_KEPT) break;
+    own.delete(key);
+  }
+  writtenTrees.set(view, own);
+}
+
+/**
+ * The tree its sent card drew of a comment of `text` the window sent or saved on view `view`, as a
+ * tree of `text` made from no HTML, if it keeps one.
+ */
+export function writtenDrawn(view: string, text: string): Drawn | undefined {
+  const rendered = wroteHere(view, text) ? writtenTrees.get(view)?.get(plain(text)) : undefined;
+  return rendered && { html: null, markdown: text, rendered };
+}
+
+/** The pull request a comment is on, which its references and relative links are read against. */
+interface OnPullRequest {
+  readonly owner: string;
+  readonly repo: string;
+  readonly number: number;
+}
+
+/** Makes the tree of `text`, a post's Markdown on pull request `pull`, as one with no HTML. */
+export function treeOf(text: string, pull: OnPullRequest, signal?: AbortSignal): Promise<Rendered> {
+  const { owner, repo, number } = pull;
+  return commentsJobs().render(
+    {
+      html: null,
+      markdown: text.slice(0, MARKDOWN_LIMIT),
+      repo: { owner, name: repo },
+      page: `https://github.com/${owner}/${repo}/pull/${number}`,
+    },
+    { signal },
+  );
+}
+
+/**
+ * Notes that the window sends or saves a comment of `text` on view `view`, on pull request `pull`,
+ * and makes its tree, unless it has it: what's sent then draws formatted from its first frame, and
+ * its card from GitHub after it. Settles once the tree is kept, or couldn't be made, which draws
+ * the text as it's written until its card makes its own.
+ */
+export async function drawWritten(view: string, text: string, pull: OnPullRequest): Promise<void> {
+  wroteText(view, text);
+  if (writtenDrawn(view, text)) return;
+  try {
+    keepWrittenTree(view, text, await treeOf(text, pull));
+  } catch (error) {
+    console.error("Lo couldn't draw a comment sent:", error);
+  }
+}
+
 /** Forgets the posts of every view but those in `kept`, as their tabs close. */
 export function keepOnly(kept: ReadonlySet<string>): void {
   bodies.keepOnly(kept);
   for (const view of drawn.keys()) if (!kept.has(view)) drawn.delete(view);
   for (const view of written.keys()) if (!kept.has(view)) written.delete(view);
+  for (const view of writtenTrees.keys()) if (!kept.has(view)) writtenTrees.delete(view);
 }
