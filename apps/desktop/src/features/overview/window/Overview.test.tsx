@@ -310,6 +310,17 @@ function waits(view: HTMLElement): boolean {
   );
 }
 
+/**
+ * Has the reader come back to the overview after its tab handed the middle to the timeline, as a
+ * tab that opened on an overview it can't show does: the view goes from the screen as the timeline
+ * takes its place, and comes back.
+ */
+function comeBack(view: ReturnType<typeof render>): void {
+  expect(showInstead).toHaveBeenCalled();
+  view.shown(false);
+  view.shown(true);
+}
+
 describe('as the tab opens', () => {
   it('draws the tab’s placeholder while it doesn’t know, then the overview once it shows', async () => {
     const tab = tabOf();
@@ -411,11 +422,14 @@ describe('as the tab opens', () => {
     });
     expect(openings.get(tab.id)).toMatchObject({ on: 'timeline' });
     expect(showInstead).toHaveBeenCalledTimes(1);
+    // The timeline takes the wait over: nothing of the overview is drawn on the way.
+    expect(waits(view)).toBe(true);
+    // The timeline is on screen; the overview, there when the reader comes to it, says why.
+    view.shown(false);
     expect(problemTitle(view, 'unchecked')).toBe('Can’t check the overview');
     expect(view.textContent).toContain('Check again');
 
-    // The timeline is on screen, and the check goes through.
-    view.shown(false);
+    // The check goes through.
     vi.useRealTimers();
     checkingFor(tab).take(stateOf(tab, { overview: commit }));
     await until(() => checked.get(tab.id)?.kind === 'checked');
@@ -438,6 +452,8 @@ describe('as the tab opens', () => {
     });
     expect(openings.get(tab.id)).toMatchObject({ on: 'timeline' });
     expect(showInstead).toHaveBeenCalledWith(tab.id);
+    expect(waits(view)).toBe(true);
+    view.shown(false);
     expect(view.querySelector('[data-lo-overview="reading"]')).not.toBeNull();
   });
 
@@ -470,12 +486,32 @@ describe('as the tab opens', () => {
     expect(view.querySelector('footer')?.textContent).toBe('');
   });
 
-  it('goes to the timeline at once when there’s no overview, where the description is first', () => {
+  it('goes to the timeline at once when there’s no overview, where the description is first, drawing nothing of the overview on the way', () => {
+    const tab = tabOf();
+    const view = render(tab);
+    expect(waits(view)).toBe(true);
+    act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
+    expect(openings.get(tab.id)).toMatchObject({ on: 'timeline', handing: true });
+    expect(showInstead).toHaveBeenCalledWith(tab.id);
+    // Still on screen until the timeline takes its place, it draws the wait the timeline takes over.
+    expect(waits(view)).toBe(true);
+    view.shown(false);
+    expect(openings.get(tab.id).handing).toBe(false);
+    expect(view.querySelector('[data-lo-overview="none"]')).not.toBeNull();
+    // The reader comes back to it: there's none, and nothing waits.
+    view.shown(true);
+    expect(waits(view)).toBe(false);
+    expect(view.querySelector('[data-lo-overview="none"]')).not.toBeNull();
+  });
+
+  it('shows what the overview is at once where the timeline can’t take its place', () => {
+    showInstead.mockReturnValueOnce(false);
     const tab = tabOf();
     act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
     const view = render(tab);
-    expect(openings.get(tab.id)).toMatchObject({ on: 'timeline' });
     expect(showInstead).toHaveBeenCalledWith(tab.id);
+    expect(openings.get(tab.id)).toMatchObject({ on: 'timeline', handing: false });
+    expect(waits(view)).toBe(false);
     expect(view.querySelector('[data-lo-overview="none"]')).not.toBeNull();
   });
 
@@ -597,6 +633,7 @@ describe('with no overview', () => {
     const tab = tabOf();
     act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
     const view = render(tab);
+    comeBack(view);
     await until(() => buttonOf(view, 'Install overview skill') !== undefined);
     expect(view.querySelector('[data-lo-empty] p')?.textContent).toBe('No overview yet');
     expect(view.textContent).toContain('A coding agent writes one from this prompt.');
@@ -615,6 +652,7 @@ describe('with no overview', () => {
     const tab = tabOf();
     act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
     const view = render(tab);
+    comeBack(view);
     const copy = () => buttonOf(view, 'Copy prompt');
     onTestFinished(() => {
       withdraw('Copied prompt', '');
@@ -651,6 +689,7 @@ describe('with no overview', () => {
     const tab = tabOf();
     act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null, watching: false })));
     const view = render(tab);
+    comeBack(view);
     await until(() => buttonOf(view, 'Check again') !== undefined);
     expect(buttonOf(view, 'Install overview skill')).toBeUndefined();
     const again = buttonOf(view, 'Check again');
@@ -684,6 +723,8 @@ describe('an overview that can’t be shown', () => {
     act(() => states.set(tab.id, state));
     const view = render(tab);
     checking.take(state);
+    await until(() => openings.get(tab.id).on === 'timeline');
+    comeBack(view);
     await until(() => view.querySelector('[data-lo-overview="invalid"]') !== null);
     expect(problemTitle(view, 'invalid')).toBe('Can’t show this overview');
     expect(view.textContent).toContain('It has 1 problem.');
@@ -724,6 +765,7 @@ describe('an overview that can’t be shown', () => {
       });
     });
     const view = render(tab);
+    comeBack(view);
     expect(problemTitle(view, 'newer')).toBe('Can’t show this overview');
     expect(view.textContent).toContain('It needs a newer version of Lo.');
     act(() => buttonOf(view, 'Details')?.click());
@@ -749,6 +791,7 @@ describe('an overview that can’t be shown', () => {
       });
     });
     const view = render(tab);
+    comeBack(view);
     const get = buttonOf(view, 'Check for updates');
     expect(checkUpdates).not.toHaveBeenCalled();
     act(() => get?.click());
@@ -774,6 +817,7 @@ describe('an overview that can’t be shown', () => {
       ),
     );
     const view = render(tab);
+    comeBack(view);
     expect(view.querySelector('[role="alert"] > p:first-child')?.textContent).toBe(
       'Can’t show the overview',
     );
