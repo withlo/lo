@@ -1964,6 +1964,11 @@ address, which the window builds and main reads, and the `comments` feature serv
   otherwise, finds it.
 - A test run fetches the image hosts from the test's GitHub too, each under `/images/<host>/`,
   through `githubSettings`, so a packaged build never does.
+- A new avatar's `<img>`, even of a picture on screen, can load a frame after it's drawn, and shows
+  an empty disc meanwhile. An avatar about to appear, as a sent comment's, is drawn from its first
+  frame from an image kept ready and loaded while its box is open (`@lo/ui`'s `useReadyPicture`):
+  the timeline keeps its box's marker ready, and a box in the diff or a thread its account's
+  picture.
 
 ### Questions main asks
 

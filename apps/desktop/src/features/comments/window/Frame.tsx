@@ -14,6 +14,7 @@ import {
   CommentBoxHeadBar,
   CommentBoxNotes,
   SentPost,
+  useReadyPicture,
   type CommentBoxAction,
   type CommentBoxFoot,
   type CommentBoxNote,
@@ -254,8 +255,11 @@ function Sent({ box }: { box: Box }): ReactNode {
   useEffect(() => {
     if (sent !== undefined) wroteText(box.view, sent);
   }, [box.view, sent]);
-  if (!sendingNow(state)) return null;
   const login = acting?.kind === 'account' ? acting.login : undefined;
+  const image = login === undefined ? undefined : avatarImage({ login, type: 'User' }, AVATAR);
+  // Drawn from its first frame once it's sent, as it's who is writing. The timeline draws its own.
+  useReadyPicture(box.drawnIn === 'timeline' ? undefined : image);
+  if (!sendingNow(state)) return null;
   const { place } = state;
   const { kind } = place;
   // A new thread's head row says what it's on as its card's will: in a popover always, and on a
@@ -292,7 +296,7 @@ function Sent({ box }: { box: Box }): ReactNode {
       reply={kind === 'thread' || kind === 'reply'}
       author={login}
       byAuthor={login !== undefined && login.toLowerCase() === opener?.toLowerCase()}
-      image={login === undefined ? undefined : avatarImage({ login, type: 'User' }, AVATAR)}
+      image={image}
       label={sentLabel(state.sending, kind === 'edit')}
       body={body}
     />
