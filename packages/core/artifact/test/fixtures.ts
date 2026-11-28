@@ -9,7 +9,7 @@
  * - `valid/`, `invalid/` and `hostile/` hold one overview a folder: `artifact.md` and `figures/`,
  *   as its commit holds them, and `expected.json`, what checking it finds. An optional
  *   `fixture.json` gives the pull request or the stack whose ref it's on, and entries a folder
- *   can't hold.
+ *   can't hold, and an optional `terms.json` is the repository's definitions, at `refs/lo/terms`.
  */
 
 import { lstatSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
@@ -246,7 +246,7 @@ export interface FixtureInput {
 }
 
 /** The files a fixture's folder holds that aren't the overview's. */
-const OWN = new Set(['expected.json', 'fixture.json']);
+const OWN = new Set(['expected.json', 'fixture.json', 'terms.json']);
 
 /**
  * The overview's commit as the folder `dir` holds it, with the entries `input` adds: listed with

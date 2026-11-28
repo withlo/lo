@@ -124,6 +124,34 @@ describe('commit', () => {
     expect(other).toMatchObject({ status: 0, parent: null });
   });
 
+  test('writes a stack’s overview for refs/lo/stack/<n>, on top of that ref exactly', () => {
+    const text = overview(commit).replace('pr: 4797', 'stack: 4790');
+    const dir = folder({ 'artifact.md': text });
+    const before = state();
+    const ran = runChecker(['commit', dir, '--stack', '4790'], repo);
+    expect(ran.status, `stderr: ${ran.stderr}`).toBe(0);
+    const id = /Committed the overview as ([0-9a-f]{40}),/.exec(ran.stdout)?.[1];
+    expect(ran.stdout).toBe(
+      `No errors or warnings.\n\nCommitted the overview as ${id}, with no parent, since there's no refs/lo/stack/4790 here. Push it to the stack's repository:\n\n  git push <remote> ${id}:refs/lo/stack/4790\n`,
+    );
+    expect(state()).toBe(before);
+    expect(git(repo, 'cat-file', 'commit', id!)).toMatch(/\n\nOverview of stack 4790$/);
+
+    git(repo, 'update-ref', 'refs/lo/stack/4790', id!);
+    // A pull request's ref of the same number is another ref.
+    git(repo, 'update-ref', 'refs/lo/pr/4790', id!);
+    const second = runJson(['commit', dir, '--stack=4790'], repo);
+    expect(second).toMatchObject({ status: 0, parent: id, ref: 'refs/lo/stack/4790' });
+    const other = runJson(['commit', dir, '--stack', '4791'], repo);
+    expect(other).toMatchObject({ status: 1 });
+    expect(other.findings.map(({ code }) => code)).toEqual(['stack-mismatch']);
+    expect(runJson(['commit', dir, '--pr', '4790'], repo).findings.map(({ code }) => code)).toEqual(
+      ['pr-mismatch'],
+    );
+    git(repo, 'update-ref', '-d', 'refs/lo/stack/4790');
+    git(repo, 'update-ref', '-d', 'refs/lo/pr/4790');
+  });
+
   test('refuses a ref that isn’t a commit as the parent', () => {
     const blob = gitBytes(repo, ['hash-object', '-w', '--stdin'], 'not a commit').toString().trim();
     git(repo, 'update-ref', 'refs/lo/pr/77', blob);

@@ -175,35 +175,31 @@ export function parseStore(source: Uint8Array | string): StoreRead {
 }
 
 /**
- * The store in the commit its ref points at, whose files `read` reads as an overview's commit's are
- * read ({@link OverviewFiles.read}): `terms.json` parsed, when it's a file no larger than the store
+ * The store in the commit its ref points at, whose files `readFile` reads as an overview's commit's
+ * are read ({@link OverviewFiles.read}): `terms.json` parsed, when it's a file no larger than the store
  * may be, or why it can't be used. Never rejects: a reader that fails, or hasn't answered once
  * `signal` aborts, leaves it unreadable.
  */
 export async function readStore(
-  read: OverviewFiles['read'],
+  readFile: OverviewFiles['read'],
   signal: AbortSignal,
 ): Promise<StoreRead> {
-  const answer = await answered(() => read(STORE_FILE, STORE_READ, signal), STORE_READ, signal);
-  const problem = (code: StoreProblemCode, message: string): StoreRead => ({
-    ok: false,
-    problem: { code, message },
-  });
+  const answer = await answered(() => readFile(STORE_FILE, STORE_READ, signal), STORE_READ, signal);
   switch (answer.kind) {
     case 'file':
       // Its size comes first: bytes past the cap were never read.
-      return answer.size > STORE_READ ? problem('too-large', TOO_LARGE) : parseStore(answer.bytes);
+      return answer.size > STORE_READ ? unusable('too-large', TOO_LARGE) : parseStore(answer.bytes);
     case 'missing':
-      return problem('commit', `The commit at ${STORE_REF} has no ${STORE_FILE}.`);
+      return unusable('commit', `The commit at ${STORE_REF} has no ${STORE_FILE}.`);
     case 'notFile':
-      return problem(
+      return unusable(
         'commit',
         `${STORE_FILE}, at ${STORE_REF}, is ${article(answer.is)}. It's a file.`,
       );
     case 'noCommit':
-      return problem('commit', `The repository doesn't have the commit at ${STORE_REF}.`);
+      return unusable('commit', `The repository doesn't have the commit at ${STORE_REF}.`);
     case 'unread':
-      return problem(
+      return unusable(
         'unreadable',
         answer.why === 'stopped'
           ? `${STORE_FILE} wasn't read in time.`
@@ -211,8 +207,13 @@ export async function readStore(
       );
     default:
       answer satisfies never;
-      return problem('unreadable', `Lo couldn't read ${STORE_FILE}.`);
+      return unusable('unreadable', `Lo couldn't read ${STORE_FILE}.`);
   }
+}
+
+/** A store that can't be used, for `message`. */
+function unusable(code: StoreProblemCode, message: string): StoreRead {
+  return { ok: false, problem: { code, message } };
 }
 
 /** Why the store is refused, thrown from where it's found to {@link parseStore}. */

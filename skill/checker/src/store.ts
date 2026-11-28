@@ -49,7 +49,8 @@ export async function repositoryStore(
     );
     // Git's failing, or being too slow, isn't the store's: it's that the check can't be done.
     if (!store.ok && store.problem.code === 'unreadable') {
-      if (failure !== undefined) throw failure;
+      if (failure instanceof Error) throw failure;
+      if (failure !== undefined) throw new GitError(`Lo couldn't read ${STORE_FILE}.`);
       if (signal.aborted) {
         throw new GitError(`Reading ${STORE_FILE} took longer than ${timeout / 1000} seconds.`);
       }
