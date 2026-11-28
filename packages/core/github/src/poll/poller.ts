@@ -441,6 +441,8 @@ interface ReadState {
   retryAt: number | undefined;
   /** The same, by the wall clock, as worked out once when it failed, for what shows the wait. */
   retryWall: number | undefined;
+  /** The `generation` its failures were last forgotten at: a run that started before counts none. */
+  forgotten: number;
   /** How many times it was made due at once whatever its stamp. A run that started before the last time doesn't stamp its value, so it's read again. */
   generation: number;
   /** The `generation` of the newest run that finished with all of the value and started at that generation: every mark up to it is past. */
@@ -1289,6 +1291,7 @@ export class Poller {
       failures: 0,
       retryAt: undefined,
       retryWall: undefined,
+      forgotten: 0,
       generation: 0,
       finished: undefined,
       landed: undefined,
@@ -1302,6 +1305,7 @@ export class Poller {
     state.reads.set(kind.name, read);
     this.#wake();
     this.#changed();
+    const { generation } = read;
     let entry: CacheEntry | undefined;
     try {
       entry = await this.#cache.get(this.#login, pull.key, kind.name);
@@ -1316,7 +1320,8 @@ export class Poller {
       this.#pulls.get(pull.key)?.reads.get(kind.name) === read
     ) {
       read.value = entry.value;
-      read.stamp = entry.stamp;
+      // Asked to read it again meanwhile, as a refresh does, it's read whatever the stamp says.
+      read.stamp = read.generation === generation ? entry.stamp : undefined;
       read.fetchedAt = entry.fetchedAt;
       this.#emit({ kind: 'read', pull, name: kind.name });
     }
@@ -1651,6 +1656,7 @@ export class Poller {
       read.failures = 0;
       read.retryAt = undefined;
       read.retryWall = undefined;
+      read.forgotten = read.generation;
     }
     this.#wake();
     this.#changed();
@@ -2832,19 +2838,20 @@ export class Poller {
       if (detail.kind === 'network' || detail.kind === 'tokenUnavailable') {
         if (polls) this.#schedule(target)?.serve(ticket);
         const failure = new GithubError(detail);
-        this.#backOff(failure, failure.said(), now, wall);
+        if (!this.#refreshTried(target, ticket)) this.#backOff(failure, failure.said(), now, wall);
       } else if (detail.kind === 'rateLimited') {
         // Taken in from the client above, as it heard it.
       } else if (detail.kind === 'unauthorized' && this.#accounts.isSignedOut(this.#login)) {
         // The client's renewal has already signed the account out, or read a newer token from `gh`
         // for an account imported from it.
         this.#signedOut = true;
-      } else if (read !== undefined && target instanceof PullRef) {
+      } else if (job.kind === 'read' && target instanceof PullRef) {
         if (!dropped) {
-          this.#log(`reading ${read} for ${target.toString()}: ${new GithubError(detail).message}`);
-          this.#readFailed(target, read, now);
+          const { name, generation } = job.read;
+          this.#log(`reading ${name} for ${target.toString()}: ${new GithubError(detail).message}`);
+          this.#readFailed(target, name, generation, now);
           if (this.#isWatched(target)) {
-            this.#emit({ kind: 'readFailed', pull: target, name: read, error: detail });
+            this.#emit({ kind: 'readFailed', pull: target, name, error: detail });
           }
         }
       } else {
@@ -2866,13 +2873,14 @@ export class Poller {
   }
 
   /**
-   * Notes that a read failed, or gave a value that isn't complete, so it waits before it's read
-   * again: the open pull request's interval, doubling with each failure in a row, up to the
-   * 5-minute refresh's.
+   * Notes that a read's run, started at `generation`, failed, or gave a value that isn't complete,
+   * so it waits before it's read again: the open pull request's interval, doubling with each
+   * failure in a row, up to the 5-minute refresh's. A run that started before its failures were
+   * last forgotten, as a refresh forgets them, counts none: the run asked for since goes at once.
    */
-  #readFailed(pull: PullRef, name: string, now: number): void {
+  #readFailed(pull: PullRef, name: string, generation: number, now: number): void {
     const read = this.#pulls.get(pull.key)?.reads.get(name);
-    if (!read) return;
+    if (!read || generation < read.forgotten) return;
     const { openInterval, detailsMaxAge, jitter, random } = this.#config;
     read.failures += 1;
     const wait = backoff(read.failures, openInterval, detailsMaxAge, jitter, random());
@@ -3150,7 +3158,9 @@ export class Poller {
         else if (restamped) {
           writes.push(() => cache.touch(login, target.key, outcome.name, wall, { stamp: stamped }));
         } else touch(outcome.name);
-        if (!complete) this.#readFailed(target, outcome.name, this.#config.monotonic());
+        if (!complete) {
+          this.#readFailed(target, outcome.name, generation, this.#config.monotonic());
+        }
         this.#emit({ kind: changed ? 'read' : 'confirmed', pull: target, name: outcome.name });
         return writes;
       }
@@ -3185,6 +3195,17 @@ export class Poller {
     this.#changed();
   }
 
+  /**
+   * Whether a poll of `target`, chosen when its `forced` was `ticket`, was a refresh's, tried while
+   * GitHub was already out of reach ({@link Poller.refresh}). Its failure leaves the backoff as it
+   * was: pressing Refresh doesn't put Lo's own next try off.
+   */
+  #refreshTried(target: Target, ticket: number): boolean {
+    if (this.#offline === undefined || !(target instanceof PullRef)) return false;
+    const refresh = this.#refreshes.get(target.key);
+    return refresh !== undefined && refresh.ticket <= ticket;
+  }
+
   /** Whether the accounts say the account is signed out, or it's gone. Only then is it signed out here. */
   #accountSignedOut(): boolean {
     return (
@@ -3203,7 +3224,9 @@ export class Poller {
       this.#signedOut = true;
     } else {
       this.#schedule(target)?.serve(ticket);
-      this.#backOff(error, message, this.#config.monotonic(), this.#config.now());
+      if (!this.#refreshTried(target, ticket)) {
+        this.#backOff(error, message, this.#config.monotonic(), this.#config.now());
+      }
     }
     this.#refreshStatus();
   }

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import {
   at,
   log,
+  LOGIN,
   Polling,
   pr,
   recorded,
@@ -27,15 +28,20 @@ afterEach(() => {
 /** A made-up read that sends nothing: it counts its runs, and fails while told to. */
 const COUNTED: ReadKind<number> = { name: 'Counted', watched: PUSH_HISTORY_WATCHED };
 
+/** Another, watching the same fields. */
+const LATER: ReadKind<number> = { name: 'Later', watched: PUSH_HISTORY_WATCHED };
+
 class Runs {
   count = 0;
   failing = false;
+  /** How long each run takes, in milliseconds. */
+  takes = 0;
 
-  readonly request = (): Promise<number> => {
+  readonly request = async (): Promise<number> => {
     this.count += 1;
-    return this.failing
-      ? Promise.reject(new GithubError({ kind: 'decode', message: 'not a count' }))
-      : Promise.resolve(this.count);
+    if (this.takes > 0) await new Promise((resolve) => setTimeout(resolve, this.takes));
+    if (this.failing) throw new GithubError({ kind: 'decode', message: 'not a count' });
+    return this.count;
   };
 }
 
@@ -166,6 +172,76 @@ test('a refresh tries at once while GitHub is out of reach, and settles as that 
   expect(t.requests()).toEqual(log([21, 'GET /pulls/1 (since)']));
   // The reads wait out the backoff.
   expect(runs.count).toBe(1);
+  expect(state.done).toBe(true);
+});
+
+test('a refresh that fails while GitHub is out of reach doesn’t put Lo’s own next try off', async () => {
+  const { t } = await opened();
+  t.http.offline = true;
+  await t.runUntil(20);
+  expect(t.requests()).toEqual(log([20, 'GET /pulls/1 (since)']));
+  const retryAt = t.status().offline?.retryAt;
+  for (const second of [21, 22, 23, 24]) {
+    await t.runUntil(second);
+    const state = settling(t.poller.refresh(pr(1)));
+    await t.run();
+    expect(state.done).toBe(true);
+  }
+  expect(t.requests()).toEqual(
+    log(
+      [21, 'GET /pulls/1 (since)'],
+      [22, 'GET /pulls/1 (since)'],
+      [23, 'GET /pulls/1 (since)'],
+      [24, 'GET /pulls/1 (since)'],
+    ),
+  );
+  expect(t.status().offline?.retryAt).toBe(retryAt);
+  // Lo's own next try is still 20 s after the first failure.
+  await t.runUntil(39);
+  expect(t.requests()).toEqual([]);
+  await t.runUntil(40);
+  expect(t.requests()).toEqual(log([40, 'GET /pulls/1 (since)']));
+});
+
+test('a refresh asked for while a read loads from the cache runs it once that’s loaded', async () => {
+  const { t } = await opened();
+  // What the cache holds for it was read at the check the pull request still has.
+  const counted = await t.cache.get(LOGIN, pr(1).key, COUNTED.name);
+  if (counted?.stamp === undefined) throw new Error('the count was kept without its stamp');
+  await t.cache.put(LOGIN, pr(1).key, [{ name: LATER.name, entry: counted }]);
+  const loading = Promise.withResolvers<void>();
+  const get = t.cache.get.bind(t.cache);
+  vi.spyOn(t.cache, 'get').mockImplementation(async (login, target, name) => {
+    if (name === LATER.name) await loading.promise;
+    return get(login, target, name);
+  });
+  const later = new Runs();
+  void t.poller.readCached(pr(1), LATER, later.request);
+  await t.run();
+  const state = settling(t.poller.refresh(pr(1)));
+  await t.run();
+  expect(later.count).toBe(0);
+  expect(state.done).toBe(false);
+  loading.resolve();
+  await t.run();
+  expect(later.count).toBe(1);
+  expect(state.done).toBe(true);
+});
+
+test('a refresh asked for while a read runs that fails tries it again at once', async () => {
+  const { t } = await opened();
+  const later = new Runs();
+  later.failing = true;
+  later.takes = 2000;
+  void t.poller.readCached(pr(1), LATER, later.request);
+  await t.runUntil(6);
+  expect(later.count).toBe(1);
+  const state = settling(t.poller.refresh(pr(1)));
+  // The run under way fails at 7, and the refresh's own fails at 9.
+  await t.runUntil(8);
+  expect(later.count).toBe(2);
+  expect(state.done).toBe(false);
+  await t.runUntil(10);
   expect(state.done).toBe(true);
 });
 

@@ -950,8 +950,10 @@ status bar.
   the rest (`shows` in `onRefresh`), and the poller runs their reads ahead of the others (`first`).
   A tab whose stack's tree is drawn reads its repository's open pull requests last (`list`). Its
   requests take their turns in the account's queue, and the rate limit holds them as it holds polls.
-  The tab's mark in the strip turns until every part is in or has failed, and a press meanwhile asks
-  nothing more. Recent and Settings read nothing from GitHub, so it does nothing there.
+  A refresh that fails while GitHub is out of reach leaves the backoff as it was, and the reads it
+  runs again go at once, whatever a run already under way or the cache says. The tab's mark in the
+  strip turns until every part is in or has failed, and a press meanwhile asks nothing more. Recent
+  and Settings read nothing from GitHub, so it does nothing there.
 - The `tab.open` setting says which middle view a pull request's tab opens on: the overview, the
   timeline or the diff. A tab that opens on the overview waits for it, up to `HOLD_LIMIT`, and goes
   to the timeline, where the description is first, when there's none or it's late, drawing nothing
