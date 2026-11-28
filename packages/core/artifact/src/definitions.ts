@@ -37,6 +37,8 @@ export function notDefinition(
       case 'link_close':
         continue;
       case 'link_open': {
+        // GitHub's references, `#123` or `owner/repo#123`, which Markdown alone reads as text.
+        if (token.markup === 'reference') return { what: 'a link to an issue or a pull request' };
         const href = token.attrGet('href');
         if (href === ANY_REFERENCE) return { what: 'a reference-style link', why: REFERENCES };
         const read =
@@ -70,17 +72,22 @@ const KINDS: ReadonlyMap<string, string> = new Map([
   ['html_inline', 'HTML'],
   ['hardbreak', 'a hard line break'],
   ['footnote_ref', 'a footnote'],
+  ['lo_mention', 'a mention of a person or a team'],
 ]);
 
 /**
  * `text`, a definition as written, read alone as part of a paragraph, as the repository's
  * definitions hold it: its tokens, with each reference-style link read as a link to
- * {@link ANY_REFERENCE}, since it reads as a link wherever its label is defined. Undefined for text
- * nested too deep to read.
+ * {@link ANY_REFERENCE}, since it reads as a link wherever its label is defined, and read in a
+ * repository, since a definition always shows in one, where `#123` links to an issue. Undefined for
+ * text nested too deep to read.
  */
 export function definitionTokens(text: string): Token[] | undefined {
-  return inlineTokens(text, { depth: LIMITS.depth, references: 'any' });
+  return inlineTokens(text, { depth: LIMITS.depth, references: 'any', repo: SHOWN_IN });
 }
+
+/** A repository a definition shows in: any one reads `#123` the same way. */
+const SHOWN_IN = { owner: 'owner', name: 'repo' };
 
 /**
  * What `text`, a definition as written, holds that a definition can't, read alone as part of a

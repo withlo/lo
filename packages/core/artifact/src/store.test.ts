@@ -367,6 +367,19 @@ describe('what the store refuses', () => {
       'terms["b"].definition holds a reference-style link. A definition is read alone, where no reference is defined: write the link inline, as [label](code:path), or put a backslash before its brackets.',
     );
     expect(at('A \\[b\\] in brackets.')).toBe('read');
+    // Empty brackets are never a link.
+    expect(at('A slice ([]T), or [ ].')).toBe('read');
+    const mention = parseStore(store({ b: entry('b', { definition: 'As @octocat said.' }) }));
+    expect(!mention.ok && mention.problem.message).toBe(
+      'terms["b"].definition holds a mention of a person or a team. A definition holds only text, inline code, and links to code and terms.',
+    );
+    // Wherever a definition shows, it's in a repository, where #4 links to an issue.
+    for (const number of ['#4', 'GH-4', 'octo/repo#4']) {
+      const issue = parseStore(store({ b: entry('b', { definition: `Since ${number}.` }) }));
+      expect(!issue.ok && issue.problem.message).toBe(
+        'terms["b"].definition holds a link to an issue or a pull request. A definition holds only text, inline code, and links to code and terms.',
+      );
+    }
     const wrong = parseStore(store({ b: entry('b', { definition: 'A [b](code:/b.ts).' }) }));
     expect(!wrong.ok && wrong.problem.message).toMatch(
       /^terms\["b"\]\.definition holds a link whose address is wrong\. ./,

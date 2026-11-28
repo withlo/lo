@@ -112,6 +112,13 @@ describe('a glossary entry', () => {
       undefined,
     );
     expect(whyNot('- **A**: per_request, a < b, ~5 ms.')).toBe(undefined);
+    expect(whyNot('- **A**: a slice ([]T), or [ ].')).toBe(undefined);
+    expect(whyNot('- **A**: as @octocat said.')).toBe('holds a mention of a person or a team');
+    for (const reference of ['#4', 'GH-4', 'octo/repo#4']) {
+      expect(whyNot(`- **A**: since ${reference}.`)).toBe(
+        'holds a link to an issue or a pull request',
+      );
+    }
     expect(whyNot('- **A**: **strong**.')).toBe('holds bold text');
     expect(whyNot('- **A**: [out](https://example.com).')).toBe(
       "holds a link that isn't to code or a term",
@@ -145,6 +152,7 @@ describe('a glossary entry', () => {
     for (const item of [
       '- **A**: text, `code`, [code](code:src/a.ts#L1) and [b](term:a).',
       '- **A**: per_request, a < b, ~5 ms, \\*no emphasis\\*.',
+      '- **A** (new): a slice ([]T).',
       '- **A**: on two\n  lines.',
     ]) {
       const [entry] = glossary(...item.split('\n'));
