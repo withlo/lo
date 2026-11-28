@@ -5,12 +5,13 @@
 // and as Lo comes back on screen (once in 30 s at most), and again every 30 s while the tab is on
 // screen and Lo is, in front or behind another window (every 5 minutes while Lo is off screen),
 // never sooner than GitHub's `x-poll-interval` asks; a public pull request opened without an
-// account is read once. A commit Lo hasn't seen is read whole before it's offered, and a newer one
-// never takes the place of the one on screen until it's loaded. What was read is kept, so the
-// overview shows at once the next time, offline too; and once none of them holds one, what was
-// kept stays on screen, a saved copy, as it does the next time. A closed or merged pull request's
-// is never forgotten to make room. A stack's overview, `refs/lo/stack/<id>`, is read the same way,
-// beside its layer's.
+// account is read once. While GitHub is out of reach, a read as the tab is shown or Lo comes back
+// on screen leaves a failure's retry where it was. A commit Lo hasn't seen is read whole before
+// it's offered, and a newer one never takes the place of the one on screen until it's loaded. What
+// was read is kept, so the overview shows at once the next time, offline too; and once none of
+// them holds one, what was kept stays on screen, a saved copy, as it does the next time. A closed
+// or merged pull request's is never forgotten to make room. A stack's overview,
+// `refs/lo/stack/<id>`, is read the same way, beside its layer's.
 //
 // The tab opens on its overview when it has one to show, deciding within a bound, so what that
 // waits for goes first: as the tab is shown, the ref is read at once, in the pull request's own
@@ -237,7 +238,7 @@ export class OverviewTab {
     this.#onScreen = onScreen;
     this.#foreground = foreground;
     if (!onScreen) this.#stopTimer();
-    else if (shown || moved) this.#read();
+    else if (shown || moved) this.#read(!moved);
     else this.#schedule();
     // The tab changes often, as its local copy is fetched: only what this says is sent.
     if (pull === undefined || moved || access || said !== info.acting?.kind) this.#publish();
@@ -254,7 +255,7 @@ export class OverviewTab {
     const readAt = this.#readAt;
     const stale = readAt === undefined || this.#now() - readAt >= FOREGROUND_EVERY;
     if (foreground && stale && this.#onScreen && this.#problem?.kind !== 'rateLimited') {
-      this.#read();
+      this.#read(true);
     } else {
       this.#schedule();
     }
@@ -457,8 +458,12 @@ export class OverviewTab {
     for (const resolve of this.#headWaiters.splice(0)) resolve();
   }
 
-  /** Reads the ref now, or once the read under way is done. */
-  #read(): void {
+  /**
+   * Reads the ref now, or once the read under way is done. One `early` goes ahead of a failure's
+   * retry, as the tab is shown or Lo comes back on screen: if it can't reach GitHub either, before
+   * that retry is due, the retry stays as it was ({@link #readNow}).
+   */
+  #read(early = false): void {
     this.#stopTimer();
     if (!this.#canRead()) return;
     if (this.#reading) {
@@ -470,7 +475,7 @@ export class OverviewTab {
     const awaited = this.#awaited;
     this.#awaited = false;
     const priority = (): ReadPriority => (awaited && this.#onScreen ? 'foreground' : 'background');
-    this.#reading = this.#readNow(priority).then((through) => {
+    this.#reading = this.#readNow(priority, early).then((through) => {
       this.#reading = undefined;
       // What's read with the overview needs one to show, and GitHub within reach.
       const shows = this.#shown !== undefined || this.#newer !== undefined;
@@ -479,7 +484,8 @@ export class OverviewTab {
       if (!through && problem && !this.#closed) this.#options.onFailed?.(problem);
       if (this.#again) {
         this.#again = false;
-        this.#read();
+        // Asked for while this one was under way: it goes ahead of the retry its failure set.
+        this.#read(true);
       } else {
         this.#schedule();
       }
@@ -487,8 +493,14 @@ export class OverviewTab {
     });
   }
 
-  /** Reads the ref, and what it holds, and says whether that went through. */
-  async #readNow(priority: ReadPriorityNow): Promise<boolean> {
+  /**
+   * Reads the ref, and what it holds, and says whether that went through. One that fails waits
+   * longer each time before it's read again; but one read `early`, ahead of the retry, that can't
+   * reach GitHub while the last couldn't either and before that retry is due, leaves the wait as it
+   * was, so showing the tab or coming back on screen again and again while offline doesn't put the
+   * retry off. Once the retry is due, the read early is it, and counts.
+   */
+  async #readNow(priority: ReadPriorityNow, early: boolean): Promise<boolean> {
     const pull = this.#pull;
     const acting = this.#acting;
     if (!pull || !acting) return false;
@@ -513,11 +525,23 @@ export class OverviewTab {
       return true;
     } catch (error) {
       if (this.#closed) return false;
-      this.#failures += 1;
-      const { owner } = pull.repository;
-      const { problem, wait } = problemOf(error, acting, this.#failures, this.#now(), owner);
-      this.#problem = problem;
       this.#options.log(`reading ${this.#ref(pull)}: ${describe(error)}`);
+      const now = this.#now();
+      const before = this.#problem;
+      const failures = this.#failures + 1;
+      const { problem, wait } = problemOf(error, acting, failures, now, pull.repository.owner);
+      if (
+        early &&
+        before?.kind === 'offline' &&
+        problem.kind === 'offline' &&
+        now < before.retryAt
+      ) {
+        this.#problem = { ...problem, retryAt: before.retryAt };
+        this.#retryIn(before.retryAt - now);
+        return false;
+      }
+      this.#failures = failures;
+      this.#problem = problem;
       this.#retryIn(wait);
       return false;
     }
