@@ -3,7 +3,8 @@
 // article does, which a box moving back down takes away again. As what's above the place the
 // reader reads from changes size, as a code block's does when its code comes, or text's as its
 // face loads, the scroll takes the change: that place is the first of the article's blocks that
-// starts on screen. The window's own scroll anchoring is off, so the change is taken once.
+// starts on screen, a section's own among them. The window's own scroll anchoring is off, so the
+// change is taken once.
 //
 // Until the reader first scrolls, or jumps somewhere in it, the place they read from is the
 // document's top, banners included: nothing scrolls it out of sight. A box moving down takes the
@@ -24,6 +25,7 @@
 
 import { KEY_EVENT } from '../commands/index.ts';
 import { SHOW_EVENT, type Shown, shownIn } from '../reveal.ts';
+import { articleBlocks } from './moving.ts';
 
 /** What keeps an overview's place: told as a block in it changes height. */
 interface Place {
@@ -87,7 +89,8 @@ export function holdPlace(scroller: HTMLElement): () => void {
     const screen = scroller.getBoundingClientRect().top;
     const was = reading;
     reading = undefined;
-    for (const block of scroller.querySelector(':scope > article')?.children ?? []) {
+    const article = scroller.querySelector(':scope > article');
+    for (const block of article ? articleBlocks(article) : []) {
       const { top } = block.getBoundingClientRect();
       if (top >= screen - 0.5) {
         const same = kept && was?.block === block && Math.abs(top - was.top) < 1;

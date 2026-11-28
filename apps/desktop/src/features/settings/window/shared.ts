@@ -60,12 +60,13 @@ export const rows = defineSlot<object, RowAbout>('settings.rows');
  * description and its key, "Reset" while it isn't its default, and its control: a switch for one
  * that's on or off, a segmented control for a choice of its `options`, or `control` for any other.
  * A setting that's a list, as the trusted repos are, sets `list`, and its control is drawn as the
- * list under the row's words. A setting a command changes from a view, as `gi` does the diff's
- * layout, names it in `command`, and the row shows its key. The view's `id` is the setting's key
- * unless given, and like any view's it's named for the feature: `settings.theme` for `theme`. A
- * row whose line says more while something else is on, such as another feature, reads it with
- * `useLine`, a hook: the setting's own line is what search finds it by. A row of a feature a setting
- * turns off comes and goes with it (`present`).
+ * list under the row's words, with `actions`, such as a field that adds to it, at the row's end,
+ * whose `note` is said under its line. A setting a command changes from a view, as `gi` does the
+ * diff's layout, names it in `command`, and the row shows its key. The view's `id` is the setting's
+ * key unless given, and like any view's it's named for the feature: `settings.theme` for `theme`.
+ * A row whose line says more while something else is on, such as another feature, reads it with
+ * `useLine`, a hook: the setting's own line is what search finds it by. A row of a feature a
+ * setting turns off comes and goes with it (`present`).
  */
 export function settingRow<T>(
   setting: Setting<T>,
@@ -74,6 +75,7 @@ export function settingRow<T>(
     readonly id?: string;
     readonly control?: (props: ControlProps<T>) => ReactNode;
     readonly list?: boolean;
+    readonly actions?: (props: ControlProps<T>) => ReactNode;
     readonly command?: string;
     readonly useLine?: () => string;
     readonly present?: Presence;
@@ -92,6 +94,7 @@ export function settingRow<T>(
           setting,
           control: row.control,
           list: row.list,
+          actions: row.actions,
           command: row.command,
         }),
     });
@@ -104,6 +107,7 @@ export function settingRow<T>(
       setting: { ...setting, description },
       control: row.control,
       list: row.list,
+      actions: row.actions,
       command: row.command,
     });
   }

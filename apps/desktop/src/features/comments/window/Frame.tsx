@@ -34,6 +34,7 @@ import {
   type Box,
   type BoxState,
   discardable,
+  linesChange,
   pullIn,
   replacedOf,
   send,
@@ -177,6 +178,7 @@ function drawnNote(box: Box, note: BoxNote): CommentBoxNote {
 
 function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
   const state = useBox(box);
+  const linesMenu = useMenuTarget({ kind: 'lines', box: box.id });
   const pull = usePull(box.view);
   const accounts = useAccounts();
   const login = pull?.acting?.kind === 'account' ? pull.acting.login : undefined;
@@ -200,6 +202,8 @@ function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
             ? undefined
             : { login, image: avatarImage({ login, type: 'User' }, AVATAR) },
         close: closes ? { keys: boxKeys('close'), onClick: () => composer.leave() } : undefined,
+        // On a new comment's lines, the words are a button whose menu changes them.
+        lines: linesChange(box.id) ? { menu: linesMenu } : undefined,
       }}
     />
   );

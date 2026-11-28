@@ -23,6 +23,11 @@
 // frame's right-click menu, and in the palette while focus is in the box, each only where the box
 // offers it, without a key of its own. Where the kept drafts are, those the diff took down open
 // that no box has taken since, the palette says, as a click on the status bar's note for them does.
+// A new comment's box on lines in the diff changes its lines from its head's lines button, whose
+// menu has them, or by key, in the box: `⌘⌥↓` and `⌘⌥↑` add and remove a last line, and with `⇧`
+// a first, each taking the next line that way that takes a comment. They're Lo's, not the editor's,
+// so a key that can't says why; the box's editor gives up its own add-a-cursor keys for them. Its
+// bracket's two ends in the gutter drag the lines too, as a drag from the `+` does.
 //
 // Vim keys are a setting, `editor.vim`, off as Lo starts: "Vim keys" switches it, from the palette
 // or Settings › Keyboard. Off, code and boxes have a plain caret, a box takes typing as soon as it
@@ -315,17 +320,60 @@ export default defineCommands(
       menu: { on: 'box', order: 11 },
     },
     /**
-     * After GitHub took no comment on the box's lines: moves its text to a box on the file, as
-     * "Comment on file" does.
+     * Moves the box's text to a box on the file: from a new comment's lines button, and after GitHub
+     * took no comment on the box's lines, as "Comment on file" does.
      */
     moveToFile: {
       label: 'Move comment to file',
-      control: 'Move comment to file in a comment box’s note',
+      control: 'Move comment to file in a comment box’s note, or its lines button’s menu',
       group: 'Comments',
       keys: [],
-      targets: ['box'],
+      targets: ['box', 'lines'],
       when: box,
-      menu: { on: 'box', order: 20 },
+      menu: [
+        { on: 'box', order: 20 },
+        { on: 'lines', order: 50, apart: true },
+      ],
+    },
+    /**
+     * A new comment's lines while its box is open: the next line above its first that takes a
+     * comment joins them, over a fold if one is between, and the box keeps its text. Also from its
+     * head's lines button, and by dragging its bracket's tick in the gutter.
+     */
+    lineAbove: {
+      label: 'Add line above',
+      group: 'Comments',
+      keys: ['cmd+alt+shift+up'],
+      targets: ['lines'],
+      when: box,
+      menu: { on: 'lines', order: 10 },
+    },
+    /** Its first line taken off, the next that takes a comment its first, never past its last. */
+    dropFirst: {
+      label: 'Remove first line',
+      group: 'Comments',
+      keys: ['cmd+alt+shift+down'],
+      targets: ['lines'],
+      when: box,
+      menu: { on: 'lines', order: 20 },
+    },
+    /** The next line below its last that takes a comment joins them. */
+    lineBelow: {
+      label: 'Add line below',
+      group: 'Comments',
+      keys: ['cmd+alt+down'],
+      targets: ['lines'],
+      when: box,
+      menu: { on: 'lines', order: 30 },
+    },
+    /** Its last line taken off, the next that takes a comment its last, never past its first. */
+    dropLast: {
+      label: 'Remove last line',
+      group: 'Comments',
+      keys: ['cmd+alt+up'],
+      targets: ['lines'],
+      when: box,
+      menu: { on: 'lines', order: 40 },
     },
     /**
      * After someone pushed since, or after a comment that would join your pending review, which is

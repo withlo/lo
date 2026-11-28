@@ -437,6 +437,24 @@
 .lo-lanemark.is-target:not(:has(.lo-bubble)):active {
   background-color: var(--lo-press);
 }
+/*
+ * An end of an open comment box's bracket, its first line's cell or its last's: it drags that end,
+ * so the whole cell tints under the pointer and while it's dragged, its mark with it.
+ */
+.lo-lanemark.lo-handle,
+.lo-lanemark.lo-handle * {
+  cursor: ns-resize;
+}
+.lo-lanemark.lo-handle:hover {
+  background-color: var(--lo-hover);
+}
+.lo-lanemark.lo-handle.is-pressed,
+.lo-lanemark.lo-handle:active {
+  background-color: var(--lo-press);
+}
+.lo-lanemark.lo-handle .lo-bubble {
+  background-color: transparent;
+}
 
 /*
  * A thread's bubble: a 14 px icon on the first row of its last line, amber or grey, whose control

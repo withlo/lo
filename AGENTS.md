@@ -955,11 +955,11 @@ status bar.
   the rest (`shows` in `onRefresh`), and the poller runs their reads ahead of the others (`first`).
   A tab whose stack's tree is drawn reads its repository's open pull requests last (`list`). Its
   requests take their turns in the account's queue, and the rate limit holds them as it holds polls.
-  A refresh that fails while GitHub is out of reach leaves the backoff as it was, and the reads it
-  runs again go at once, whatever a run already under way or the cache says. The tab's mark in the
-  strip turns until every part is in or has failed, and for `MARKED_MS` (400 ms) from the press at
-  least, so an answer that's in at once still shows it; a press meanwhile asks nothing more. Recent
-  and Settings read nothing from GitHub, so it does nothing there.
+  A refresh's poll is a try made at once, whose failure leaves the backoff as it was (below), and
+  the reads it runs again go at once, whatever a run already under way or the cache says. The tab's
+  mark in the strip turns until every part is in or has failed, and for `MARKED_MS` (400 ms) from
+  the press at least, so an answer that's in at once still shows it; a press meanwhile asks nothing
+  more. Recent and Settings read nothing from GitHub, so it does nothing there.
 - The `tab.open` setting says which middle view a pull request's tab opens on: the overview, the
   timeline or the diff. A tab that opens on the overview waits for it, up to `HOLD_LIMIT`, and goes
   to the timeline, where the description is first, when there's none or it's late, drawing nothing
@@ -1048,6 +1048,12 @@ status bar.
   build ignores it. Out of reach carries why, as `causeOf` names it, from the poller's status or the
   tab's own read: only no connection at all is offline, and a read GitHub took and never answered is
   no answer in time.
+- While GitHub is out of reach, a try made at once ahead of a backoff (opening a tab or switching to
+  one, Lo coming back on screen, Try again, `⌘R`) that fails before the backoff's next try is due
+  leaves the backoff as it was, so trying again and again doesn't push Lo's own tries off towards 5
+  minutes; once that try is due, the one made at once is it, and counts. The poller does this for
+  its polls (`#triedEarly`), and a tab's overview for the reads it makes as the tab is shown or Lo
+  comes back on screen (`early`). Any other backoff something tries ahead of does the same.
 - A read that waits on GitHub (out of reach, the rate limit, a refused token) leaves what the tab
   kept on screen, and the header's chip says why. With nothing kept to show, the tab can't open its
   pull request: it says why in place of its view, with the read's cause, until the read that's due

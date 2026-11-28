@@ -165,6 +165,40 @@ describe('a right-click menu', () => {
     ]);
   });
 
+  it('starts a section at a command whose place is apart, whatever its group', () => {
+    const box = defineCommands('comments', {
+      above: {
+        label: 'Add line above',
+        group: 'Comments',
+        keys: [],
+        targets: ['lines'],
+        menu: { on: 'lines', order: 10 },
+      },
+      below: {
+        label: 'Add line below',
+        group: 'Comments',
+        keys: [],
+        targets: ['lines'],
+        menu: { on: 'lines', order: 20 },
+      },
+      toFile: {
+        label: 'Move comment to file',
+        group: 'Comments',
+        keys: [],
+        targets: ['lines'],
+        menu: { on: 'lines', order: 30, apart: true },
+      },
+    });
+    const apart = new Registry({
+      system: 'mac',
+      commands: handlers(box, { above: run, below: run, toFile: run }),
+    });
+    const sections = menuSections(apart, { kind: 'lines', box: 'b' }).map((section) =>
+      section.map((item) => item.label),
+    );
+    expect(sections).toEqual([['Add line above', 'Add line below'], ['Move comment to file']]);
+  });
+
   it('leaves out a command its handler doesn’t list for the target', () => {
     const listedOn = new Registry({
       system: 'mac',
@@ -236,6 +270,91 @@ describe('a right-click menu', () => {
     expect(labelled({ kind: 'thread', thread: 't1', collapsed: false })).toEqual([
       'Open or close the thread, or the file',
     ]);
+  });
+
+  it('puts a separator before a place that’s apart, within its group too', () => {
+    const sections = defineCommands('overview', {
+      fold: {
+        label: 'Collapse section',
+        group: 'View',
+        keys: ['z a'],
+        targets: ['block'],
+        menu: { on: 'block', order: 10 },
+      },
+      foldAll: {
+        label: 'Collapse all sections',
+        group: 'View',
+        keys: ['z M'],
+        targets: ['block'],
+        menu: { on: 'block', order: 20, apart: true },
+      },
+      unfoldAll: {
+        label: 'Expand all sections',
+        group: 'View',
+        keys: ['z R'],
+        targets: ['block'],
+        menu: { on: 'block', order: 30 },
+      },
+    });
+    const apart = new Registry({
+      system: 'mac',
+      commands: handlers(sections, { fold: run, foldAll: run, unfoldAll: run }),
+    });
+    expect(
+      menuSections(apart, { kind: 'block', block: '1.4' }).map((section) =>
+        section.map((item) => item.label),
+      ),
+    ).toEqual([['Collapse section'], ['Collapse all sections', 'Expand all sections']]);
+  });
+
+  it('says whether each switch is on for the target, and nothing of other commands or a switch it names otherwise', () => {
+    const switches = defineCommands('overview', {
+      foldHere: {
+        label: 'Collapse in this repo',
+        group: 'View',
+        keys: [],
+        targets: ['block'],
+        toggle: 'switch',
+        menu: { on: 'block', order: 10 },
+      },
+      fold: {
+        label: 'Collapse section',
+        group: 'View',
+        keys: ['z a'],
+        targets: ['block'],
+        menu: { on: 'block', order: 20 },
+      },
+      // Named by what it does in the menu, it's an action there, whatever it is.
+      offer: {
+        label: 'Offer GitHub stacks',
+        group: 'View',
+        keys: [],
+        targets: ['block'],
+        toggle: 'switch',
+        menu: { on: 'block', order: 30, label: 'Dismiss for all stacks' },
+      },
+    });
+    const on = new Registry({
+      system: 'mac',
+      commands: handlers(switches, {
+        foldHere: {
+          run() {},
+          checked: (target) => target.kind === 'block' && target.block === '1.4',
+        },
+        fold: run,
+        offer: { run() {}, checked: () => true },
+      }),
+    });
+    const checks = (block: string) =>
+      menuSections(on, { kind: 'block', block })
+        .flat()
+        .map((item) => [item.label, item.checked]);
+    expect(checks('1.4')).toEqual([
+      ['Collapse in this repo', true],
+      ['Collapse section', undefined],
+      ['Dismiss for all stacks', undefined],
+    ]);
+    expect(checks('1.9')[0]).toEqual(['Collapse in this repo', false]);
   });
 
   it('lists the commands for the system it is on only', () => {

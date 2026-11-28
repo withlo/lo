@@ -23,6 +23,10 @@
 // folds and empty space between them, so it reads as one block. The lines of a comment box being
 // written take the ground `v` gives instead. The pointer's range takes its stem's lit
 // colour whatever else is lit, and lights no lines while another does.
+//
+// While a new comment's box is open on lines, its bracket's two ends are handles: the cell of its
+// first line, the tick's, and of its last, the mark's, which the pointer drags to move that end. On
+// one line the one cell is both.
 
 import {
   type EditorState,
@@ -286,10 +290,34 @@ export interface LaneMark {
 export const RANGE_ATTRIBUTE = 'data-range';
 
 /**
+ * An end of an open comment box's bracket, which the pointer drags to move it: `range` is the
+ * draft's, `end` its first line's, its last's, or `both` on one line, and `pressed` while it's
+ * dragged.
+ */
+export interface LaneHandle {
+  readonly range: string;
+  readonly end: 'first' | 'last' | 'both';
+  readonly pressed: boolean;
+}
+
+/** Whether two handles draw the same. */
+function sameHandle(a: LaneHandle | undefined, b: LaneHandle | undefined): boolean {
+  return (
+    a === b ||
+    (a !== undefined &&
+      b !== undefined &&
+      a.range === b.range &&
+      a.end === b.end &&
+      a.pressed === b.pressed)
+  );
+}
+
+/**
  * What a lane draws beside a line, a fold or a block between lines: the stems' pieces, the tick,
- * and the mark. `target` where the cell is the pointer's to open what it means, and tints under it.
- * How it comes, fading in, is no part of what it draws, so a cell drawn already isn't drawn again
- * for it, and comes so only the first time it's drawn.
+ * and the mark. `target` where the cell is the pointer's to open what it means, and tints under it;
+ * `handle` where it's an end of an open box's bracket, which drags instead, and whose click does
+ * nothing, so its mark runs no command. How it comes, fading in, is no part of what it draws, so a
+ * cell drawn already isn't drawn again for it, and comes so only the first time it's drawn.
  */
 export class RangeMarker extends GutterMarker {
   readonly kind: LaneKind;
@@ -297,6 +325,7 @@ export class RangeMarker extends GutterMarker {
   readonly mark: LaneMark | undefined;
   readonly markLit: boolean;
   readonly target: boolean;
+  readonly handle: LaneHandle | undefined;
   #arriving: boolean;
   #first = true;
   override readonly elementClass = 'lo-lanecell';
@@ -305,7 +334,17 @@ export class RangeMarker extends GutterMarker {
     kind: LaneKind,
     cell: Cell,
     mark: LaneMark | undefined,
-    { lit = false, target = false, arriving = false } = {},
+    {
+      lit = false,
+      target = false,
+      arriving = false,
+      handle,
+    }: {
+      lit?: boolean;
+      target?: boolean;
+      arriving?: boolean;
+      handle?: LaneHandle | undefined;
+    } = {},
   ) {
     super();
     this.kind = kind;
@@ -313,6 +352,7 @@ export class RangeMarker extends GutterMarker {
     this.mark = mark;
     this.markLit = lit;
     this.target = target;
+    this.handle = handle;
     this.#arriving = arriving;
   }
 
@@ -321,6 +361,7 @@ export class RangeMarker extends GutterMarker {
       other.kind === this.kind &&
       other.markLit === this.markLit &&
       other.target === this.target &&
+      sameHandle(other.handle, this.handle) &&
       sameCell(other.cell, this.cell) &&
       (other.mark === this.mark ||
         (other.mark !== undefined && this.mark !== undefined && other.mark.same(this.mark)))
@@ -329,7 +370,17 @@ export class RangeMarker extends GutterMarker {
 
   override toDOM(): Node {
     const drawn = document.createElement('span');
-    drawn.className = `lo-lanemark${this.#arriving ? ' move-swap' : ''}${this.target ? ' is-target move-tint' : ''}`;
+    const { handle } = this;
+    const tinted = handle
+      ? ` lo-handle move-tint${handle.pressed ? ' is-pressed' : ''}`
+      : this.target
+        ? ' is-target move-tint'
+        : '';
+    drawn.className = `lo-lanemark${this.#arriving ? ' move-swap' : ''}${tinted}`;
+    if (handle) {
+      drawn.dataset.handle = handle.end;
+      drawn.dataset.handleRange = handle.range;
+    }
     for (const stem of this.cell.stems) {
       const piece = document.createElement('span');
       piece.className = `lo-stem lo-stem--${stem.tone} lo-stem--from-${stem.from} lo-stem--to-${stem.to}${stem.lit ? ' is-lit' : ''}`;
@@ -351,6 +402,11 @@ export class RangeMarker extends GutterMarker {
     if (this.mark) {
       const mark = this.mark.draw(this.markLit, this.#first);
       if (this.mark.keys[0] !== undefined) mark.setAttribute(RANGE_ATTRIBUTE, this.mark.keys[0]);
+      // A handle's is the handle's: a click on it does nothing, and its tip is the handle's.
+      if (handle) {
+        delete mark.dataset.command;
+        delete mark.dataset.tip;
+      }
       drawn.append(mark);
     }
     this.#arriving = false;
@@ -458,6 +514,8 @@ export interface LaneDrawing {
   readonly target: (range: LaneRange) => boolean;
   /** Whether a mark's cell tints under the pointer, as one whose mark has no ground of its own. */
   readonly markTarget?: boolean | undefined;
+  /** The cells that are an end of an open box's bracket, by document line. */
+  readonly handles?: ReadonlyMap<number, LaneHandle> | undefined;
 }
 
 /**
@@ -470,10 +528,11 @@ export function laneUpdate(
   { from, to }: { readonly from: number; readonly to: number },
   ranges: readonly LaneRange[],
   marks: ReadonlyMap<number, LaneMark>,
-  { lit, target, markTarget = false }: LaneDrawing,
+  { lit, target, markTarget = false, handles }: LaneDrawing,
 ): LaneUpdate {
   const placed = slotted(ranges);
   const lines = new Set(marks.keys());
+  for (const line of handles?.keys() ?? []) lines.add(line);
   const spans: Range<LaneSpan>[] = [];
   for (const range of placed) {
     for (let line = range.from; line <= range.to; line++) lines.add(line);
@@ -504,6 +563,7 @@ export function laneUpdate(
         lit: markLit,
         target: over.some((range) => target(range)) || (mark !== undefined && markTarget),
         arriving: over.some((range) => arriving.has(range.key)) || (mark?.arriving ?? false),
+        handle: handles?.get(line),
       }).range(at),
     );
     if (mark) spots.push(new MarkSpot(mark, markLit).range(at));
