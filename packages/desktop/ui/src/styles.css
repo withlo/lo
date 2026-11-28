@@ -663,6 +663,17 @@
   }
 }
 
+/* An overview note's ball in its head (`Note`), as its mark in the code's lane draws it: the accent
+   with the current line's halo. */
+@utility note-ball {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--lo-accent);
+  box-shadow: 0 0 0 3px var(--lo-current-strong);
+}
+
 /* A control every card or row of a list repeats, its secondary actions' `⋯` (`MoreButton`'s `shy`):
    it shows only on the one under the pointer, the one the keyboard is on, the one with focus in it,
    and while the menu it opened is open. A scope is the nearest element marked `data-shy-scope`, and

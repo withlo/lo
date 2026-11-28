@@ -260,25 +260,6 @@
   box-shadow: 0 0 0 3px var(--lo-current-strong);
 }
 .lo-ov-marker.is-open { box-shadow: 0 0 0 3px var(--lo-current-strong), 0 0 10px var(--lo-focus-glow); }
-.lo-ovnote {
-  margin: 4px 14px 10px 12px;
-  max-width: 760px;
-  padding: 10px 14px 10px;
-  border-radius: var(--lo-r-md);
-  background: var(--lo-info-bg);
-  box-shadow: 0 0 0 1px var(--lo-info-border);
-  font: 400 13.5px/21px var(--lo-font-ui);
-  color: var(--lo-fg);
-  user-select: text;
-}
-.lo-ovnote__label {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
-  font: var(--lo-text-label); letter-spacing: var(--lo-track-label); text-transform: uppercase;
-  color: var(--lo-fg-accent);
-}
-.lo-ovnote__label .lo-ov-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lo-accent); }
-.lo-ovnote__foot { display: flex; align-items: center; gap: 12px; margin-top: 8px; font: var(--lo-text-small); color: var(--lo-fg-muted); }
-.lo-ovnote code { font-family: var(--lo-font-mono); font-variant-ligatures: none; font-size: var(--lo-code-inline-size); }
 
 
 /* --------------------------------------------------------------------------
