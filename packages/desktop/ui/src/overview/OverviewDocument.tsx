@@ -29,6 +29,7 @@ import { Collapse } from '../Collapse.tsx';
 import { heldRegistry } from '../commands/control.ts';
 import { NO_TARGET } from '../commands/targets.ts';
 import { HintButton } from '../HintButton.tsx';
+import { Icon } from '../Icon.tsx';
 import {
   Anchors,
   anchorNames,
@@ -350,24 +351,32 @@ export function OverviewDocument({
             {outline && (
               <nav className="lo-ov__toc" aria-label="Sections">
                 <div className="lo-toc__label">{label}</div>
-                {sections.map((section) => (
-                  <button
-                    key={section.heading}
-                    type="button"
-                    className="lo-toc__item text-start"
-                    aria-current={section.heading === shown}
-                    data-collapsed={
-                      section.folds && folds?.collapsed.has(section.heading) ? '' : undefined
-                    }
-                    onClick={() => {
-                      goInto(section.heading);
-                      reveal(root.current, anchors.id(section.anchor));
-                      setCurrent(section.heading);
-                    }}
-                  >
-                    {section.name}
-                  </button>
-                ))}
+                {sections.map((section) => {
+                  const collapsed = section.folds && folds?.collapsed.has(section.heading);
+                  return (
+                    <button
+                      key={section.heading}
+                      type="button"
+                      className="lo-toc__item text-start"
+                      aria-current={section.heading === shown}
+                      data-collapsed={collapsed ? '' : undefined}
+                      onClick={() => {
+                        goInto(section.heading);
+                        reveal(root.current, anchors.id(section.anchor));
+                        setCurrent(section.heading);
+                      }}
+                    >
+                      {collapsed && (
+                        // In its ball's place, the heading's chevron, in the ball's room, so the
+                        // row's words stay where the others' are.
+                        <span className="lo-toc__fold flex w-6 flex-none justify-center">
+                          <Icon name="chevron-right" size={12} />
+                        </span>
+                      )}
+                      {section.name}
+                    </button>
+                  );
+                })}
                 {outlineFoot !== undefined && <div className="lo-toc__foot">{outlineFoot}</div>}
               </nav>
             )}

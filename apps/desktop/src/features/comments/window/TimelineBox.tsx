@@ -41,6 +41,7 @@ import {
 import { boxKeys } from './boxkeys.ts';
 import { ActCallout, ThrewProblem } from './Card.tsx';
 import { type PullComment, removeOnPull, setPullBoxFocus } from './conversation.ts';
+import { useFrom } from './Frame.tsx';
 import { useNonce } from './page.ts';
 import { ON_PULL, whereText } from './writing.ts';
 
@@ -159,10 +160,21 @@ function useKeptOnScreen(
 /**
  * The box at the timeline's end as it stands while its comment is on its way, which the timeline's
  * last row shows: empty, as it will be once GitHub has the comment, and taking nothing, its height
- * the box's own when it was last empty, so nothing moves as the box comes back.
+ * the box's own when it was last empty, so nothing moves as the box comes back. It's drawn as the
+ * empty box is, its editor on its ground with its hint, but that Write and Preview and "Attach
+ * files…" dim with what the empty box dims.
  */
-function Away({ number, height }: { number: number; height: number | undefined }): ReactNode {
+function Away({
+  view,
+  hint,
+  height,
+}: {
+  view: string;
+  hint: string | undefined;
+  height: number | undefined;
+}): ReactNode {
   const id = useId();
+  const account = useFrom(view);
   return (
     <div
       inert
@@ -173,11 +185,20 @@ function Away({ number, height }: { number: number; height: number | undefined }
     >
       <div className="lo-diffcomposer__head">
         <CommentBoxHeadBar
-          head={{ where: whereText(ON_PULL), previewKeys: boxKeys('preview'), held: true }}
+          head={{ where: whereText(ON_PULL), previewKeys: boxKeys('preview'), account, held: true }}
         />
       </div>
       <div className="lo-diffcomposer__body">
-        <div className="cm-content py-4 ps-6 text-fg-subtle code-text">{`Comment on #${number}`}</div>
+        {/* The editor's own parts, as it draws itself empty: its ground, its hint where text goes. */}
+        <div className="cm-editor">
+          <div className="cm-scroller">
+            <div className="cm-content">
+              <div className="cm-line">
+                <span className="cm-placeholder inline-block align-top">{hint}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <div className="lo-diffcomposer__foot">
         <CommentBoxFootBar
@@ -278,7 +299,13 @@ export function PullBox({ tab, leave, keys }: PullBoxProps): ReactNode {
     <div ref={outer} data-lo-timeline="box">
       {box ? (
         <>
-          {sent && <Away number={tab.number} height={emptyHeight.current} />}
+          {sent && (
+            <Away
+              view={view}
+              hint={hintOf(box.state.place, tab.number)}
+              height={emptyHeight.current}
+            />
+          )}
           <div ref={drawn} hidden={sent}>
             <TimelineComposer
               box={box}

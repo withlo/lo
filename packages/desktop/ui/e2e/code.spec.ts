@@ -1980,7 +1980,7 @@ test('beside lines, the popover steps aside while an end of its box’s bracket 
   expect((await handlesIn(page, 'After')).map(({ row }) => row)).toEqual(['a 4', 'a 7']);
 });
 
-test('on one line the one end of a box’s bracket is both, a drag up moving its first line; a click on it does nothing, and its tip says which end it is and the keys that move it', async () => {
+test('on one line the one end of a box’s bracket is both, a drag up moving its first line; a click on it does nothing, and its tip says which end it is and the keys that move it, over its line, clear of the box', async () => {
   const page = await openPicking('split');
   await page.evaluate(() => window.harness.composeLines(7, 7, 'between'));
   await frames(page);
@@ -1991,9 +1991,12 @@ test('on one line the one end of a box’s bracket is both, a drag up moving its
   expect(await page.evaluate(() => window.harness.relined())).toEqual([]);
   expect((await boxBy(page, 'After', 'a 7')).focused).toBe(true);
   await page.mouse.move(both!.x, both!.y + 2);
-  await expect(page.locator('.lo-tip[role="tooltip"]')).toHaveText(
-    'First and last lineCtrl+Alt+Shift+↑Ctrl+Alt+↓',
-  );
+  const tip = page.locator('.lo-tip[role="tooltip"]');
+  await expect(tip).toHaveText('First and last lineCtrl+Alt+Shift+↑Ctrl+Alt+↓');
+  // Over the end, never under it, where the box is: `y` is 10 px under the end's top.
+  const shownAt = (await tip.boundingBox())!;
+  expect(shownAt.y + shownAt.height).toBeLessThanOrEqual(both!.y - 10);
+  expect(shownAt.y + shownAt.height).toBeLessThan((await boxBy(page, 'After', 'a 7')).top!);
 
   await page.mouse.down();
   await dragTo(page, 'After', 'a 5');

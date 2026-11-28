@@ -16,6 +16,7 @@ import {
   SentPost,
   type CommentBoxAction,
   type CommentBoxFoot,
+  type CommentBoxHead,
   type CommentBoxNote,
 } from '@lo/ui';
 import { onLines } from '@lo/review';
@@ -176,12 +177,23 @@ function drawnNote(box: Box, note: BoxNote): CommentBoxNote {
   };
 }
 
+/**
+ * Who a comment written in view `view` is from, as a box's head says it: only where it could be
+ * someone else, with more than one account signed in.
+ */
+export function useFrom(view: string): CommentBoxHead['account'] {
+  const pull = usePull(view);
+  const accounts = useAccounts();
+  const login = pull?.acting?.kind === 'account' ? pull.acting.login : undefined;
+  return login === undefined || (accounts?.length ?? 0) < 2
+    ? undefined
+    : { login, image: avatarImage({ login, type: 'User' }, AVATAR) };
+}
+
 function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
   const state = useBox(box);
   const linesMenu = useMenuTarget({ kind: 'lines', box: box.id });
-  const pull = usePull(box.view);
-  const accounts = useAccounts();
-  const login = pull?.acting?.kind === 'account' ? pull.acting.login : undefined;
+  const account = useFrom(box.view);
   const { place } = state;
   // The pull request's own box, at the timeline's end, is always there.
   const closes = place.kind !== 'conversation' || box.home.kind === 'block';
@@ -196,11 +208,7 @@ function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
         previewKeys: boxKeys('preview'),
         where: state.where?.head ?? whereText(place),
         why: state.where?.why,
-        // Who it's from is worth saying only where it could be someone else.
-        account:
-          login === undefined || (accounts?.length ?? 0) < 2
-            ? undefined
-            : { login, image: avatarImage({ login, type: 'User' }, AVATAR) },
+        account,
         close: closes ? { keys: boxKeys('close'), onClick: () => composer.leave() } : undefined,
         // On a new comment's lines, the words are a button whose menu changes them.
         lines: linesChange(box.id) ? { menu: linesMenu } : undefined,

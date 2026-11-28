@@ -265,6 +265,8 @@ const SKELETON_GROUPS: readonly { readonly file: string; readonly rows: readonly
   { file: 'w-2/5', rows: ['w-1/3'] },
   { file: 'w-1/3', rows: ['w-1/4', 'w-2/5', 'w-1/3'] },
   { file: 'w-1/2', rows: ['w-1/4'] },
+  { file: 'w-2/5', rows: ['w-1/3', 'w-1/4'] },
+  { file: 'w-1/3', rows: ['w-2/5'] },
 ];
 
 /**
