@@ -49,9 +49,9 @@ export interface Before extends TermByline {
  * - `stored`: the repository's entry for it, when they hold it, under its name or an alias: who
  *   wrote it, whether it's locked, its suggestions and earlier definitions;
  * - `byline`: who wrote the repository's current definition of it, where what shows for the term
- *   holds that definition: as the definition that shows, as the one a changed term replaces on an
- *   open pull request, or as the one a merged pull request's merge brought, while it's still the
- *   current one. None where it would name who wrote a definition nothing shows;
+ *   holds that definition: as the definition that shows, as the one a changed term replaces on a
+ *   pull request that didn't merge, or as the one a merged pull request's merge brought, while
+ *   it's still the current one. None where it would name who wrote a definition nothing shows;
  * - `own`: the overview's own entry, when its glossary defines it.
  */
 export interface ShownTerm {
@@ -157,10 +157,22 @@ export function definitionsOf(
     },
     marked,
     rest,
-    added: marked.filter(({ tag }) => tag === 'new').length,
-    changed: marked.filter(({ tag }) => tag === 'changed').length,
+    added: counted(marked, 'new'),
+    changed: counted(marked, 'changed'),
     terms,
   };
+}
+
+/**
+ * How many terms of `marked` are tagged `tag`: two entries the repository's definitions hold as
+ * one term, under its name and an alias, count once.
+ */
+function counted(marked: readonly ShownTerm[], tag: ShownTerm['tag']): number {
+  const terms = new Set<string>();
+  for (const term of marked) {
+    if (term.tag === tag) terms.add(term.stored ? `stored ${term.stored.key}` : `own ${term.key}`);
+  }
+  return terms.size;
 }
 
 /** The items of an overview's glossary, in the order written: its `## Glossary` section's. */
@@ -203,12 +215,12 @@ function tagNow(
 /**
  * Whether what shows for a term the overview tags `tag`, and doesn't show the repository's
  * definition of, still holds their current one, `stored`'s: as the definition a changed term
- * replaces while the pull request is open, or as the one a merged pull request's merge brought,
+ * replaces, unless the pull request merged, or as the one a merged pull request's merge brought,
  * which nothing has changed since.
  */
 function current(stored: StoredTerm, tag: ShownTerm['tag'], subject: Subject): boolean {
-  if (subject.kind === 'stack' || isOpen(subject.state)) return tag === 'changed';
-  return subject.state === 'merged' && stored.from === subject.number;
+  if (subject.kind === 'stack' || subject.state !== 'merged') return tag === 'changed';
+  return stored.from === subject.number;
 }
 
 /** Who wrote the repository's current definition of a term, where from, and when. */

@@ -148,6 +148,20 @@ describe('which definition shows', () => {
       stored: { key: 'bucket' },
     });
   });
+
+  it('counts a term it changes once, under its name and an alias alike', () => {
+    const parsed = overviewOf(
+      '- **Bucket** (changed): The tokens a tenant holds.',
+      '- **Buckets** (changed): The tokens a tenant holds.',
+      '- **Lease** (new): How long.',
+    );
+    const definitions = shown(
+      parsed,
+      read(stored('Bucket', 'The tokens.', { aliases: ['buckets'] })),
+    );
+    expect(definitions.marked.map(({ name }) => name)).toEqual(['Bucket', 'Buckets', 'Lease']);
+    expect([definitions.added, definitions.changed]).toEqual([1, 1]);
+  });
 });
 
 describe('tags', () => {
@@ -318,13 +332,20 @@ describe('who a definition is by', () => {
     expect(none.of('bucket')?.byline).toBeUndefined();
   });
 
-  it('is of the definition a changed term replaces on an open pull request', () => {
+  it('is of the definition a changed term replaces on a pull request that didn’t merge', () => {
     const parsed = overviewOf('- **Bucket** (changed): The tokens a tenant holds.');
     const terms = read(stored('Bucket', 'The tokens a tenant has.'));
     expect(shown(parsed, terms).of('bucket')?.byline).toEqual(byline);
-    // Closed without merging, the repository's definition shows nowhere.
+    // Closed without merging, the repository's definition is still the one it replaces.
     const closed = { kind: 'pull', number: 264, state: 'closed' } as const;
-    expect(shown(parsed, terms, closed).of('bucket')?.byline).toBeUndefined();
+    expect(shown(parsed, terms, closed).of('bucket')).toMatchObject({
+      tag: 'changed',
+      before: { definition: 'The tokens a tenant has.' },
+      byline,
+    });
+    // A term it marks new that they hold shows its own, and so names no one.
+    const added = overviewOf('- **Bucket** (new): The tokens a tenant holds.');
+    expect(shown(added, terms, closed).of('bucket')?.byline).toBeUndefined();
   });
 
   it("merged, is the merge's own entry's while nothing has changed it since", () => {

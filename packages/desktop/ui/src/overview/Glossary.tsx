@@ -8,7 +8,7 @@ import { useContext, useMemo } from 'react';
 
 import type { Definition, Glossary as GlossaryBlock, Overview, OverviewBlock } from '@lo/artifact';
 
-import { Swap } from '../Collapse.tsx';
+import { Collapse, Swap } from '../Collapse.tsx';
 import { MarkdownBlocks, MarkdownInlines } from '../markdown/index.ts';
 import { TermRow } from './TermRow.tsx';
 import { alphabetical, ReachedContext, useGlossary } from './terms.ts';
@@ -60,11 +60,12 @@ export function Glossary({ node }: { node: GlossaryBlock }) {
     );
   };
 
+  const note = terms?.note;
+  const noted = note !== undefined && note !== null;
   return (
     <div className="lo-glossary" {...{ [GLOSSARY_ATTRIBUTE]: '' }}>
-      {terms?.note !== undefined && terms.note !== null && (
-        <div className="lo-glossary__note">{terms.note}</div>
-      )}
+      {/* It comes and goes as the repo's definitions can't be used, or can again. */}
+      <Collapse open={noted}>{noted && <div className="lo-glossary__note">{note}</div>}</Collapse>
       {marked.length > 0 && <div>{marked.map((own) => row(own, true))}</div>}
       {rest.length > 0 && (
         // A hairline between the terms the pull request adds or changes and the rest.

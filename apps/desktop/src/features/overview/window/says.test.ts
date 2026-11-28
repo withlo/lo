@@ -191,17 +191,25 @@ describe('the copy an overview is', () => {
 
 describe('what the pull request does to the repo’s definitions', () => {
   it('says what it adds and changes, and once merged, what it added and changed', () => {
-    expect(definitionsLine(2, 1, false)).toBe('Adds 2 definitions · changes 1');
-    expect(definitionsLine(2, 1, true)).toBe('Added 2 definitions · changed 1');
-    expect(definitionsLine(1, 0, false)).toBe('Adds 1 definition');
-    expect(definitionsLine(0, 3, false)).toBe('Changes 3 definitions');
-    expect(definitionsLine(0, 1, true)).toBe('Changed 1 definition');
-    expect(definitionsLine(1_200, 1_500, false)).toBe('Adds 1,200 definitions · changes 1,500');
+    expect(definitionsLine(2, 1, 'open')).toBe('Adds 2 definitions · changes 1');
+    expect(definitionsLine(2, 1, 'draft')).toBe('Adds 2 definitions · changes 1');
+    expect(definitionsLine(2, 1, 'merged')).toBe('Added 2 definitions · changed 1');
+    expect(definitionsLine(1, 0, 'open')).toBe('Adds 1 definition');
+    expect(definitionsLine(0, 3, 'open')).toBe('Changes 3 definitions');
+    expect(definitionsLine(0, 1, 'merged')).toBe('Changed 1 definition');
+    expect(definitionsLine(1_200, 1_500, 'open')).toBe('Adds 1,200 definitions · changes 1,500');
+  });
+
+  it('says what it would have done, closed without merging', () => {
+    expect(definitionsLine(2, 1, 'closed')).toBe('Would have added 2 definitions · changed 1');
+    expect(definitionsLine(1, 0, 'closed')).toBe('Would have added 1 definition');
+    expect(definitionsLine(0, 3, 'closed')).toBe('Would have changed 3 definitions');
   });
 
   it('says nothing when it does neither', () => {
-    expect(definitionsLine(0, 0, false)).toBeUndefined();
-    expect(definitionsLine(0, 0, true)).toBeUndefined();
+    expect(definitionsLine(0, 0, 'open')).toBeUndefined();
+    expect(definitionsLine(0, 0, 'merged')).toBeUndefined();
+    expect(definitionsLine(0, 0, 'closed')).toBeUndefined();
   });
 });
 

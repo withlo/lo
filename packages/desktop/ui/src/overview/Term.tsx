@@ -114,7 +114,8 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
   });
   const definition = glossary.definition(term.key);
   const shown = terms?.of(term.key);
-  // Only a term the overview's glossary lists has a row to go to.
+  // Only a term the overview's glossary lists has a row to go to, and is a stop for `Tab`: one only
+  // the repo's definitions hold, which theirs can name, has its card under the pointer alone.
   const listed = glossary.termId(term.key) !== undefined;
   // A link in the card goes where it points as the term's own would, from the term: the card
   // closes first.
@@ -129,11 +130,17 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
       },
       extension: {
         ...r.extension,
-        // A term in a definition is a link to its row, never a term with a card of its own.
-        link: (target, inner) => <FollowLink<Overview> target={target}>{inner}</FollowLink>,
+        // A term in a definition is a link to its row, never a term with a card of its own, and
+        // one the overview's glossary doesn't list, with no row to go to, is its words.
+        link: (target, inner) =>
+          target.kind === 'term' && glossary.termId(target.key) === undefined ? (
+            inner
+          ) : (
+            <FollowLink<Overview> target={target}>{inner}</FollowLink>
+          ),
       },
     }),
-    [r],
+    [r, glossary],
   );
   if (!definition && !shown) return children;
 
@@ -152,7 +159,7 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
       <span
         ref={element}
         role={listed ? 'link' : undefined}
-        tabIndex={0}
+        tabIndex={listed ? 0 : undefined}
         aria-describedby={glossary.definitionId(term.key)}
         className={open ? 'lo-term is-active' : 'lo-term'}
         onPointerEnter={() => later(true, HOVER_OPEN_MS)}

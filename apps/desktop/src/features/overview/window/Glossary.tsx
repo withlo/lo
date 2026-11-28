@@ -113,8 +113,8 @@ function openPull(repository: RepoName, number: number): void {
 
 /**
  * The line under the byline of an overview whose glossary adds or changes terms: what it adds and
- * changes, or once merged, what it added and changed, and "Go to glossary". It comes and goes as
- * the repo's definitions make a term new or changed, or none.
+ * changes, what it added and changed once merged, or would have, closed, and "Go to glossary". It
+ * comes and goes as the repo's definitions make a term new or changed, or none.
  */
 export function DefinitionsLine({
   tab,
@@ -123,8 +123,9 @@ export function DefinitionsLine({
   tab: PullTab;
   definitions: Definitions | undefined;
 }) {
-  const merged = usePull(tab.id)?.header?.state === 'merged';
-  const fact = definitions && definitionsLine(definitions.added, definitions.changed, merged);
+  // Until GitHub has said what state the pull request is in, it's taken as open.
+  const state = usePull(tab.id)?.header?.state ?? 'open';
+  const fact = definitions && definitionsLine(definitions.added, definitions.changed, state);
   return (
     <Collapse open={fact !== undefined}>
       {fact !== undefined && (

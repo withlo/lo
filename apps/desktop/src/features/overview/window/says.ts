@@ -15,6 +15,7 @@ import {
 import { ago, bytes, clock, plainName } from '@lo/ui';
 
 import { explain } from '../../../window/explain.ts';
+import type { PullState } from '../../tab/contract.ts';
 import type { Byline, OverviewCommit, Problem } from '../contract.ts';
 import type { Copy } from './facts.ts';
 import type { StoreFailure } from './terms.ts';
@@ -193,26 +194,34 @@ export function copyLabel(copy: Copy): string {
 }
 
 /**
- * The line at the top of an overview whose glossary adds or changes terms, as the pull request
- * does them: "Adds 2 definitions · changes 1", "Changes 3 definitions", and once it's merged, as
- * done: "Added 2 definitions · changed 1". None when it does neither.
+ * The line at the top of an overview whose glossary adds or changes terms, as a pull request in
+ * state `state` does them: "Adds 2 definitions · changes 1", "Changes 3 definitions"; once it's
+ * merged, as done: "Added 2 definitions · changed 1"; and closed without merging, as what it
+ * would have done: "Would have added 2 definitions · changed 1". None when it does neither.
  */
 export function definitionsLine(
   added: number,
   changed: number,
-  merged: boolean,
+  state: PullState,
 ): string | undefined {
-  const [adds, changes] = merged ? ['Added', 'changed'] : ['Adds', 'changes'];
+  const [adds, changes, changesAlone] = LINE_WORDS[state];
   if (added > 0 && changed > 0) {
     return `${adds} ${counted(added, 'definition')} · ${changes} ${changed.toLocaleString('en-US')}`;
   }
   if (added > 0) return `${adds} ${counted(added, 'definition')}`;
-  if (changed > 0)
-    return `${changes.charAt(0).toUpperCase()}${changes.slice(1)} ${counted(changed, 'definition')}`;
+  if (changed > 0) return `${changesAlone} ${counted(changed, 'definition')}`;
   return undefined;
 }
 
-/** What the Glossary section's note says, as its title, when the repo's definitions can't be used. */
+/** The line's words for adding, for changing after `·` and for changing alone, by state. */
+const LINE_WORDS: Readonly<Record<PullState, readonly [string, string, string]>> = {
+  open: ['Adds', 'changes', 'Changes'],
+  draft: ['Adds', 'changes', 'Changes'],
+  merged: ['Added', 'changed', 'Changed'],
+  closed: ['Would have added', 'changed', 'Would have changed'],
+};
+
+/** The title of the Glossary section's note, when the repo's definitions can't be used. */
 export const STORE_TITLE = 'Can’t read the repo’s glossary';
 
 /** What the note says last: each definition shown is the overview's own. */

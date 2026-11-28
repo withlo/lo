@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import {
+  definitionBlocks,
   parseArtifact,
   type Definition,
   type Excerpt,
@@ -1019,9 +1020,70 @@ describe('with the repo’s definitions', () => {
       />,
     );
     const glossary = page.querySelector('.lo-glossary')!;
-    expect(glossary.firstElementChild?.className).toBe('lo-glossary__note');
-    expect(glossary.firstElementChild?.textContent).toBe('Can’t read them.');
+    const note = glossary.querySelector('.lo-glossary__note');
+    expect(glossary.firstElementChild?.contains(note)).toBe(true);
+    expect(note?.textContent).toBe('Can’t read them.');
+    // There as the overview is drawn, it doesn't move.
+    expect(glossary.firstElementChild?.hasAttribute('data-appear')).toBe(false);
     expect(names(glossary)).toEqual(['cost']);
+  });
+
+  it('opens the note with the Open move once they turn out not to be usable, on screen', () => {
+    const tree = defining('cost');
+    const page = render(<OverviewDocument tree={tree} terms={shownTerms({})} />);
+    const glossary = page.querySelector('.lo-glossary')!;
+    expect(glossary.querySelector('.lo-glossary__note')).toBeNull();
+    rerender(
+      page,
+      <OverviewDocument tree={tree} terms={shownTerms({}, <p>Can’t read them.</p>)} />,
+    );
+    const box = glossary.firstElementChild!;
+    expect(box.className).toBe('move-open');
+    expect(box.hasAttribute('data-appear')).toBe(true);
+    expect(box.textContent).toBe('Can’t read them.');
+  });
+
+  it('draws a term only they hold as words whose card opens under the pointer: no link, no stop for Tab, and its words in another card', () => {
+    vi.useFakeTimers();
+    const page = render(
+      <OverviewDocument
+        tree={defining('cost')}
+        terms={shownTerms({
+          cost: {
+            source: 'store',
+            name: 'cost',
+            blocks: definitionBlocks('what a [lease](term:lease) charges.') ?? [],
+            marks: {},
+          },
+          lease: {
+            source: 'store',
+            name: 'Lease',
+            blocks: paragraph('how long a bucket is held.'),
+            marks: {},
+          },
+        })}
+      />,
+    );
+    const lease = page.querySelector<HTMLElement>('.lo-term-row__definition .lo-term')!;
+    expect(lease.textContent).toBe('lease');
+    expect(lease.hasAttribute('tabindex')).toBe(false);
+    expect(lease.hasAttribute('role')).toBe(false);
+    expect(lease.hasAttribute('aria-describedby')).toBe(false);
+    move(document.body, lease);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_OPEN_MS);
+    });
+    expect(card()?.textContent).toBe('Leasehow long a bucket is held.');
+    move(lease, document.body);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_CLOSE_MS);
+    });
+    expect(card()).toBeNull();
+
+    // In the card of a term whose definition names it, it's its words, with nowhere to go.
+    focus(term(page));
+    expect(card()?.textContent).toBe('costwhat a lease charges.');
+    expect(card()?.querySelector('a, .lo-term')).toBeNull();
   });
 
   it('finds the Glossary section, its heading and the first row the pull request adds or changes', () => {
