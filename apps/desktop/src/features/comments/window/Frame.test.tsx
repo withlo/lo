@@ -115,7 +115,7 @@ const ON_LINE: DraftPlaceRow = {
 
 /**
  * What the head row of the card the comment of a box at `place` is drawn as while it's sent says:
- * its words, before the room its card's buttons will take.
+ * its words, before the room its card's buttons will take. Beside lines, it's a popover's head.
  */
 async function sentHead(place: DraftPlaceRow): Promise<string | undefined> {
   const box = new Box('v10', place, 'now', 'On its way');
@@ -132,7 +132,9 @@ async function sentHead(place: DraftPlaceRow): Promise<string | undefined> {
   const frame = frameOf(box)(parts, {} as Composer);
   box.set({ busy: true });
   await vi.waitFor(() => expect(parts.sent.textContent).toContain('1 comment'));
-  const row = parts.sent.querySelector('.border-b')?.firstElementChild?.textContent;
+  const head = parts.sent.querySelector('.border-b');
+  expect(head?.hasAttribute('data-pop-head')).toBe(said.threads === 'beside');
+  const row = head?.firstElementChild?.textContent;
   frame.destroy();
   return row;
 }

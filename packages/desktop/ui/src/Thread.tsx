@@ -198,6 +198,11 @@ export interface SentPostProps {
    * popover always, and on a card where it's on more than one line.
    */
   lines?: string | undefined;
+  /**
+   * With `state`, its thread will be drawn in a popover beside the lines, whose head row stays one
+   * line and gives up what doesn't fit: its head row does the same.
+   */
+  popover?: boolean | undefined;
   /** Who it's from: the account that wrote it, where that's known. */
   author?: string | undefined;
   image?: string | undefined;
@@ -229,6 +234,7 @@ export interface SentPostProps {
 export function SentPost({
   state,
   lines,
+  popover = false,
   author,
   image,
   label = 'Sending…',
@@ -266,34 +272,76 @@ export function SentPost({
       </div>
     </div>
   );
+  // The room of the buttons its thread's head will have, so its words wrap, or give up, where its
+  // thread's will.
+  const room = state !== undefined && (
+    <ControlsRoom resolve={state === 'Unresolved'} popover={popover} />
+  );
   return (
     <>
-      {state !== undefined && (
-        <div className={HEAD_ROW}>
-          <span className={HEAD_WORDS}>
-            <Tag tone="warning">{state}</Tag>
-            {lines !== undefined && <span className="min-w-0 truncate">{lines}</span>}
-            <span className="whitespace-nowrap">1 comment</span>
-          </span>
-          {/* The room of the buttons its thread's card will have, so its words wrap where its
-              card's will: Resolve, unless it's in a review, then `⋯` and Collapse. */}
-          <span aria-hidden="true" inert className="invisible flex flex-none items-center gap-2">
-            {state === 'Unresolved' && (
-              // As wide as the card's, which keeps the room of what it says while at work.
-              <Button variant="ghost" size="sm" working="Unresolving…" align="end">
-                Resolve
-              </Button>
-            )}
-            <MoreButton />
-            <Button variant="ghost" size="sm" icon aria-label="Collapse thread">
-              <Chevron up />
-            </Button>
-          </span>
-        </div>
-      )}
+      {state !== undefined &&
+        (popover ? (
+          <PopoverHead>
+            <span className="flex min-w-0 flex-1 items-center gap-8">
+              <Tag tone="warning">{state}</Tag>
+              {lines !== undefined && (
+                <span data-fit className="min-w-cut truncate">
+                  {lines}
+                </span>
+              )}
+              <span data-gives="detail" className="lo-num flex-none">
+                1 comment
+              </span>
+            </span>
+            {room}
+          </PopoverHead>
+        ) : (
+          <div className={HEAD_ROW}>
+            <span className={HEAD_WORDS}>
+              <Tag tone="warning">{state}</Tag>
+              {lines !== undefined && <span className="min-w-0 truncate">{lines}</span>}
+              <span className="whitespace-nowrap">1 comment</span>
+            </span>
+            {room}
+          </div>
+        ))}
       {post}
       {reply && <ReplyRow />}
     </>
+  );
+}
+
+/**
+ * The room a new thread's head will give its buttons, out of sight and reach, for its comment on
+ * its way: Resolve, unless it's in a review, then `⋯`, then Collapse on a card, or Close's room in a
+ * popover. In a popover, Resolve gives up its words for its icon as the head narrows, as the
+ * thread's does.
+ */
+function ControlsRoom({ resolve, popover }: { resolve: boolean; popover: boolean }) {
+  return (
+    <span aria-hidden="true" inert className="invisible flex flex-none items-center gap-2">
+      {resolve && (
+        // As wide as the thread's, which keeps the room of what it says while at work.
+        <Button
+          variant="ghost"
+          size="sm"
+          data-squares={popover ? 'labels' : undefined}
+          aria-label={popover ? 'Resolve' : undefined}
+          working={popover ? <span data-gives="labels">Unresolving…</span> : 'Unresolving…'}
+          align="end"
+        >
+          {popover ? <Face icon="check">Resolve</Face> : 'Resolve'}
+        </Button>
+      )}
+      <MoreButton />
+      {popover ? (
+        <span className="w-control-h-sm flex-none" />
+      ) : (
+        <Button variant="ghost" size="sm" icon aria-label="Collapse thread">
+          <Chevron up />
+        </Button>
+      )}
+    </span>
   );
 }
 

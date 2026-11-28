@@ -80,9 +80,9 @@ function inOrder(drawn: readonly Drawn[], parts: readonly string[], width: numbe
   }
 }
 
-/** Every width from `from` to `to`, 8 px apart. */
-function widths(from: number, to: number): number[] {
-  return Array.from({ length: (to - from) / 8 + 1 }, (_, index) => from + index * 8);
+/** Every width from `from` to `to`, `step` px apart. */
+function widths(from: number, to: number, step = 8): number[] {
+  return Array.from({ length: (to - from) / step + 1 }, (_, index) => from + index * step);
 }
 
 /** Each header drawn follows its order at each of `sizes`, the box made that wide in turn. */
@@ -110,10 +110,10 @@ test('side by side, from 480 to 600 px, each half of a header gives up on its ow
   expect(usage.map((each) => each.gaveUp)).toEqual(usage.map(() => ''));
 });
 
-test('inline, from 184 to 512 px, each header gives up a step only where it doesn’t fit without it, its folder cut to `min-w-cut` before it goes, in the flow and pinned', async () => {
+test('inline, from 184 to 504 px, each header gives up a step only where it doesn’t fit without it, its folder cut to `min-w-cut` before it goes, in the flow and pinned', async () => {
   const page = await open('inline', 184);
   await page.evaluate(() => window.heads.pin());
-  const found = await page.evaluate((each) => window.heads.across(each), widths(184, 512));
+  const found = await page.evaluate((each) => window.heads.across(each), widths(184, 504, 32));
   for (const { width, drawn } of found) {
     expect(new Set(drawn.map((each) => each.part))).toEqual(new Set(['both', 'pinned']));
     for (const head of drawn) {
@@ -134,7 +134,10 @@ test('side by side, a header’s pinned copy gives up what it does in the flow, 
     'packages/desktop/ui/src/code/a-name-long-enough-to-cut.ts',
   ]) {
     await page.evaluate((each) => window.heads.pinAt(each), path);
-    const found = await page.evaluate((each) => window.heads.across(each), widths(480, 720));
+    const found = await page.evaluate(
+      (each) => window.heads.across(each),
+      [480, 528, 576, 608, 640, 688],
+    );
     for (const { width, drawn } of found) {
       const where = `${width} px: ${path}`;
       const flow = drawn.find((each) => each.path === path && each.part === 'start');

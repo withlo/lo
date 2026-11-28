@@ -166,27 +166,65 @@ test('a path wraps only after a slash, and inside a name only where the name is 
   expect(long.names[1]!.lines).toBeGreaterThan(1);
 });
 
+/**
+ * The head rows of the comment on its way in `sent` and of the thread that lands in `landed`, each
+ * frame made each of `widths` wide in turn: how wide and tall, and what each gave up.
+ */
+function heads(page: Page, sent: string, landed: string, widths: readonly number[]) {
+  return page.evaluate(
+    async ({ frames, each }) => {
+      const rows = frames.map((frame) => document.querySelector<HTMLElement>(frame)!);
+      const found: { width: number; sent: Head; landed: Head }[] = [];
+      for (const width of each) {
+        for (const frame of rows) frame.style.width = `${width}px`;
+        // One frame: a popover's head fits itself in its own resize observer, made before this one.
+        await new Promise<void>((resolve) => {
+          const sized = new ResizeObserver(() => {
+            sized.disconnect();
+            resolve();
+          });
+          sized.observe(rows[0]!);
+        });
+        // Each one's head row, the one row drawn with a border under it.
+        const [mine, theirs] = rows.map((frame) => {
+          const head = frame.querySelector('.border-b')!;
+          const { width: wide, height } = head.getBoundingClientRect();
+          return { width: wide, height, gaveUp: head.getAttribute('data-gave-up') ?? '' };
+        });
+        found.push({ width, sent: mine!, landed: theirs! });
+      }
+      return found;
+    },
+    { frames: [sent, landed], each: widths },
+  );
+}
+
+interface Head {
+  readonly width: number;
+  readonly height: number;
+  readonly gaveUp: string;
+}
+
 test('a new thread’s comment on its way has the head row its card will, as tall at every width, so nothing moves as the card lands', async () => {
   const page = await open();
-  const widths = Array.from({ length: 31 }, (_, step) => 280 + step * 8);
-  const seen = await page.evaluate(async (each) => {
-    const rows = ['#sent', '#landed'].map((frame) => document.querySelector<HTMLElement>(frame)!);
-    const found: { width: number; sent: DOMRect; landed: DOMRect }[] = [];
-    for (const width of each) {
-      for (const frame of rows) frame.style.width = `${width}px`;
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-      // Each one's head row, the one row drawn with a border under it.
-      const [sent, landed] = rows.map((frame) =>
-        frame.querySelector('.border-b')!.getBoundingClientRect().toJSON(),
-      );
-      found.push({ width, sent, landed });
-    }
-    return found;
-  }, widths);
+  const widths = Array.from({ length: 16 }, (_, step) => 280 + step * 16);
+  const seen = await heads(page, '#sent', '#landed', widths);
   for (const { width, sent, landed } of seen) {
-    expect(sent.height, `${width} px`).toBe(landed.height);
-    expect(sent.width, `${width} px`).toBe(landed.width);
+    expect(sent, `${width} px`).toEqual(landed);
   }
   // Narrow, its words wrap, as the card's do.
   expect(seen[0]!.sent.height).toBeGreaterThan(seen.at(-1)!.sent.height);
+});
+
+test('beside the lines, a new thread’s comment on its way has the one-line head its popover will, giving up what it does at every width', async () => {
+  const page = await open();
+  const widths = Array.from({ length: 21 }, (_, step) => 200 + step * 16);
+  const seen = await heads(page, '#sentpop', '#landedpop', widths);
+  for (const { width, sent, landed } of seen) {
+    expect(sent, `${width} px`).toEqual(landed);
+  }
+  // Narrow, it gives up Resolve's words and its count, as the popover's head does, and stays one
+  // line.
+  expect(seen[0]!.sent.gaveUp).toContain('detail');
+  expect(new Set(seen.map(({ sent }) => sent.height)).size).toBe(1);
 });

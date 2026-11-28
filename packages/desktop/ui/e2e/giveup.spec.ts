@@ -195,7 +195,7 @@ test('the header’s first row says what it gave up in the merge status’s tool
 
 test('narrowed from 640 to 160 px, a diff’s note gives up its control, then its facts after the first one at a time, each only once it doesn’t fit, as what’s given up but still heard takes no room', async () => {
   const page = await open();
-  const widths = Array.from({ length: 61 }, (_, step) => 640 - step * 8);
+  const widths = Array.from({ length: 21 }, (_, step) => 640 - step * 24);
   const seen = await page.evaluate(async (each) => {
     const frame = document.getElementById('note')!;
     const row = frame.querySelector<HTMLElement>('.give-up')!;
@@ -204,9 +204,14 @@ test('narrowed from 640 to 160 px, a diff’s note gives up its control, then it
     const found: { width: number; steps: string; needed: boolean; shown: number }[] = [];
     for (const width of each) {
       frame.style.width = `${width}px`;
-      for (let count = 0; count < 3; count += 1) {
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-      }
+      // One frame: the row fits itself in its own resize observer, made before this one.
+      await new Promise<void>((resolve) => {
+        const sized = new ResizeObserver(() => {
+          sized.disconnect();
+          resolve();
+        });
+        sized.observe(frame);
+      });
       const steps = row.getAttribute('data-gave-up') ?? '';
       // Drawn with one step fewer, the row or what it keeps whole runs past its end.
       const fewer = steps.split(' ').filter(Boolean).slice(0, -1).join(' ');

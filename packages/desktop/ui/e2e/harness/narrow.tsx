@@ -1,6 +1,7 @@
 // The page the narrow spec drives: an out-of-date overview's callout, and a code block whose lines
 // changed since, each in an overview's frame the spec narrows and widens, a long path in a box of
-// its own, and a new thread's comment on its way beside the card that will take its place.
+// its own, and a new thread's comment on its way beside the card that will take its place, between
+// lines and beside them in a popover.
 
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -73,6 +74,29 @@ function Scene() {
           lines={LINES}
           canResolve
           menu
+        />
+      </div>
+      {/* The same beside the lines, in a popover. */}
+      <div id="sentpop" className="bg-bg-overlay" style={{ width: '480px' }}>
+        <SentPost
+          state="Unresolved"
+          lines={LINES}
+          popover
+          author="tess-okafor"
+          body={<p>{SAID}</p>}
+        />
+      </div>
+      <div id="landedpop" className="bg-bg-overlay" style={{ width: '480px' }}>
+        <Thread
+          comments={[
+            { id: 'c1', author: 'tess-okafor', when: 'just now', mine: true, body: <p>{SAID}</p> },
+          ]}
+          resolved={false}
+          open
+          lines={LINES}
+          canResolve
+          menu
+          variant="popover"
         />
       </div>
     </>

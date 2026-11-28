@@ -198,6 +198,31 @@ describe('Thread', () => {
     }
   });
 
+  it('draws a sent new thread’s head beside lines as its popover’s, one line that gives up as it does', () => {
+    const body = <p>On its way</p>;
+    const sent = render(
+      <SentPost state="Unresolved" lines="Line 5" popover author="tess-okafor" body={body} />,
+    );
+    const thread = render(
+      <Thread
+        {...PROPS}
+        comments={[{ ...MINE, body }]}
+        lines="Line 5"
+        canResolve
+        menu
+        variant="popover"
+      />,
+    );
+    const [mine, theirs] = [headRow(sent), headRow(thread)];
+    // The same row, by the same classes, with the same words and the same buttons' room.
+    expect(mine?.hasAttribute('data-pop-head')).toBe(true);
+    expect(mine?.className).toBe(theirs?.className);
+    expect(mine?.firstElementChild?.textContent).toBe('UnresolvedLine 51 comment');
+    expect(theirs?.firstElementChild?.textContent).toBe('UnresolvedLine 51 comment');
+    expect(names(mine?.lastElementChild)).toEqual(names(theirs?.lastElementChild));
+    expect(mine?.lastElementChild?.hasAttribute('inert')).toBe(true);
+  });
+
   it('says the lines a sent new thread is on in its head row, as its card will', () => {
     const body = <p>On its way</p>;
     const sent = render(

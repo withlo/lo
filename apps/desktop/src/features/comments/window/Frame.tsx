@@ -260,8 +260,9 @@ function Sent({ box }: { box: Box }): ReactNode {
   const { kind } = place;
   // A new thread's head row says what it's on as its card's will: in a popover always, and on a
   // card between lines where it's on more than one line. In the box's words, which it showed.
+  const beside = threadsMode() === 'beside';
   const lines =
-    place.kind === 'thread' && (threadsMode() === 'beside' || onLines({ lines: place.lines }))
+    place.kind === 'thread' && (beside || onLines({ lines: place.lines }))
       ? (state.where?.head ?? whereText(place))
       : undefined;
   const body = pull ? (
@@ -286,6 +287,8 @@ function Sent({ box }: { box: Box }): ReactNode {
       // takes the card's place.
       state={kind === 'thread' ? (box.lastHow === 'review' ? 'Pending' : 'Unresolved') : undefined}
       lines={lines}
+      // Beside lines, its thread's head is a popover's, on one line.
+      popover={beside}
       reply={kind === 'thread' || kind === 'reply'}
       author={login}
       byAuthor={login !== undefined && login.toLowerCase() === opener?.toLowerCase()}

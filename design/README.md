@@ -1025,18 +1025,19 @@ text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" di
 - **Sending.** A comment is its card from the moment it's sent, where that card will be: the box
   draws the text as it will read, formatted from its first frame, with "Sending…" where its time
   will be (`SentPost`; "Saving…" for an edit), as tall as the card and no taller. A new thread's has
-  the head row its thread will have, and a reply is the next comment of its thread's card, each over
-  the row that offers a reply. A comment on the pull request itself is the timeline's last row,
-  drawn as its card, while the box at the end stays as it is, empty, and on screen where its foot
-  was as it sent: the frame that draws the row brings it back whole (`reveal`, `nearest`); an edit
-  there is the comment's card, saying "Saving…". Each stays until the card from GitHub is drawn, and
-  gives way to it in one frame with nothing moving: the text never leaves the screen. A send that
-  fails turns back into the open box with the text as it was, under a note that says what wasn't
-  sent and why, in the danger tone. The box's own action sends it again: a note never offers a
-  second button for what a button under it does. A screen reader hears each step from the comments'
-  one live region (`tell`): that it's sending, that it was sent, or the note. A note takes focus
-  back into its box only from a reader still there, or with focus nowhere: one who left for the code
-  keeps their place.
+  the head row its thread will have, keeping the room of the buttons that row will hold, so its
+  words wrap, or beside lines give up, where the thread's will; and a reply is the next comment of
+  its thread's card, each over the row that offers a reply. A comment on the pull request itself is
+  the timeline's last row, drawn as its card, while the box at the end stays as it is, empty, and on
+  screen where its foot was as it sent: the frame that draws the row brings it back whole (`reveal`,
+  `nearest`); an edit there is the comment's card, saying "Saving…". Each stays until the card from
+  GitHub is drawn, and gives way to it in one frame with nothing moving: the text never leaves the
+  screen. A send that fails turns back into the open box with the text as it was, under a note that
+  says what wasn't sent and why, in the danger tone. The box's own action sends it again: a note
+  never offers a second button for what a button under it does. A screen reader hears each step from
+  the comments' one live region (`tell`): that it's sending, that it was sent, or the note. A note
+  takes focus back into its box only from a reader still there, or with focus nowhere: one who left
+  for the code keeps their place.
 - **An edit's box is the comment.** From an edit opening to its card showing what was saved, the
   comment's text shows once, in the box: the thread's card draws without that comment and offers no
   reply meanwhile.
