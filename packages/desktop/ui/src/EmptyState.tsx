@@ -84,11 +84,19 @@ function EmptyButton({ action, face }: { action: EmptyAction; face: ButtonFace }
   const off = control.off !== undefined;
   const words = label ?? control.label;
   const primary = face === 'primary';
+  const size = face === 'small' ? 'sm' : 'md';
+  const chip = control.keys && (
+    <Key
+      keys={control.keys}
+      decorative
+      className={primary && !off ? 'text-on-accent' : undefined}
+    />
+  );
   return (
     <>
       <Button
         variant={primary ? 'primary' : 'secondary'}
-        size={face === 'small' ? 'sm' : 'md'}
+        size={size}
         aria-disabled={off || undefined}
         aria-describedby={off ? why : undefined}
         hint={control.off ?? null}
@@ -99,13 +107,15 @@ function EmptyButton({ action, face }: { action: EmptyAction; face: ButtonFace }
           if (!off) runControl(command, target);
         }}
       >
-        {copied === undefined ? words : <CopyFaces said={copied ?? undefined}>{words}</CopyFaces>}
-        {control.keys && (
-          <Key
-            keys={control.keys}
-            decorative
-            className={primary && !off ? 'text-on-accent' : undefined}
-          />
+        {copied === undefined ? (
+          <>
+            {words}
+            {chip}
+          </>
+        ) : (
+          <CopyFaces said={copied ?? undefined} chip={chip} size={size}>
+            {words}
+          </CopyFaces>
         )}
       </Button>
       {off && (

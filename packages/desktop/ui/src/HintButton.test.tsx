@@ -5,6 +5,8 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, expect, onTestFinished, test, vi } from 'vitest';
 
 import { testCommands, type Ran } from '../test/commands.ts';
+import { tipOf } from '../test/dom.ts';
+import { CommandButton } from './CommandButton.tsx';
 import { holdRegistry } from './commands/control.ts';
 import { defineCommands, handlers } from './commands/declare.ts';
 import { Registry } from './commands/registry.ts';
@@ -103,6 +105,37 @@ test('a hint whose command has nothing to say is dimmed with no tooltip, and fol
     registry.history.record({ view: 'diff', at: { kind: 'none' } });
   });
   expect(button.hasAttribute('aria-disabled')).toBe(false);
+});
+
+/** The tooltip of the button `node` draws, once the pointer rests on it. */
+function tipOn(node: ReactNode): string | undefined {
+  return tipOf(draw(node).querySelector('button')!);
+}
+
+test('a command’s button has a tooltip only where it says more than the button does', () => {
+  const declarations = defineCommands('app', {
+    add: { label: 'Add', group: 'App', keys: [] },
+    open: { label: 'Open the file', group: 'App', keys: ['cmd+o'] },
+  });
+  let can: true | string = true;
+  const registry = new Registry({
+    system: 'mac',
+    commands: handlers(declarations, {
+      add: { run() {}, enabled: () => can },
+      open: { run() {} },
+    }),
+  });
+  release = holdRegistry(registry);
+  // Its words are its label, and it has no key: the tooltip would only say them again.
+  expect(tipOn(<CommandButton command="app.add" />)).toBeUndefined();
+  expect(tipOn(<CommandButton command="app.add">Add</CommandButton>)).toBeUndefined();
+  // A key, shorter words, or words of its own, it gives in its tooltip.
+  expect(tipOn(<CommandButton command="app.open" />)).toBe('Open the file⌘O');
+  expect(tipOn(<CommandButton command="app.add">+</CommandButton>)).toBe('Add');
+  expect(tipOn(<CommandButton command="app.add" hint="Add another" />)).toBe('Add another');
+  // Why it can't run, always.
+  can = 'Offline';
+  expect(tipOn(<CommandButton command="app.add" />)).toBe('Offline');
 });
 
 test('a control is drawn again only when what it shows changes, not at each step of the history', () => {

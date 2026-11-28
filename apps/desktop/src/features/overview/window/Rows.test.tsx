@@ -169,7 +169,11 @@ function faceOf(copy: HTMLButtonElement): string | undefined {
   const shown = [...copy.querySelectorAll('.inline-grid > span')].find(
     (face) => !face.classList.contains('invisible'),
   );
-  return shown?.textContent ?? undefined;
+  // Each face holds the key's chip after its words.
+  const words = shown?.cloneNode(true);
+  if (!(words instanceof Element)) return undefined;
+  for (const chip of words.querySelectorAll('kbd')) chip.remove();
+  return words.textContent;
 }
 
 function click(element: Element): void {
@@ -582,7 +586,13 @@ describe('Settings’ row for the command that installs the skill', () => {
       'The overview skill installs from a terminal.',
     );
     const copy = copyButton();
-    expect([...copy.querySelectorAll('kbd')].map((each) => each.textContent)).toEqual(['y', 'c']);
+    // After the words that show, in the face that shows them.
+    const shown = copy.querySelector('.inline-grid > span:not(.invisible)');
+    expect(shown?.firstChild?.textContent).toBe('Copy');
+    expect([...(shown?.querySelectorAll('kbd') ?? [])].map((each) => each.textContent)).toEqual([
+      'y',
+      'c',
+    ]);
     expect(copy.getAttribute('aria-description')).toBe('Keys y then c');
   });
 

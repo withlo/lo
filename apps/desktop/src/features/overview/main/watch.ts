@@ -1,11 +1,12 @@
 // A pull request's tab's overview in main: the ref `refs/lo/pr/<n>`, read in the pull request's
 // repository, then in its fork, through GitHub's REST API as the tab's account, with each answer's
 // ETag, so a read that finds nothing changed costs nothing. It's read as the tab is shown and as Lo
-// comes to the front (once in 30 s at most), and again every 30 s while the tab is on screen and Lo
-// is in front (every 5 minutes behind other windows), never sooner than GitHub's `x-poll-interval`
-// asks; a public pull request opened without an account is read once. A commit Lo hasn't seen is
-// read whole before it's offered, and a newer one never takes the place of the one on screen until
-// it's loaded. What was read is kept, so the overview shows at once the next time, offline too.
+// comes back on screen (once in 30 s at most), and again every 30 s while the tab is on screen and
+// Lo is, in front or behind another window (every 5 minutes while Lo is off screen), never sooner
+// than GitHub's `x-poll-interval` asks; a public pull request opened without an account is read
+// once. A commit Lo hasn't seen is read whole before it's offered, and a newer one never takes the
+// place of the one on screen until it's loaded. What was read is kept, so the overview shows at
+// once the next time, offline too.
 //
 // The tab opens on its overview when it has one to show, deciding within a bound, so what that
 // waits for goes first: as the tab is shown, the ref is read at once, in the pull request's own
@@ -52,9 +53,12 @@ import type { SavedRefs } from './saved.ts';
 import { SinceReads } from './since.ts';
 import { BlockTexts } from './texts.ts';
 
-/** How often the ref is read while the tab is on screen and Lo is in front, in milliseconds. */
+/**
+ * How often the ref is read while the tab is on screen and Lo is, in front or behind another
+ * window, in milliseconds.
+ */
 export const FOREGROUND_EVERY = 30_000;
-/** How often while Lo is behind other windows. */
+/** How often while Lo is off screen: minimized, hidden or behind a locked screen. */
 export const BACKGROUND_EVERY = 5 * 60_000;
 
 /** What a tab's overview reads with. */
@@ -207,9 +211,9 @@ export class OverviewTab {
   }
 
   /**
-   * Lo came to the front, which reads the ref at once if it hasn't been read in the last 30 s, so a
-   * new overview shows promptly, unless GitHub asked Lo to wait for the rate limit; or it went
-   * behind another window. Coming to the front often reads no more often than that.
+   * Lo came back on screen, which reads the ref at once if it hasn't been read in the last 30 s, so
+   * a new overview shows promptly, unless GitHub asked Lo to wait for the rate limit; or it went off
+   * screen. Coming back often reads no more often than that.
    */
   setForeground(foreground: boolean): void {
     if (this.#closed || foreground === this.#foreground) return;
@@ -673,7 +677,7 @@ export class OverviewTab {
 
   /**
    * Reads the ref again when it's next due, while the tab is on screen: 30 s after the last read,
-   * or 5 minutes behind other windows, and never sooner than GitHub's `x-poll-interval` asked. A
+   * or 5 minutes while Lo is off screen, and never sooner than GitHub's `x-poll-interval` asked. A
    * public pull request read once isn't read again, and a failure waits as long as it said.
    */
   #schedule(): void {

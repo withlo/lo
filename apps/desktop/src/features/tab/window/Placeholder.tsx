@@ -72,6 +72,15 @@ export function useAllWaiting(tab: string, views: readonly string[]): boolean {
   });
 }
 
+/**
+ * Whether middle view `view` of tab `tab` draws only a placeholder, as a function, re-rendering as
+ * that changes for any of the tab's views.
+ */
+export function useWaiting(tab: string): (view: string) => boolean {
+  const waiting = useStore(waitingViews, (all) => all.get(tab));
+  return useCallback((view: string) => (waiting?.get(view) ?? 0) > 0, [waiting]);
+}
+
 /** The room a held mark keeps from its box's edges: enough for it, its line and Cancel. */
 const HELD_MARGIN = 72;
 
