@@ -48,7 +48,7 @@ test('is the commit `commit` writes of its files', async () => {
       GIT_COMMITTER_EMAIL: '353226052+rozed-bot@users.noreply.github.com',
       GIT_COMMITTER_DATE: '2026-11-11T09:30:00Z',
     }),
-    APP_PULL.number,
+    { pr: APP_PULL.number },
     [ARTIFACT, 'figures/flow.svg'].map((path) => ({
       path,
       bytes: readFileSync(join(root.dir, 'overview', path)),

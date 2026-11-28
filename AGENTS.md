@@ -939,11 +939,30 @@ status bar.
   after the first reads of the view on screen.
 - The head on screen is GitHub's when the tab opened. A newer push says so in a banner, and moves
   nothing until it's loaded.
+- `⌘R`, and `F5` on both systems (Ctrl+R stays Vim's `⌃r` on Linux), reads the tab on screen again
+  at once (`tab.refresh`), whatever its interval, and never reloads the window. Main asks each part
+  of the tab through `TabService.onRefresh`: a pull request's tab reads its pull request
+  (`Poller.refresh`, whose poll goes ahead of every poll that's merely due and the offline backoff,
+  fetches the details whatever the check says, and runs every read kept again with what it has, as
+  the 5-minute refresh does), then shows the newer push, if there is one; the overview reads its ref
+  as Try again does; a merge queue's tab reads its queue as Check again does. What the middle views
+  on screen show goes first: the window names them (`front`), the parts that draw them read before
+  the rest (`shows` in `onRefresh`), and the poller runs their reads ahead of the others (`first`).
+  A tab whose stack's tree is drawn reads its repository's open pull requests last (`list`). Its
+  requests take their turns in the account's queue, and the rate limit holds them as it holds polls.
+  A refresh that fails while GitHub is out of reach leaves the backoff as it was, and the reads it
+  runs again go at once, whatever a run already under way or the cache says. The tab's mark in the
+  strip turns until every part is in or has failed, and for `MARKED_MS` (400 ms) from the press at
+  least, so an answer that's in at once still shows it; a press meanwhile asks nothing more. Recent
+  and Settings read nothing from GitHub, so it does nothing there.
 - The `tab.open` setting says which middle view a pull request's tab opens on: the overview, the
   timeline or the diff. A tab that opens on the overview waits for it, up to `HOLD_LIMIT`, and goes
   to the timeline, where the description is first, when there's none or it's late, drawing nothing
   of the overview on the way: the overview's view draws the tab's placeholder until it's gone from
-  the screen, and the timeline takes that wait over at once. The tab keeps its middle view by id
+  the screen, and the timeline takes that wait over at once. Where it goes there before the wait
+  shows (`LOADING_DELAY_MS` from the wait's start), the header's view switch goes there at once too,
+  as if the tab had opened there (`showInstead(tab, true)`, `wentAtOnce`); later, its thumb slides
+  there, as it does for a view the reader picks. The tab keeps its middle view by id
   (`Panels.middle`): while that view isn't there, as the overview isn't with `overview.on` off, the
   timeline stands in, and the tab goes back to it when it returns. The key `tab.open` replaced,
   `overview.open`, stays declared, file-only: main carries a `diff` saved there over once, while the
@@ -1491,9 +1510,9 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
   or else the first row on screen. When the keyboard's row goes, as a comment deleted, the keyboard
   moves to its neighbour, with nothing scrolled.
 - The box at the end comments on the pull request itself, and your comments there have Edit and
-  Delete (`i`, `dd`), drawn through the comments feature's `PullCommentBox`, `PullCommentEdit` and
-  `PullCommentNote`. `window/yours.ts` says which row a key acts on, and refuses the rest in Lo's
-  words.
+  Delete (`i`, `dd`), in the row's menu a post's `shy` `⋯` opens, drawn through the comments
+  feature's `PullCommentBox`, `PullCommentEdit` and `PullCommentNote`. `window/yours.ts` says which
+  row a key acts on, and refuses the rest in Lo's words.
 
 ### Posts
 
@@ -1654,11 +1673,13 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
 ### Acting on review threads
 
 On a thread in the diff, `r` replies, `x` resolves or unresolves it, `i` edits your newest comment
-and `dd` deletes it, as do the card's buttons and its right-click menu (`window/acts.ts`). A key
-acts on the thread `]t` landed on, or the only one the view has drawn on the cursor's line or under
-the file's header (`threadsDrawn`), never one placed there that hasn't come on screen yet. `]t`
-stops at each drawn thread, so one of several on a line, or on a file, can be picked. The threads
-panel's `x` resolves the thread the keyboard is on, through the same function.
+and `dd` deletes it, as do the card's Reply and Resolve and its right-click menu (`window/acts.ts`).
+A right-click on one of your comments, or its own `⋯`, opens that menu with the comment on its
+target (`ThreadTarget.comment`, from `commentIn`), so Edit and Delete act on it, or say why not. A
+key acts on the thread `]t` landed on, or the only one the view has drawn on the cursor's line or
+under the file's header (`threadsDrawn`), never one placed there that hasn't come on screen yet.
+`]t` stops at each drawn thread, so one of several on a line, or on a file, can be picked. The
+threads panel's `x` resolves the thread the keyboard is on, through the same function.
 
 - A reply's box and an edit's are comment boxes, kept by their thread (`reply` and `edit` places),
   and drawn right after the thread's card. The code view keeps a box for each place and name, so a

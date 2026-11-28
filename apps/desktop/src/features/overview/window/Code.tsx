@@ -13,6 +13,7 @@ import {
   codeTypeface,
   createExcerptView,
   createFileView,
+  type ExcerptEvents,
   type ExcerptView,
   type FileView,
   type RenderPopover,
@@ -40,6 +41,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 
+import { openMenu } from '../../../window/commands/menus.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { useLocalCopy, usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { findFile, showFile } from '../../tree/window/shared.ts';
@@ -101,6 +103,18 @@ const QUIET = {
   mode() {},
   jumped() {},
   menu() {},
+};
+
+/**
+ * The events of a code block's excerpt: a right-click on a thread, its mark or one of its comments,
+ * and the `⋯` on its card or on your comment, open the thread's menu, as in the diff. Nothing else
+ * acts yet.
+ */
+const EXCERPT: ExcerptEvents = {
+  ...QUIET,
+  menu(target, x, y) {
+    if (target.kind === 'thread') openMenu(target, { x, y });
+  },
 };
 
 /** No lines changed since. */
@@ -344,7 +358,7 @@ function ExcerptCode({
         nonce: page.nonce,
         threads: blockThreader()?.mode?.() ?? 'between',
       },
-      QUIET,
+      EXCERPT,
     );
     drawnView.current = view;
     // `yy` copies from it.

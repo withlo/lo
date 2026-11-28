@@ -14,6 +14,7 @@ import {
   vi,
 } from 'vitest';
 
+import { drawnLane } from '../../test/lanes.ts';
 import { findScope, isKeySource, KEY_EVENT } from '../commands/index.ts';
 import { SHOW_EVENT, shownIn } from '../reveal.ts';
 import type {
@@ -665,21 +666,14 @@ function drawnThreads(): (string | undefined)[] {
   );
 }
 
-/** The threads' lane by each line or block it marks: each piece's ends, the tick, the bubble. */
+/** The threads' lane by each line or block it marks: each stem's piece, the tick, the bubble. */
 function lane(): string[] {
-  return [...parent!.querySelectorAll('.lo-threadlane .lo-lanemark')].map((mark) => {
-    const parts = [...mark.querySelectorAll('.lo-bracket')].map((piece) => {
-      if (piece.classList.contains('lo-bracket--tick')) return 'tick';
-      const end = (which: 'from' | 'to') =>
-        ['edge', 'mid', 'bubble'].find((kind) =>
-          piece.classList.contains(`lo-bracket--${which}-${kind}`),
-        );
-      return `${end('from')}-${end('to')}`;
-    });
-    const bubble = mark.querySelector('.lo-bubble');
-    if (bubble) parts.push(bubble.getAttribute('aria-label') ?? '');
-    return parts.join(', ');
-  });
+  return drawnLane(parent, 'threads');
+}
+
+/** The excerpt's lines on the picked ground, by their text. */
+function picked(): (string | null)[] {
+  return [...parent!.querySelectorAll('.cm-line.lo-picked')].map((line) => line.textContent);
 }
 
 /** A thread under new line `line` from new line `from`, unresolved. */
@@ -698,7 +692,7 @@ function ranged(id: string, from: number, line: number): ThreadView {
 const bubble = (): HTMLElement => parent!.querySelector<HTMLElement>('.lo-threadlane .lo-bubble')!;
 
 describe('the threads’ lane', () => {
-  test('beside the numbers: a bubble on a thread’s line, a bracket up its range', () => {
+  test('beside the numbers: a bubble on a thread’s last line, a stem up its range', () => {
     const shown = open();
     const lanes = [...parent!.querySelectorAll('.cm-gutter')].map((gutter) =>
       gutter.classList.contains('lo-threadlane') ? 'threads' : 'numbers',
@@ -706,17 +700,17 @@ describe('the threads’ lane', () => {
     expect(lanes).toEqual(['numbers', 'numbers', 'threads']);
     shown.setThreads([ranged('here', 6, 8)], plain().render);
     expect(lane()).toEqual([
-      'mid-edge, tick',
-      'edge-edge',
-      'edge-bubble, Unresolved thread · lines 6–8',
+      's0 mid-edge amber, tick s0 amber',
+      's0 edge-edge amber',
+      's0 edge-mark amber, amber Unresolved thread · lines 6–8',
     ]);
     // From above the first line shown, it starts there, with no tick: new 4, old 5, new 5 and 6.
     shown.setThreads([ranged('here', 2, 6)], plain().render);
     expect(lane()).toEqual([
-      'edge-edge',
-      'edge-edge',
-      'edge-edge',
-      'edge-bubble, Unresolved thread · lines 2–6',
+      's0 edge-edge amber',
+      's0 edge-edge amber',
+      's0 edge-edge amber',
+      's0 edge-mark amber, amber Unresolved thread · lines 2–6',
     ]);
   });
 
@@ -810,6 +804,39 @@ describe('threads and comment boxes', () => {
     expect(on.close).toHaveBeenCalledWith(true);
     expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
     expect(() => shown.compose(at(19), '', on)).toThrow('A comment box goes under a line');
+  });
+
+  test('a new comment’s lines take the picked ground while its box has focus, and a reply’s none', async () => {
+    const shown = open();
+    shown.setThreads([thread('here', 6)], plain().render);
+    shown.compose({ thread: 'here' }, 'Reply', composerEvents());
+    // Focus going into a box lights what it's in once it's there.
+    await Promise.resolve();
+    expect(picked()).toEqual([]);
+    shown.compose({ file: 'a', side: 'new', from: 9, to: 11 }, 'New', composerEvents());
+    await Promise.resolve();
+    // New lines 9 to 11, all three.
+    expect(picked()).toEqual(added.slice(8, 11));
+  });
+
+  test('a box on a thread’s line is a reply, whose line isn’t picked', async () => {
+    const shown = open();
+    shown.setThreads([thread('here', 6)], plain().render);
+    shown.compose(at(6), 'On its line', composerEvents());
+    await Promise.resolve();
+    expect(picked()).toEqual([]);
+  });
+
+  test('a new comment from above the first line shown picks the lines from the top', async () => {
+    const shown = open();
+    // From new line 2, above the excerpt's first, new line 4, to new line 5.
+    shown.compose({ file: 'a', side: 'new', from: 2, to: 5 }, 'New', composerEvents());
+    await Promise.resolve();
+    const { doc } = editor().state;
+    const top: string[] = [];
+    for (let line = 1; top.at(-1) !== added[4]; line++) top.push(doc.line(line).text);
+    expect(picked()).toEqual(top);
+    expect(top.length).toBeGreaterThan(1);
   });
 
   test('threads that come on a line on screen wait until the reader acts in the excerpt, or it’s off screen', async () => {
@@ -1113,6 +1140,7 @@ function inScroll(count: number) {
   const shown = Array.from({ length: count }, (_, index) => {
     const host = document.createElement('div');
     scroller.append(host);
+    const on = events();
     const excerpt = createExcerptView(
       host,
       {
@@ -1125,7 +1153,7 @@ function inScroll(count: number) {
         nonce: 'excerpt-nonce',
         threads: 'beside',
       },
-      events(),
+      on,
     );
     for (const content of host.querySelectorAll<HTMLElement>('.cm-content')) content.tabIndex = 0;
     excerpt.setThreads(
@@ -1134,7 +1162,7 @@ function inScroll(count: number) {
       { popover: render },
     );
     const mark = () => host.querySelector<HTMLElement>('.lo-threadlane .lo-bubble')!;
-    return { excerpt, host, mark };
+    return { excerpt, host, mark, on };
   });
   onTestFinished(() => {
     for (const { excerpt } of shown) excerpt.destroy();
@@ -1251,6 +1279,27 @@ describe('threads beside lines', () => {
     expect(second.excerpt.pinned()).toEqual(['t1']);
     second.excerpt.destroy();
     expect(layers()).toHaveLength(0);
+  });
+
+  test('a right-click in the popover they share, out in their scroll, is the menu of its thread, or its comment, from the excerpt it’s open for', () => {
+    const { shown, layers } = inScroll(2);
+    const [first, second] = [shown[0]!, shown[1]!];
+    second.mark().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const card = layers()[0]!.querySelector('[data-thread-id="t1"]')!;
+    const onCard = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    card.dispatchEvent(onCard);
+    expect(onCard.defaultPrevented).toBe(true);
+    expect(second.on.menu).toHaveBeenLastCalledWith({ kind: 'thread', thread: 't1' }, 0, 0);
+    // As a comment's own `⋯` asks: the menu whose Edit and Delete act on that comment.
+    card
+      .querySelector('[data-comment]')!
+      .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    expect(second.on.menu).toHaveBeenLastCalledWith(
+      { kind: 'thread', thread: 't1', comment: 't1.1' },
+      0,
+      0,
+    );
+    expect(first.on.menu).not.toHaveBeenCalled();
   });
 
   test('the popover they share takes the listeners it put on the page and the window with the last', () => {

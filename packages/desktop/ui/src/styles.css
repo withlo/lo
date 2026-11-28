@@ -200,11 +200,15 @@
 
 /*
  * A quote's or an alert's blocks in a comment's prose (`lo-prose--comment`): 16 px apart, as GitHub
- * spaces them, over the tighter spacing they have elsewhere.
+ * spaces them, over the tighter spacing they have elsewhere. An alert's title (`role="note"`'s first
+ * block) is 8 px over the block after it, the title of what follows rather than a block of its own.
  */
 @utility comment-blocks {
   :where(.lo-prose--comment) & > :not(:last-child) {
     margin-block-end: var(--lo-sp-16);
+  }
+  :where(.lo-prose--comment) &[role='note'] > :first-child:not(:last-child) {
+    margin-block-end: var(--lo-sp-8);
   }
 }
 
@@ -333,8 +337,15 @@
    off. */
 
 /* Tint: hover, press and selection change color, and nothing else. */
+/* A ground laid over a row's own, as a code view's lit lines take (`--lo-ground`), tints too. */
+@property --lo-ground {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
 @utility move-tint {
-  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+  transition-property:
+    color, background-color, border-color, text-decoration-color, fill, stroke, --lo-ground;
   transition-duration: var(--lo-dur-fast);
   transition-timing-function: var(--lo-ease-out);
 }
@@ -645,6 +656,23 @@
   [data-key-room][data-focused] & {
     visibility: visible;
     animation: lo-swap var(--lo-dur-fast) var(--lo-ease-out);
+  }
+}
+
+/* A control every card or row of a list repeats, its secondary actions' `⋯` (`MoreButton`'s `shy`):
+   it shows only on the one under the pointer, the one the keyboard is on, the one with focus in it,
+   and while the menu it opened is open. A scope is the nearest element marked `data-shy-scope`, and
+   it's the keyboard's while it has `data-focused`. Hidden, it keeps its room, so nothing beside it
+   moves as it shows, and it's never out of `Tab`'s reach: focus on it shows it. It comes and goes
+   in a hover's Tint. */
+@utility shy {
+  opacity: 0;
+  transition-property: opacity;
+  transition-duration: var(--lo-dur-fast);
+  transition-timing-function: var(--lo-ease-out);
+  [data-shy-scope]:is(:hover, [data-focused], :focus-visible, :has(:focus-visible)) &,
+  &:has([aria-expanded='true']) {
+    opacity: 1;
   }
 }
 

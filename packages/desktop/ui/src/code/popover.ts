@@ -232,8 +232,8 @@ export interface PopHost<At extends PopAt> {
   focusLine(at: At): void;
   /** Scrolls the pane of `at`'s lines by `by`, down or up, as the view's own scroll. */
   scrollBy(by: number, at: At): void;
-  /** Whether `target` is on `at`'s mark. */
-  onMark(target: Element, at: At): boolean;
+  /** Whether the press `event` is on `at`'s mark. */
+  onMark(event: { readonly target: EventTarget | null; readonly clientX: number }, at: At): boolean;
   /**
    * Whether what it shows at `at` holds a comment box being written: only the box closing closes
    * it then, so a press outside leaves it be.
@@ -246,6 +246,12 @@ export interface PopHost<At extends PopAt> {
   release(at: At): void;
   /** What it shows at `at` was drawn, or drawn again: a comment box goes in the slot drawn for it. */
   drawn(at: At): void;
+  /**
+   * A right-click at `x`, `y` on `target`, in what it shows at `at`, where the view's own right-click
+   * doesn't reach, as in the popover an overview's code blocks share, out in their scroll: the menu
+   * of the thread it's on, or of its comment. Says whether it opened one.
+   */
+  menu?(target: Element, x: number, y: number, at: At): boolean;
 }
 
 /** Whether `view` shows nothing: no threads, and no comment box. */
@@ -333,6 +339,7 @@ export class ThreadPop<At extends PopAt> implements Popover<At> {
     this.dom.addEventListener('focusin', () => {
       this.#focusedIn = true;
     });
+    this.dom.addEventListener('contextmenu', (event) => this.#menu(event));
     // Focus taken elsewhere: not focus lost as what it was on went.
     this.dom.addEventListener('focusout', (event) => {
       if (event.relatedTarget !== null) this.#focusedIn = false;
@@ -690,6 +697,14 @@ export class ThreadPop<At extends PopAt> implements Popover<At> {
     }, CROSS);
   }
 
+  /** A right-click in it, or a `⋯`'s: the menu its view opens for what it's on, if the view's own doesn't. */
+  #menu(event: MouseEvent): void {
+    const at = this.#at;
+    const { target } = event;
+    if (event.defaultPrevented || !at || !(target instanceof Element)) return;
+    if (this.#host.menu?.(target, event.clientX, event.clientY, at)) event.preventDefault();
+  }
+
   /**
    * A press anywhere: one outside it and its mark closes it, unless it holds a comment box being
    * written, which only the box closing closes.
@@ -698,7 +713,8 @@ export class ThreadPop<At extends PopAt> implements Popover<At> {
     if (this.#state === 'closed' || !this.#at) return;
     const { target } = event;
     if (!(target instanceof Element) || this.dom.contains(target)) return;
-    if (this.#host.onMark(target, this.#at) || this.#host.holds(this.#at)) return;
+    const x = event instanceof MouseEvent ? event.clientX : 0;
+    if (this.#host.onMark({ target, clientX: x }, this.#at) || this.#host.holds(this.#at)) return;
     // What it opened over everything, as its thread's menu, is its own.
     if (target.closest(OVER) !== null) return;
     this.close(false);
@@ -820,6 +836,7 @@ class SharedPop {
       holds: (owned) => owned.member.host.holds(owned.at),
       release: (owned) => owned.member.host.release(owned.at),
       drawn: (owned) => owned.member.host.drawn(owned.at),
+      menu: (target, x, y, owned) => owned.member.host.menu?.(target, x, y, owned.at) ?? false,
     });
   }
 

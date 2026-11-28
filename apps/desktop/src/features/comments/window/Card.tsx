@@ -1,7 +1,8 @@
 // A review thread's card in a diff, drawn in the element the code view makes for it: its comments,
 // each with its author's avatar, when it was written and its text, and its state; its buttons,
-// which reply, resolve or unresolve it, and edit or delete your comments, where GitHub lets you;
-// and, under it, how a change asked of it stands while GitHub's answer was lost. A comment's text
+// which reply, resolve or unresolve it, where GitHub lets you, and the `⋯` of each of your comments,
+// whose menu, the code view's right-click on it, edits or deletes it; and, under it, how a change
+// asked of it stands while GitHub's answer was lost. A comment's text
 // is drawn as GitHub renders it, through `Post`.
 
 import { lineRefText } from '@lo/review';
@@ -21,9 +22,7 @@ import {
   checkAgain,
   closeAct,
   closedActs,
-  edit,
   noteKey,
-  remove,
   reply,
   resolveThread,
   threw,
@@ -171,8 +170,6 @@ export function Card({
         actions={{
           onReply: () => reply(tab, thread),
           onResolve: () => void resolveThread(tab, row),
-          onEdit: (comment) => void edit(tab, thread, comment),
-          onDelete: (comment) => remove(tab, thread, comment),
         }}
       />
       {thrown ? (
@@ -287,13 +284,13 @@ export function ActCallout({
   );
 }
 
-/** What a thread's card's buttons do. */
+/**
+ * What a thread's card's buttons do. Your comments' Edit and Delete are in their `⋯` menu, the
+ * code view's right-click on the comment, which runs the keys' commands on it.
+ */
 export interface CardActions {
   readonly onReply: () => void;
   readonly onResolve: () => void;
-  /** Edit or Delete was pressed on one of your comments, by its id. */
-  readonly onEdit: (comment: string) => void;
-  readonly onDelete: (comment: string) => void;
 }
 
 /** A thread's card, from what main sent of it. */
@@ -417,8 +414,6 @@ export function ThreadCard({
         toggle: keysOf('diff.toggleThread'),
         reply: keysOf('comments.reply'),
         resolve: keysOf('comments.resolve'),
-        edit: keysOf('comments.edit'),
-        delete: keysOf('comments.remove'),
       }}
       // Every card is drawn in a code view, whose right-click on it opens the thread's menu.
       menu
@@ -430,8 +425,6 @@ export function ThreadCard({
       onToggle={onToggle}
       onReply={actions?.onReply}
       onResolve={actions?.onResolve}
-      onEdit={actions?.onEdit}
-      onDelete={actions?.onDelete}
     />
   );
 }

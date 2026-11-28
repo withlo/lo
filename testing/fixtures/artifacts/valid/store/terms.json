@@ -1,0 +1,38 @@
+{
+  "format": 1,
+  "terms": {
+    "tenant": {
+      "term": "Tenant",
+      "definition": "the accounts the quota is counted for.",
+      "aliases": [
+        "tenants"
+      ],
+      "written": "agent",
+      "by": {
+        "login": "octocat"
+      },
+      "from": "#4790",
+      "at": "2026-11-20T09:00:00Z"
+    },
+    "credit": {
+      "term": "Credit",
+      "definition": "what a request spends.",
+      "written": "human",
+      "by": {
+        "login": "mona"
+      },
+      "from": "lo",
+      "at": "2026-11-20T09:00:00Z"
+    },
+    "quota": {
+      "term": "Quota",
+      "definition": "how many requests a tenant may make in a minute.",
+      "written": "agent",
+      "by": {
+        "login": "octocat"
+      },
+      "from": "#4790",
+      "at": "2026-11-20T09:00:00Z"
+    }
+  }
+}

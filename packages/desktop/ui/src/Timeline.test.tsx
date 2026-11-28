@@ -412,33 +412,40 @@ describe('Timeline', () => {
     expect(unfocused.hasAttribute('aria-activedescendant')).toBe(false);
   });
 
-  it('draws one of your comments with its mark, Edit and Delete and their keys, and no one else’s', () => {
-    const onEdit = vi.fn<() => void>();
-    const onDelete = vi.fn<() => void>();
+  it('draws one of your comments with its mark, and every post’s `⋯`, which opens its row’s menu', () => {
     const host = render(
       <Timeline>
-        <TimelineComment
-          author="tess-okafor"
-          when="now"
-          mine
-          keys={{ edit: ['i'], delete: ['d', 'd'] }}
-          onEdit={onEdit}
-          onDelete={onDelete}
-          body={<p>Mine.</p>}
-        />
-        <TimelineComment author="jun-park" when="now" body={<p>Theirs.</p>} />
+        <TimelineComment author="tess-okafor" when="now" mine body={<p>Mine.</p>} menu />
+        <TimelineComment author="jun-park" when="now" body={<p>Theirs.</p>} menu />
+        <TimelineReview author="jun-park" when="now" verdict="approved" menu />
+        <TimelineDescription author="ravi-k" when="3 d ago" menu />
+        <TimelineComment author="jun-park" when="now" body={<p>No menu.</p>} />
       </Timeline>,
     );
     const [mine, theirs] = [row(host, 0), row(host, 1)];
     expect(mine.textContent).toContain('tess-okafor (you) commented');
-    expect(button(mine, 'Edit').textContent).toBe('Editi');
-    expect(button(mine, 'Delete').textContent).toBe('Delete…dd');
-    click(button(mine, 'Edit'));
-    click(button(mine, 'Delete'));
-    expect(onEdit).toHaveBeenCalledOnce();
-    expect(onDelete).toHaveBeenCalledOnce();
     expect(theirs.textContent).not.toContain('(you)');
-    expect(theirs.querySelector('button')).toBeNull();
+    // No Edit or Delete drawn: they're in the menu, with their keys, as a right-click has them.
+    expect(host.textContent).not.toContain('Edit');
+    expect(host.textContent).not.toContain('Delete');
+    const mores = [0, 1, 2, 3, 4].map((at) =>
+      row(host, at).querySelector('button[aria-label="More actions"]'),
+    );
+    expect(mores.map((each) => each !== null)).toEqual([true, true, true, true, false]);
+    // Each row is what its `⋯` shows in: under the pointer, the keyboard's, or with focus in it.
+    expect([0, 1, 2, 3, 4].map((at) => row(host, at).hasAttribute('data-shy-scope'))).toEqual([
+      true,
+      true,
+      true,
+      true,
+      false,
+    ]);
+    const asked: (Element | null)[] = [];
+    host.addEventListener('contextmenu', (event) => {
+      if (event.target instanceof Element) asked.push(event.target.closest('li'));
+    });
+    click(mores[0]!);
+    expect(asked).toEqual([mine]);
   });
 
   it('shows an edit box in place of the text while a comment is edited, as no option, and holds back its buttons', () => {
@@ -450,11 +457,13 @@ describe('Timeline', () => {
           mine
           body={<p data-testid="text">Mine.</p>}
           editing={<textarea aria-label="Edit your comment" />}
+          menu
         />
       </Timeline>,
     );
     expect(host.querySelector('[data-testid="text"]')).toBeNull();
     expect(host.querySelector('textarea')).not.toBeNull();
+    // Its `⋯` steps aside meanwhile.
     expect(host.querySelector('button')).toBeNull();
     // An option's content is read as its name: while the box shows, the row isn't one.
     expect(row(host).getAttribute('role')).toBe('none');
@@ -487,13 +496,14 @@ describe('Timeline', () => {
           labels={[{ name: 'api', color: '4a8fdc' }]}
           reviewers={[{ login: 'jun-park', state: 'approved' }]}
         />
-        <TimelineComment author="jun-park" when="now" byAuthor body="text" hidden={{}} />
+        <TimelineComment author="jun-park" when="now" byAuthor body="text" hidden={{}} menu />
         <TimelineReview
           author="tess-okafor"
           when="now"
           verdict="dismissed"
           body="x"
           comments={{ count: 1 }}
+          menu
         />
         <TimelinePush actor="a" when="now" commits={[{ oid: 'abcdef0', headline: 'h' }]} />
         <TimelineForcePush actor="a" when="now" compare={{ from: 'r1', to: 'r2' }} />

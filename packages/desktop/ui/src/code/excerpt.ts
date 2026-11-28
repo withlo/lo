@@ -61,7 +61,14 @@ import type {
   ThreadView,
   VimKey,
 } from './api.ts';
-import { type At, Beside, type BesideHost, type Pane } from './beside.ts';
+import {
+  type At,
+  Beside,
+  type BesideHost,
+  isDraftKey,
+  type LaneLines,
+  type Pane,
+} from './beside.ts';
 import { CommentBox, placeKey } from './comments.ts';
 import { fileMarks } from './decorations.ts';
 import { askToShowLine, codeEditor } from './editor.ts';
@@ -81,10 +88,24 @@ import {
   vimOn,
   vimPending,
 } from './keys.ts';
-import { type LaneRange, type LaneUpdate, laneUpdate, setLane, threadLane } from './lanes.ts';
+import { laneUpdate, setLane, threadLane } from './lanes.ts';
 import { marking } from './marks.ts';
 import { type PopRoom, sharedPop } from './popover.ts';
-import { type ThreadHost, Threads } from './threads.ts';
+import {
+  type LaneUpdate,
+  lightOf,
+  type Lit,
+  litOf,
+  type LitRange,
+  type LitRows,
+  rangeUnder,
+  sameKeys,
+  sameLit,
+  sameRange,
+  setLit,
+  UNLIT,
+} from './ranges.ts';
+import { commentIn, type ThreadHost, Threads } from './threads.ts';
 import { type Tip, tips } from './tip.ts';
 import { FileNoteWidget, ThreadSizes, ThreadWidget } from './widgets.ts';
 
@@ -432,8 +453,16 @@ class Excerpt implements ExcerptView {
     );
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
     this.dom.addEventListener('click', this.#clicked);
+    // Across a lane's cell, the mark it's on is the stem nearest it, which a move can change.
     this.dom.addEventListener('pointerover', this.#hoverMark, { passive: true });
+    this.dom.addEventListener('pointermove', this.#hoverMark, { passive: true });
     this.dom.addEventListener('pointerleave', this.#hoverMark, { passive: true });
+    // What's under a still pointer changes as the view scrolls under it, which no move tells.
+    this.dom.addEventListener('pointerover', this.#pointRange, { passive: true });
+    this.dom.addEventListener('pointermove', this.#pointRange, { passive: true });
+    this.dom.addEventListener('pointerleave', this.#pointRange, { passive: true });
+    this.dom.addEventListener('focusin', this.#focusRelight);
+    this.dom.addEventListener('focusout', this.#focusRelight);
     // The reader's pointer or key in the excerpt lets go of what waits in it; in a thread, what
     // becomes of the thread's size next is theirs.
     for (const type of TOUCH) this.dom.addEventListener(type, this.#touched, { capture: true });
@@ -496,9 +525,101 @@ class Excerpt implements ExcerptView {
   #lane(): LaneUpdate {
     const { ranges, bubbles } = this.#beside.lane('inline', 0);
     const { doc } = this.#view.state;
-    const beside = this.#mode === 'beside';
-    return laneUpdate(doc, { from: 0, to: doc.length }, ranges, bubbles, false, beside);
+    return laneUpdate(doc, { from: 0, to: doc.length }, ranges, bubbles, {
+      command: false,
+      beside: this.#mode === 'beside',
+      lit: this.#lit.stems.threads,
+    });
   }
+
+  // What's lit ---------------------------------------------------------------------------------
+
+  /** What the excerpt lights now: one range's rows, and the stems in their lit colours. */
+  #lit: Lit = UNLIT;
+  /** The range the pointer is on in the excerpt: a mark, a stem, a card. */
+  #pointed: LitRange | undefined;
+  /** Between lines, the new comment's box that had focus last, while it's open. */
+  #pickedBox: CommentBox | undefined;
+  /** Between lines, the document lines each new comment's box is on, first to last. */
+  readonly #boxSpans = new Map<CommentBox, { from: number; to: number }>();
+
+  /**
+   * Lights what should be lit now, as the diff does: a popover pinned or a comment box open on a
+   * line, else what the pointer is on.
+   */
+  #relight(): void {
+    for (const box of this.#boxSpans.keys()) if (box.hasFocus) this.#pickedBox = box;
+    if (this.#pickedBox && !this.#boxSpans.has(this.#pickedBox)) this.#pickedBox = undefined;
+    const between = this.#mode === 'between' && this.#pickedBox !== undefined;
+    const lit = lightOf({
+      pinned:
+        this.#mode === 'beside'
+          ? this.#beside.pinnedLight()
+          : between
+            ? { picked: undefined }
+            : undefined,
+      focused: this.#beside.focusedCard(),
+      pointed: this.#pointed ?? this.#beside.pointedCard,
+    });
+    const was = this.#lit;
+    this.#lit = lit;
+    const rows = this.#litRows(lit);
+    if (!sameLit(litOf(this.#view.state), rows)) this.#view.dispatch({ effects: setLit.of(rows) });
+    if (!sameKeys(was.stems.threads, lit.stems.threads)) {
+      this.#view.dispatch({ effects: setLane.of([this.#lane()]) });
+    }
+  }
+
+  /** The excerpt's rows what's lit covers, as runs of its document lines, or none. */
+  #litRows(lit: Lit): LitRows | null {
+    let lines:
+      { from: { side: Side; line: number }; end: { side: Side; line: number } } | undefined;
+    if (lit.picked) {
+      if (this.#mode === 'beside') {
+        const box = this.#beside.pickedBox();
+        lines = box && { from: box.from ?? box.place, end: box.place };
+      } else {
+        const span = this.#pickedBox && this.#boxSpans.get(this.#pickedBox);
+        return span ? { rows: [span], picked: true } : null;
+      }
+    } else if (lit.range?.lane === 'threads') {
+      lines = this.#beside.linesOf(lit.range.key);
+    }
+    const covered = lines && this.#laneRange(lines.from, lines.end);
+    if (!lines || !covered) return null;
+    // A range on one side's lines leaves out the rows of the other side's between them.
+    const side = lines.from.side === lines.end.side ? lines.from.side : undefined;
+    const rows: { from: number; to: number }[] = [];
+    for (let line = covered.from; line <= covered.to; line++) {
+      if (side !== undefined && (this.#shown[side][line - 1] ?? 0) === 0) continue;
+      const last = rows.at(-1);
+      if (last && last.to === line - 1) last.to = line;
+      else rows.push({ from: line, to: line });
+    }
+    return { rows, picked: lit.picked };
+  }
+
+  /** The pointer moved, or left the excerpt: the range it's on lights at once. */
+  readonly #pointRange = (event: PointerEvent): void => {
+    let next: LitRange | undefined;
+    const { target } = event;
+    if (event.type !== 'pointerleave' && target instanceof Element) {
+      // A thread's stem or mark before a draft's in one cell, as the preview takes it.
+      const under = rangeUnder(event, (key) => !isDraftKey(key)) ?? rangeUnder(event);
+      const card = target.closest<HTMLElement>('.lo-diffthread [data-thread-id]')?.dataset.threadId;
+      if (under) next = { lane: under.kind, key: under.key };
+      else if (card !== undefined) next = { lane: 'threads', key: card };
+    }
+    if (sameRange(next, this.#pointed)) return;
+    this.#pointed = next;
+    this.#relight();
+  };
+
+  /** Focus moved in the excerpt or out of it: what it's in may light another range. */
+  readonly #focusRelight = (): void =>
+    queueMicrotask(() => {
+      if (this.dom.isConnected) this.#relight();
+    });
 
   /**
    * The document lines a range from `from` to `end` covers, as its bracket draws it: from the top
@@ -508,13 +629,18 @@ class Excerpt implements ExcerptView {
   #laneRange(
     from: { side: Side; line: number },
     end: { side: Side; line: number },
-  ): Omit<LaneRange, 'tone'> | undefined {
+  ): LaneLines | undefined {
     const last = this.#docLine(end.side, end.line);
     if (last === undefined) return undefined;
     const shown = this.#docLine(from.side, from.line);
     const start = shown ?? (from.line < this.#docLines[from.side].first ? 1 : undefined);
     if (start === undefined) return undefined;
-    return { from: Math.min(start, last), to: Math.max(start, last), tick: shown !== undefined };
+    return {
+      from: Math.min(start, last),
+      to: Math.max(start, last),
+      tick: shown !== undefined,
+      foot: true,
+    };
   }
 
   /** The line of the excerpt document line `line` shows, or, with none, the header's place. */
@@ -540,8 +666,10 @@ class Excerpt implements ExcerptView {
         return box();
       },
       nonce: this.#nonce,
-      // One popover for every excerpt in the scroll, as an overview's code blocks have.
+      // One popover for every excerpt in the scroll, as an overview's code blocks have: out in
+      // the scroll, where its own right-click doesn't reach, so the popover says what was clicked.
       popover: (pop) => sharedPop(pop),
+      menu: (target, x, y) => this.#on.menu(target, x, y),
       mode: () => this.#mode,
       threadsIn: (file) => (file === 0 ? this.#byPlace : undefined),
       fileOf: (id) => (id === this.#id ? 0 : undefined),
@@ -577,6 +705,7 @@ class Excerpt implements ExcerptView {
       },
       focusLine: (at) => this.#focusLine(this.#docLine(at.side, at.line) ?? 1),
       marksChanged: () => this.#view.dispatch({ effects: setLane.of([this.#lane()]) }),
+      relight: () => this.#relight(),
       // It folds no line, so a box's line is always shown, and nothing holds the line a box left.
       keep: () => {},
       showLine: () => {},
@@ -639,7 +768,7 @@ class Excerpt implements ExcerptView {
         runControl(command, target);
         return;
       }
-      const marked = this.#beside.markOf(event.target);
+      const marked = this.#beside.markOf(event);
       if (!marked || event.button !== 0) return;
       event.preventDefault();
       this.#beside.clicked(marked.at);
@@ -895,6 +1024,18 @@ class Excerpt implements ExcerptView {
     this.#rooms.get(line)?.destroy();
     this.#rooms.delete(line);
     this.#boxes.set(line, box);
+    // A new comment's lines are picked while it has focus, or had it last, from the top where they
+    // start above the first line shown. A box on a thread's line is a reply.
+    if (thread === undefined && !('thread' in at)) {
+      const span =
+        'line' in at
+          ? undefined
+          : this.#laneRange(
+              { side: at.side, line: Math.min(at.from, at.to) },
+              { side: at.side, line: Math.max(at.from, at.to) },
+            );
+      this.#boxSpans.set(box, { from: Math.min(span?.from ?? line, line), to: line });
+    }
     // The lines `v` selected are the box's now.
     if (focus) endSelection(this.#view);
     this.#drawBlocks();
@@ -989,6 +1130,7 @@ class Excerpt implements ExcerptView {
     const [line] = found;
     const focused = how === 'escape' || box.dom.contains(document.activeElement);
     this.#boxes.delete(line);
+    this.#boxSpans.delete(box);
     const kept = (how === 'sent' || how === 'landed') && this.#drawn && this.#lineOnScreen(line);
     if (kept) this.#rooms.set(line, box);
     if (kept && how === 'landed') {
@@ -1003,6 +1145,8 @@ class Excerpt implements ExcerptView {
     this.#drawBlocks();
     if (focused) this.#focusLine(line);
     if (!kept) box.destroy();
+    // Its lines are no longer picked.
+    this.#relight();
   }
 
   /** Gives focus to document line `line`, the cursor on it. */
@@ -1280,7 +1424,13 @@ class Excerpt implements ExcerptView {
     this.#beside.destroy();
     this.dom.removeEventListener('click', this.#clicked);
     this.dom.removeEventListener('pointerover', this.#hoverMark);
+    this.dom.removeEventListener('pointermove', this.#hoverMark);
     this.dom.removeEventListener('pointerleave', this.#hoverMark);
+    this.dom.removeEventListener('pointerover', this.#pointRange);
+    this.dom.removeEventListener('pointermove', this.#pointRange);
+    this.dom.removeEventListener('pointerleave', this.#pointRange);
+    this.dom.removeEventListener('focusin', this.#focusRelight);
+    this.dom.removeEventListener('focusout', this.#focusRelight);
     for (const type of TOUCH) this.dom.removeEventListener(type, this.#touched, { capture: true });
     document.removeEventListener('scroll', this.#scrolled, { capture: true });
     for (const type of INPUT) {
@@ -1292,6 +1442,7 @@ class Excerpt implements ExcerptView {
     for (const stop of this.#stops) stop();
     for (const box of this.#boxes.values()) box.destroy();
     this.#boxes.clear();
+    this.#boxSpans.clear();
     this.#hosts.destroy();
     this.#sizes?.destroy();
     this.#view.destroy();
@@ -1436,15 +1587,22 @@ class Excerpt implements ExcerptView {
     const thread = this.#hosts.around(target);
     if (thread) {
       event.preventDefault();
+      // On a comment of it, the comment's own menu: what Edit and Delete act on.
+      const comment = commentIn(thread.dom, target);
       this.#on.menu(
-        { kind: 'thread', thread: thread.id, collapsed: !thread.open },
+        {
+          kind: 'thread',
+          thread: thread.id,
+          collapsed: !thread.open,
+          ...(comment === undefined ? {} : { comment }),
+        },
         event.clientX,
         event.clientY,
       );
       return;
     }
     // A mark beside lines: its thread's menu, as on its card.
-    const marked = this.#beside.markOf(target);
+    const marked = this.#beside.markOf(event);
     if (marked) {
       event.preventDefault();
       this.#on.menu({ kind: 'thread', thread: marked.thread }, event.clientX, event.clientY);

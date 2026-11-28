@@ -33,7 +33,7 @@ import {
   lineNumbers,
   ViewPlugin,
 } from '@codemirror/view';
-import type { FileDiff, MovedBlock, RowBlock } from '@lo/diff';
+import type { FileDiff, MovedBlock } from '@lo/diff';
 
 import {
   controlOf,
@@ -109,6 +109,9 @@ import {
   type At,
   Beside,
   type BesideHost,
+  draftKey,
+  isDraftKey,
+  type LaneLines,
   listed,
   type Pane,
   placeOf,
@@ -150,20 +153,28 @@ import {
   vimOn,
   vimPending,
 } from './keys.ts';
-import { type LaneRange, type LaneUpdate, laneUpdate, setLane, threadLane } from './lanes.ts';
+import { laneUpdate, setLane, threadLane } from './lanes.ts';
 import { Layout } from './layout.ts';
 import { swapping } from './lines.ts';
-import {
-  type MarkedLines,
-  type MarkedSpan,
-  markerGutter,
-  markerOf,
-  startingIn,
-} from './markers.ts';
+import { markerGutter, type NoteEnds, notesLaneUpdate, setNotesLane } from './markers.ts';
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
 import { otherLine } from './moves.ts';
 import { PeekBlock, peekShownAt } from './peek.ts';
 import { type PopRoom, ThreadPop } from './popover.ts';
+import {
+  type LaneRange,
+  type Lights,
+  type Lit,
+  litOf,
+  lightOf,
+  type LitRange,
+  type LitRows,
+  rangeUnder,
+  sameLit,
+  sameRange,
+  setLit,
+  UNLIT,
+} from './ranges.ts';
 import {
   collapsedRuns,
   type FileRows,
@@ -177,7 +188,7 @@ import {
   shiftRows,
   shownRuns,
 } from './rows.ts';
-import { type ThreadHost, Threads } from './threads.ts';
+import { commentIn, type ThreadHost, Threads } from './threads.ts';
 import {
   type BoxHost,
   CollapsedWidget,
@@ -335,6 +346,8 @@ class NumberMarker extends GutterMarker {
 interface OpenBox {
   box: CommentBox;
   place: At;
+  /** Its span's first line, where it's on more than one. */
+  from?: { readonly side: Side; readonly line: number } | undefined;
   /** Whether the threads under its line changed since it opened, as when what it sent came. */
   answered?: boolean;
 }
@@ -388,7 +401,13 @@ function lineAt(file: number, key: string): At {
 type Letting = 'off' | 'all';
 
 /** An overview mark, on one side of a file by its index, as the view keeps it. */
-interface OverviewAt extends MarkedLines {
+interface OverviewAt {
+  /** Its name, by its file, side, lines and block. */
+  key: string;
+  from: number;
+  to: number;
+  /** Where it comes in the overview's order, among the marks the view was given. */
+  order: number;
   file: number;
   side: Side;
   block: string;
@@ -729,9 +748,19 @@ class View implements DiffView {
     this.dom.addEventListener('click', this.#runControl);
     this.dom.addEventListener('click', this.#openMore);
     // Beside lines, a thread's mark previews its popover as the pointer rests on it, and pins it.
+    // Across a lane's cell, the mark it's on is the stem nearest it, which a move can change.
     this.dom.addEventListener('pointerover', this.#hoverMark, { passive: true });
+    this.dom.addEventListener('pointermove', this.#hoverMark, { passive: true });
     this.dom.addEventListener('pointerleave', this.#hoverMark, { passive: true });
     this.dom.addEventListener('click', this.#clickMark);
+    // The range the pointer is on lights at once, and focus going into a popover's card or a box,
+    // or out, changes what's lit.
+    // What's under a still pointer changes as the view scrolls under it, which no move tells.
+    this.dom.addEventListener('pointerover', this.#pointRange, { passive: true });
+    this.dom.addEventListener('pointermove', this.#pointRange, { passive: true });
+    this.dom.addEventListener('pointerleave', this.#pointRange, { passive: true });
+    this.dom.addEventListener('focusin', this.#focusRelight);
+    this.dom.addEventListener('focusout', this.#focusRelight);
     this.dom.addEventListener('mouseover', this.#hoverRow, { passive: true });
     this.dom.addEventListener('mouseleave', this.#hoverRow, { passive: true });
     // A box editing a comment goes in its place in the card, once the card has drawn the slot.
@@ -1035,7 +1064,7 @@ class View implements DiffView {
     this.#diffs[file] = diff;
     const inline = this.#inline ? this.#replaceInline(file) : [];
     // A range across the sides lines up by the diff's rows, and inline, the file has new lines.
-    if (this.#threads[file]!.size > 0) this.#laneDirty.add(file);
+    if (this.#hasMarks(file)) this.#laneDirty.add(file);
     this.#refresh(file, [tokensChanged.of(null)], { inline });
   }
 
@@ -1268,6 +1297,7 @@ class View implements DiffView {
     // Their marks, with what the threads say of themselves now: no line moves.
     for (const file of marked) this.#refresh(file);
     this.#redrawLanes([...this.#laneDirty]);
+    this.#relight();
   }
 
   /**
@@ -1323,6 +1353,7 @@ class View implements DiffView {
     this.#redrawLanes([...this.#laneDirty]);
     this.#markKeyed();
     this.#beside.refresh();
+    this.#relight();
   }
 
   setThreadsMode(mode: ThreadsMode): void {
@@ -1358,6 +1389,7 @@ class View implements DiffView {
       }
     });
     this.#markKeyed();
+    this.#relight();
   }
 
   /**
@@ -1786,7 +1818,19 @@ class View implements DiffView {
       const key = `${file}:${side}:${from}:${to}:${mark.block}`;
       if (keys.has(key)) continue;
       const { label, text, draw } = mark.note;
-      const at: OverviewAt = { key, file, side, from, to, block: mark.block, label, text, draw };
+      const order = keys.size;
+      const at: OverviewAt = {
+        key,
+        file,
+        side,
+        from,
+        to,
+        order,
+        block: mark.block,
+        label,
+        text,
+        draw,
+      };
       keys.set(key, at);
       let byFile = next.get(file);
       if (!byFile) {
@@ -1814,6 +1858,8 @@ class View implements DiffView {
       if (mark) claimed.add(mark.key);
       return mark ? { key: mark.key, shown: shownOf(mark) } : null;
     });
+    // Their marks are in the lanes, which change where they had any or have any now.
+    for (const file of [...this.#marked.keys(), ...next.keys()]) this.#laneDirty.add(file);
     this.#marked = next;
     this.#markKeys = keys;
     const changed = new Set<number>();
@@ -1841,8 +1887,9 @@ class View implements DiffView {
         }
       });
     }
-    // The markers are in the gutters: no line changes height.
-    for (const view of this.#editors()) view.dispatch({ effects: marksChanged.of(null) });
+    // The marks are in the lanes: no line changes height.
+    this.#redrawLanes([...this.#laneDirty]);
+    this.#relight();
     this.#takeHints(marks);
   }
 
@@ -1927,6 +1974,8 @@ class View implements DiffView {
       this.#notes.push({ key, shown: shownOf(mark) });
       this.#noteLines[mark.file]![mark.side].add(mark.to);
       files.add(mark.file);
+      // Its ball says it's open.
+      this.#laneDirty.add(mark.file);
     }
     if (files.size === 0) return;
     this.#keepTop(() => {
@@ -1943,6 +1992,7 @@ class View implements DiffView {
     this.#notes = this.#notes.filter((note) => !closing.has(note));
     const files = new Set(notes.map(({ shown }) => shown.file));
     if (files.size === 0) return;
+    for (const file of files) this.#laneDirty.add(file);
     this.#keepTop(() => {
       for (const file of files) this.#refresh(file);
     });
@@ -2127,13 +2177,14 @@ class View implements DiffView {
     }
     this.#notes = kept;
     if (changed.size === 0) return;
+    // Their balls say which are open.
+    for (const file of changed) this.#laneDirty.add(file);
     this.#keepTop(() => {
       for (const file of changed) {
         this.#keepAt(file);
         this.#refresh(file);
       }
     }, false);
-    for (const view of this.#editors()) view.dispatch({ effects: marksChanged.of(null) });
   }
 
   /**
@@ -2381,87 +2432,59 @@ class View implements DiffView {
     }
   }
 
-  /**
-   * The overview marks beside document lines `first` to `last` of `pane`, a line or a collapsed
-   * block, with the file lines those show on each side. Inline, a line on one side only is half a
-   * line from the other side's lines around it, where the diff puts it.
-   */
-  #spansAt(pane: Pane, first: number, last: number): MarkedSpan[] {
-    if (this.#marked.size === 0) return [];
-    if (pane === 'inline') {
-      const layout = this.#inline?.layout;
-      if (!layout) return [];
-      const start = layout.lineAt(first);
-      const marked = this.#marked.get(start.file);
-      if (!marked) return [];
-      const end = layout.lineAt(last);
-      const spans: MarkedSpan[] = [];
-      for (const side of ['old', 'new'] as const) {
-        const ranges = marked[side];
-        if (ranges.length === 0) continue;
-        if (start[side] > 0 && end[side] > 0) {
-          spans.push({ ranges, first: start[side], last: end[side] });
-        } else if (first === last) {
-          const other = side === 'old' ? start.new : start.old;
-          const between = other > 0 ? this.#between(start.file, side, other) : undefined;
-          if (between !== undefined) spans.push({ ranges, first: between, last: between });
-        }
-      }
-      return spans;
-    }
-    const file = this.#layout.fileAt(pane, first);
-    const ranges = this.#marked.get(file)?.[pane];
-    if (!ranges || ranges.length === 0) return [];
-    const { header } = this.#layout.files[file]![pane];
-    const from = Math.max(1, first - header);
-    const to = last - header;
-    return to < from ? [] : [{ ranges, first: from, last: to }];
+  /** The keys of the notes whose last line is among document lines `first` to `last` of `pane`. */
+  #notesEnding(pane: Pane, first: number, last: number): string[] {
+    const file = this.#fileAt(pane, first);
+    const marks = this.#marked.get(file)?.new ?? [];
+    return marks
+      .filter((mark) => {
+        const lines = this.#noteRange(pane, mark);
+        return lines !== undefined && lines.to >= first && lines.to <= last;
+      })
+      .toSorted((a, b) => a.order - b.order)
+      .map((mark) => mark.key);
   }
 
-  /**
-   * Where, among `side`'s lines of file `file`, the diff puts the other side's line `other`, which
-   * `side` doesn't have, inline: a deleted line before the new lines that replace it, an added one
-   * after the old lines it replaces. Half a line from the lines around it.
-   */
-  #between(file: number, side: Side, other: number): number | undefined {
-    const diff = this.#diffs[file];
-    if (!diff) return undefined;
-    const otherSide: Side = side === 'old' ? 'new' : 'old';
-    const block = blockWith(diff, otherSide, other);
-    if (!block) return undefined;
-    return side === 'new' ? block.new - 0.5 : block.old + block.oldCount - 0.5;
-  }
-
-  /** The marker beside document lines `first` to `last` of `pane`. */
-  #markerAt(pane: Pane, first: number, last: number): GutterMarker | null {
-    const spans = this.#spansAt(pane, first, last);
-    return spans.length === 0 ? null : markerOf(spans, (key) => this.#noteFor(key) !== undefined);
-  }
-
-  /** The marker beside a block drawn before document line `line` of `pane`, or after it. */
-  #markerBetween(pane: Pane, line: number, after: boolean): GutterMarker | null {
-    const half = (number: number): number =>
-      Number.isInteger(number) ? number + (after ? 0.5 : -0.5) : number;
-    const spans = this.#spansAt(pane, line, line).map((span) => ({
-      ...span,
-      first: half(span.first),
-      last: half(span.last),
-    }));
-    return spans.length === 0 ? null : markerOf(spans, (key) => this.#noteFor(key) !== undefined);
-  }
-
-  /** A click on the ball beside document lines `first` to `last`: its notes open, or close. */
+  /** A press on the ball beside document lines `first` to `last`: its notes open, or close. */
   #clickedBall(pane: Pane, first: number, last: number): void {
-    const keys = startingIn(this.#spansAt(pane, first, last));
+    this.#toggleNotes(this.#notesEnding(pane, first, last));
+  }
+
+  /** The notes of `keys` open, or close where one of them is open. */
+  #toggleNotes(keys: readonly string[]): void {
     const open = keys.flatMap((key) => this.#noteFor(key) ?? []);
     if (open.length > 0) this.#closeNotes(open);
     else this.#openNotes(keys);
   }
 
-  // Threads' lanes ----------------------------------------------------------------------------
+  /** The document lines of `pane` an overview mark covers, if `pane` draws its lines. */
+  #noteRange(pane: Pane, mark: OverviewAt): LaneLines | undefined {
+    if (pane === 'old' || (pane === 'inline' && !this.#inline?.layout.lines[mark.file])) {
+      return undefined;
+    }
+    const lines = this.#noteSpan(mark);
+    return lines && this.#laneRange(pane, mark.file, lines.from, lines.end);
+  }
 
   /**
-   * Each editor's lane takes files' marks again, as their threads, or what those say of
+   * The file lines an overview mark covers, first and last, those past its side's last line left
+   * out: none where it starts past it.
+   */
+  #noteSpan(
+    mark: OverviewAt,
+  ): { from: { side: Side; line: number }; end: { side: Side; line: number } } | undefined {
+    const count = this.#layout.files[mark.file]![mark.side].count;
+    if (mark.from > count) return undefined;
+    return {
+      from: { side: mark.side, line: mark.from },
+      end: { side: mark.side, line: Math.min(mark.to, count) },
+    };
+  }
+
+  // Lanes --------------------------------------------------------------------------------------
+
+  /**
+   * Each editor's lanes take files' marks again, as their threads or notes, or what those say of
    * themselves, changed: one update of each editor.
    */
   #redrawLanes(files: readonly number[]): void {
@@ -2470,7 +2493,7 @@ class View implements DiffView {
     for (const pane of this.#lanePanes()) {
       const view = this.#viewOf(pane);
       const { doc } = view.state;
-      view.dispatch({ effects: setLane.of(files.map((file) => this.#laneOf(pane, file, doc))) });
+      view.dispatch({ effects: this.#lanesOf(pane, files, doc) });
     }
   }
 
@@ -2479,38 +2502,246 @@ class View implements DiffView {
     return this.#inline ? ['old', 'new', 'inline'] : ['old', 'new'];
   }
 
-  /** File `file`'s marks in the lane of `pane`, whose text is `doc`, from its header to its end. */
-  #laneOf(pane: Pane, file: number, doc: Text): LaneUpdate {
+  /** Whether file `file` has marks for a lane: threads, drafts or an overview's. */
+  #hasMarks(file: number): boolean {
+    return this.#threads[file]!.size > 0 || this.#marked.has(file);
+  }
+
+  /**
+   * Files `files`'s marks in the lanes of `pane`, whose text is `doc`, from each file's header to
+   * its end: their threads' and drafts', and their notes' on a pane that shows new lines.
+   */
+  #lanesOf(pane: Pane, files: readonly number[], doc: Text): StateEffect<unknown>[] {
+    const effects: StateEffect<unknown>[] = [
+      setLane.of(files.map((file) => this.#laneOf(pane, file, doc))),
+    ];
+    if (pane !== 'old') {
+      effects.push(setNotesLane.of(files.map((file) => this.#notesLaneOf(pane, file, doc))));
+    }
+    return effects;
+  }
+
+  /** Where file `file` is in the text of `pane`, `doc`: its header's start to its last line's end. */
+  #fileSpan(pane: Pane, file: number, doc: Text): { from: number; to: number } {
     const lines =
       pane === 'inline' ? this.#inline!.layout.files[file]! : this.#layout.files[file]![pane];
-    const span = {
-      from: doc.line(lines.header).from,
-      to: doc.line(lines.header + lines.count).to,
-    };
+    return { from: doc.line(lines.header).from, to: doc.line(lines.header + lines.count).to };
+  }
+
+  /** File `file`'s threads' marks in the lane of `pane`, whose text is `doc`. */
+  #laneOf(pane: Pane, file: number, doc: Text) {
     const { ranges, bubbles } = this.#beside.lane(pane, file);
-    return laneUpdate(doc, span, ranges, bubbles, true, this.#mode === 'beside');
+    return laneUpdate(doc, this.#fileSpan(pane, file, doc), ranges, bubbles, {
+      beside: this.#mode === 'beside',
+      lit: this.#lit.stems.threads,
+    });
+  }
+
+  /** File `file`'s notes' marks in the overview's lane of `pane`, whose text is `doc`. */
+  #notesLaneOf(pane: Pane, file: number, doc: Text) {
+    const ranges: LaneRange[] = [];
+    const ends = new Map<number, NoteEnds>();
+    const marks = (this.#marked.get(file)?.new ?? []).toSorted((a, b) => a.order - b.order);
+    for (const mark of marks) {
+      const lines = this.#noteRange(pane, mark);
+      if (!lines) continue;
+      ranges.push({ ...lines, key: mark.key, tone: 'note' });
+      const end = ends.get(lines.to);
+      const open = this.#noteFor(mark.key) !== undefined;
+      ends.set(lines.to, {
+        keys: [...(end?.keys ?? []), mark.key],
+        open: (end?.open ?? false) || open,
+      });
+    }
+    return notesLaneUpdate(
+      doc,
+      this.#fileSpan(pane, file, doc),
+      ranges,
+      ends,
+      this.#lit.stems.notes,
+    );
   }
 
   /**
    * The document lines of `pane` a range of file `file`'s lines covers, from `from` to `end`. A
    * range from one side's lines to the other's covers, in each side's column, that side's lines
    * from the row it starts in to the row it ends in, and starts at the top of its first line where
-   * it runs on from the other side's: only its own first line takes the tick.
+   * it runs on from the other side's, and ends at the foot of its last where it runs on into them:
+   * only its own first line takes the tick, and its own last line the mark.
    */
   #laneRange(
     pane: Pane,
     file: number,
     from: { side: Side; line: number },
     end: { side: Side; line: number },
-  ): Omit<LaneRange, 'tone'> | undefined {
+  ): LaneLines | undefined {
     const first = this.#docLine(pane, { file, ...from });
     const last = this.#docLine(pane, { file, ...end });
     if (pane === 'inline' || from.side === end.side) {
       if (pane !== 'inline' && pane !== end.side) return undefined;
-      return { from: Math.min(first, last), to: Math.max(first, last), tick: true };
+      return { from: Math.min(first, last), to: Math.max(first, last), tick: true, foot: true };
     }
-    if (pane === from.side) return last > first ? { from: first, to: last, tick: true } : undefined;
-    return first < last ? { from: first, to: last, tick: false } : undefined;
+    if (pane === from.side) {
+      return last > first ? { from: first, to: last, tick: true, foot: false } : undefined;
+    }
+    return first < last ? { from: first, to: last, tick: false, foot: true } : undefined;
+  }
+
+  // What's lit ---------------------------------------------------------------------------------
+
+  /** What the view lights now: one range's rows, and the stems in their lit colours. */
+  #lit: Lit = UNLIT;
+  /** The range the pointer is on: a mark, a stem, a card. */
+  #pointed: LitRange | undefined;
+  /** The thread a key landed on, between lines, while the cursor stays on its lines. */
+  #keyLit: LitRange | undefined;
+  /** Between lines, the new comment's box that had focus last, while it's open, by its key. */
+  #pickedKey: string | undefined;
+
+  /**
+   * Lights what should be lit now, one range at a time: a popover pinned or a comment box open on
+   * lines, else where a key landed, else what the pointer is on. Its rows are lit in each editor,
+   * and the stems whose colour changed are drawn again.
+   */
+  #relight(): void {
+    const lights: Lights = {
+      pinned: this.#mode === 'beside' ? this.#beside.pinnedLight() : this.#pickedBetween(),
+      focused: this.#beside.focusedCard(),
+      keyed: this.#mode === 'between' ? this.#keyLit : undefined,
+      pointed: this.#pointed ?? this.#beside.pointedCard,
+    };
+    const lit = lightOf(lights);
+    const was = this.#lit;
+    this.#lit = lit;
+    for (const pane of this.#lanePanes()) {
+      const view = this.#viewOf(pane);
+      const rows = this.#litRowsIn(pane, lit);
+      if (!sameLit(litOf(view.state), rows)) view.dispatch({ effects: setLit.of(rows) });
+    }
+    const files = new Set<number>();
+    for (const lane of ['threads', 'notes'] as const) {
+      const before = was.stems[lane];
+      const after = lit.stems[lane];
+      for (const key of before) if (!after.has(key)) this.#fileOfRange(lane, key, files);
+      for (const key of after) if (!before.has(key)) this.#fileOfRange(lane, key, files);
+    }
+    if (files.size === 0) return;
+    for (const file of files) this.#laneDirty.add(file);
+    this.#redrawLanes([...this.#laneDirty]);
+  }
+
+  /** Adds the file of range `key` in `lane` to `files`, if the view has it. */
+  #fileOfRange(lane: LitRange['lane'], key: string, files: Set<number>): void {
+    const file = lane === 'notes' ? this.#markKeys.get(key)?.file : this.#beside.linesOf(key)?.file;
+    if (file !== undefined) files.add(file);
+  }
+
+  /**
+   * Between lines, the new comment's box on lines open in the flow that has focus, or had it last,
+   * whose lines count as pinned.
+   */
+  #pickedBetween(): Lights['pinned'] {
+    for (const [key, open] of this.#boxes) {
+      if (open.box.hasFocus && open.box.thread === undefined) this.#pickedKey = key;
+    }
+    const open = this.#pickedKey === undefined ? undefined : this.#boxes.get(this.#pickedKey);
+    if (!open || open.box.thread !== undefined || open.place.line === 0) return undefined;
+    const { place } = open;
+    const first = open.from?.line ?? place.line;
+    return {
+      picked: { lane: 'threads', key: draftKey(place.file, place.side, first, place.line) },
+    };
+  }
+
+  /** The lines of the comment box being written whose lines are picked, as `lightOf` found it. */
+  #pickedLines(): { file: number; from: { side: Side; line: number }; end: At } | undefined {
+    if (this.#mode === 'beside') {
+      const box = this.#beside.pickedBox();
+      return box && { file: box.place.file, from: box.from ?? box.place, end: box.place };
+    }
+    const open = this.#pickedKey === undefined ? undefined : this.#boxes.get(this.#pickedKey);
+    return open && { file: open.place.file, from: open.from ?? open.place, end: open.place };
+  }
+
+  /** The rows of `pane` what's lit covers, as runs of document lines, or none. */
+  #litRowsIn(pane: Pane, lit: Lit): LitRows | null {
+    const range = lit.range;
+    if (!range && !lit.picked) return null;
+    let lines:
+      | { file: number; from: { side: Side; line: number }; end: { side: Side; line: number } }
+      | undefined;
+    if (lit.picked) lines = this.#pickedLines();
+    else if (range?.lane === 'notes') {
+      const mark = this.#markKeys.get(range.key);
+      const covered = mark && this.#noteSpan(mark);
+      lines = mark && covered && { file: mark.file, ...covered };
+    } else if (range) lines = this.#beside.linesOf(range.key);
+    if (!lines || lines.end.line < 1) return null;
+    if (pane === 'inline' ? !this.#inline?.layout.lines[lines.file] : this.#noteOf(lines.file)) {
+      return null;
+    }
+    const covered = this.#laneRange(pane, lines.file, lines.from, lines.end);
+    if (!covered) return null;
+    const rows: { from: number; to: number }[] = [];
+    // Inline, a range on one side's lines leaves out the rows of the other side's between them.
+    const side = lines.from.side === lines.end.side ? lines.from.side : undefined;
+    if (pane !== 'inline' || side === undefined) rows.push({ from: covered.from, to: covered.to });
+    else {
+      const layout = this.#inline!.layout;
+      for (let line = covered.from; line <= covered.to; line++) {
+        if (layout.lineAt(line)[side] === 0) continue;
+        const last = rows.at(-1);
+        if (last && last.to === line - 1) last.to = line;
+        else rows.push({ from: line, to: line });
+      }
+    }
+    return { rows, picked: lit.picked };
+  }
+
+  /**
+   * The range the pointer `event` is on: the mark or the stem nearest it in a lane, a card in the
+   * popover, a thread's card between lines, or a note.
+   */
+  #rangeAt(event: PointerEvent): LitRange | undefined {
+    const { target } = event;
+    // The popover's cards are its own to follow.
+    if (!(target instanceof Element) || this.#beside.cardUnder(target) !== null) return undefined;
+    // A thread's stem or mark before a draft's in one cell, as the preview takes it; a draft's
+    // alone lights the draft.
+    const under = rangeUnder(event, (key) => !isDraftKey(key)) ?? rangeUnder(event);
+    if (under) return { lane: under.kind, key: under.key };
+    const thread = target.closest<HTMLElement>('.lo-diffthread [data-thread-id]')?.dataset.threadId;
+    if (thread !== undefined) return { lane: 'threads', key: thread };
+    const note = target.closest<HTMLElement>('.lo-ovnote')?.dataset.note;
+    if (note !== undefined) return { lane: 'notes', key: note };
+    return undefined;
+  }
+
+  /** The pointer moved, or left the view: the range it's on lights at once. */
+  readonly #pointRange = (event: PointerEvent): void => {
+    const next = event.type === 'pointerleave' ? undefined : this.#rangeAt(event);
+    if (sameRange(next, this.#pointed)) return;
+    this.#pointed = next;
+    this.#relight();
+  };
+
+  /**
+   * The cursor came to document line `line` of `pane`: where a key landed lights while the cursor
+   * stays on its lines, in its column or, side by side, on their rows in the other.
+   */
+  #keepKeyLit(pane: Pane, line: number): void {
+    const keyed = this.#keyLit;
+    if (!keyed) return;
+    const on = (where: Pane, at: number): boolean =>
+      this.#litRowsIn(where, { ...UNLIT, range: keyed })?.rows.some(
+        (run) => at >= run.from && at <= run.to,
+      ) ?? false;
+    if (on(pane, line)) return;
+    if (pane !== 'inline' && on(pane === 'old' ? 'new' : 'old', this.#otherSideLine(pane, line))) {
+      return;
+    }
+    this.#keyLit = undefined;
+    this.#relight();
   }
 
   // The threads' popover, beside lines --------------------------------------------------------
@@ -2610,6 +2841,7 @@ class View implements DiffView {
         for (const file of headers) this.#refresh(file);
         this.#redrawLanes([...this.#laneDirty]);
       },
+      relight: () => this.#relight(),
       keep: (file) => this.#keepAt(file),
       showLine: (place) => {
         const before = this.#keep[place.file]!;
@@ -2629,9 +2861,15 @@ class View implements DiffView {
   /** The pointer came over something, or left the view: a mark it rests on previews its popover. */
   readonly #hoverMark = (event: PointerEvent): void => this.#beside.hover(event);
 
+  /** Focus moved in the view or out of it: what it's in may light another range, once it's there. */
+  readonly #focusRelight = (): void =>
+    queueMicrotask(() => {
+      if (this.dom.isConnected) this.#relight();
+    });
+
   /** A click on a mark beside lines pins its popover, and takes focus into it, or closes it. */
   readonly #clickMark = (event: MouseEvent): void => {
-    const marked = this.#beside.markOf(event.target);
+    const marked = this.#beside.markOf(event);
     if (!marked || event.button !== 0) return;
     event.preventDefault();
     this.#hideAdd();
@@ -3323,7 +3561,9 @@ class View implements DiffView {
         this.#aligner.anchorHere();
       },
     });
-    this.#boxes.set(key, { box, place });
+    const first = 'from' in at ? Math.min(at.from, at.to) : place.line;
+    const from = first < place.line ? { side: place.side, line: first } : undefined;
+    this.#boxes.set(key, { box, place, from });
     // The lines `v` selected are the box's now, where the reader opened it.
     const focus = options.focus !== false;
     const active = this.#viewOf(this.#activePane());
@@ -3431,6 +3671,9 @@ class View implements DiffView {
     // The key that closed the box didn't move the cursor: its line isn't brought on screen.
     if (inBox || (!sent && nowhere)) this.#focusLine(place);
     if (!kept) box.destroy();
+    // Its lines were picked.
+    if (this.#pickedKey === key) this.#pickedKey = undefined;
+    this.#relight();
   }
 
   /** Gives focus to the line a box is under, the cursor on it, bringing nothing on screen. */
@@ -3765,6 +4008,7 @@ class View implements DiffView {
       this.#land(undefined);
     }
     if (this.#mode === 'beside') this.#beside.cursorMoved(pane, line.number, at);
+    this.#keepKeyLit(pane, line.number);
     this.#markKeyed(at);
     const spot = this.#spot(at, head - line.from);
     const said = JSON.stringify(spot);
@@ -4030,11 +4274,18 @@ class View implements DiffView {
     // A comment box is text, which the system's own menu serves.
     if (target.closest('.lo-diffcomposer')) return;
     const card = target.closest<HTMLElement>('[data-thread-id]');
-    const marked = this.#beside.markOf(target);
+    const marked = this.#beside.markOf(event);
     let clicked: Target | undefined;
     if (card?.dataset.threadId) {
       const id = card.dataset.threadId;
-      clicked = { kind: 'thread', thread: id, collapsed: this.#hosts.get(id)?.open === false };
+      // On a comment of it, the comment's own menu: what Edit and Delete act on.
+      const comment = commentIn(card, target);
+      clicked = {
+        kind: 'thread',
+        thread: id,
+        collapsed: this.#hosts.get(id)?.open === false,
+        ...(comment === undefined ? {} : { comment }),
+      };
     } else if (marked) {
       // A mark beside lines: its thread's menu, as on its card.
       clicked = { kind: 'thread', thread: marked.thread };
@@ -4166,10 +4417,8 @@ class View implements DiffView {
       threadLane(),
       side === 'new'
         ? markerGutter({
-            active: () => this.#marked.size > 0,
-            markerAt: (first, last) => this.#markerAt(side, first, last),
-            markerBetween: (line, after) => this.#markerBetween(side, line, after),
             clicked: (first, last) => this.#clickedBall(side, first, last),
+            stem: (key) => this.#toggleNotes([key]),
           })
         : [],
       alignerFields(),
@@ -4232,10 +4481,8 @@ class View implements DiffView {
           number('new'),
           threadLane(),
           markerGutter({
-            active: () => this.#marked.size > 0,
-            markerAt: (first, last) => this.#markerAt('inline', first, last),
-            markerBetween: (line, after) => this.#markerBetween('inline', line, after),
             clicked: (first, last) => this.#clickedBall('inline', first, last),
+            stem: (key) => this.#toggleNotes([key]),
           }),
           marking((doc, first, last) => this.#inlineMarks(doc, first, last)),
           highlighting({
@@ -4280,11 +4527,12 @@ class View implements DiffView {
     this.#inline = { view, layout, sizes: new ThreadSizes(view.contentDOM) };
     this.#addEditor('inline', view);
     const ranges = this.#files.flatMap((_, index) => this.#inlineBlocks(index));
-    const lanes = this.#threads.flatMap((drawn, index) =>
-      drawn.size > 0 ? [this.#laneOf('inline', index, view.state.doc)] : [],
-    );
+    const marked = this.#ids.flatMap((_, index) => (this.#hasMarks(index) ? [index] : []));
     view.dispatch({
-      effects: [setFile.of({ file: -1, from: 0, to: 0, decorations: ranges }), setLane.of(lanes)],
+      effects: [
+        setFile.of({ file: -1, from: 0, to: 0, decorations: ranges }),
+        ...this.#lanesOf('inline', marked, view.state.doc),
+      ],
     });
     return this.#inline;
   }
@@ -5084,9 +5332,9 @@ class View implements DiffView {
     // Its threads' marks, where they changed or its lines did, in each editor's lane.
     const lane =
       this.#laneDirty.delete(file) ||
-      (this.#threads[file]!.size > 0 && Object.values(swaps).some((swap) => swap?.length));
+      (this.#hasMarks(file) && Object.values(swaps).some((swap) => swap?.length));
     const laneIn = (pane: Pane, doc: Text): StateEffect<unknown>[] =>
-      lane ? [setLane.of([this.#laneOf(pane, file, doc)])] : [];
+      lane ? this.#lanesOf(pane, [file], doc) : [];
     const split = (): void => {
       for (const side of ['old', 'new'] as const) {
         const swap = swaps[side] ?? [];
@@ -5146,6 +5394,8 @@ class View implements DiffView {
       });
       marker.view.focus();
     }
+    // Its lines may have changed under what's lit, whose rows are lit again where they are now.
+    this.#relight();
     this.#aligner.schedule();
   }
 
@@ -5444,6 +5694,9 @@ class View implements DiffView {
     if (was?.thread === next?.thread) return;
     this.#markKeyed();
     if (!next) return;
+    // Its range is lit while the cursor stays on its lines.
+    this.#keyLit = { lane: 'threads', key: next.thread };
+    this.#relight();
     // Beside lines its popover is pinned, focus staying where it was: in a popover, it's in the
     // one pinned next.
     if (this.#mode === 'beside') this.#beside.land(next.thread);
@@ -5798,26 +6051,6 @@ function sameShown(a: NoteShown, b: NoteShown): boolean {
  */
 function visible(element: HTMLElement): boolean {
   return !('checkVisibility' in element) || element.checkVisibility({ visibilityProperty: true });
-}
-
-/** The block of the diff's rows that has line `line` of `side`, if one has. */
-function blockWith(diff: FileDiff, side: Side, line: number): RowBlock | undefined {
-  const { rows } = diff;
-  // The blocks start on `side` in order; one with no lines there starts where the next does.
-  let low = 0;
-  let high = rows.length;
-  while (low < high) {
-    const middle = (low + high) >>> 1;
-    if (rows[middle]![side] <= line) low = middle + 1;
-    else high = middle;
-  }
-  for (let index = low - 1; index >= 0; index--) {
-    const block = rows[index]!;
-    const count = side === 'old' ? block.oldCount : block.newCount;
-    if (count === 0) continue;
-    return line < block[side] + count ? block : undefined;
-  }
-  return undefined;
 }
 
 /** Whether a file's lines stay out of the documents until it's loaded. */

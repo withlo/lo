@@ -238,8 +238,8 @@ export interface FixtureInput {
   many?: { prefix: string; ending: string; count: number; size?: number; text?: string };
 }
 
-/** The files a fixture's folder holds that aren't the overview's. */
-const OWN = new Set(['expected.json', 'fixture.json']);
+/** The files a fixture's folder holds that aren't the overview's: `terms.json` is the repository's. */
+const OWN = new Set(['expected.json', 'fixture.json', 'terms.json']);
 
 /** One of a fixture's files and folders: its path's bytes, what it is, its size and contents. */
 interface FixtureEntry {

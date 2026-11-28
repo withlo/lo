@@ -13,7 +13,8 @@ code editor it started as.
 2. **One accent, for where you are.** Powder (`lo-accent`) marks focus, the cursor, selection,
    links, the main button and the thing on screen. Nothing else is Powder.
 3. **Status keeps GitHub's meanings.** Green is open, added or passing; red is closed, removed or
-   failing; purple is merged; amber is waiting or changed. Never use these colors for decoration.
+   failing; purple is merged or important; amber is waiting or changed. Never use these colors for
+   decoration.
 4. **The keyboard is discoverable.** Every action has a key and a visible control. A control shows
    its key where the key works now, and in its tooltip everywhere else.
 5. **Each view is a sheet.** The overview, diff and timeline sit on the ground (`lo-bg`) with round
@@ -84,8 +85,10 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
 
 - PR state: `lo-state-open`, `-draft`, `-merged`, `-closed`, each with `-bg` and `-border`. Always
   pair the color with the state's icon and word.
-- Status: `lo-success`, `lo-warning`, `lo-danger`, `lo-info`, each with `-bg` and `-border`. A
-  status color never appears without a word or icon that says the same thing.
+- Status: `lo-success`, `lo-warning`, `lo-danger`, `lo-info`, `lo-important`, each with `-bg` and
+  `-border`. A status color never appears without a word or icon that says the same thing.
+  `lo-important` is GitHub's purple, for what GitHub draws as Important; it has the values of
+  `lo-state-merged`, which stays a token of its own, as `lo-state-open` matches `lo-success`.
 - Diff: whole lines use `lo-diff-add-bg` / `lo-diff-del-bg`; changed words inside them
   `lo-diff-add-word` / `lo-diff-del-word`; signs and gutters `lo-diff-add-fg` / `lo-diff-del-fg`.
   Moved code uses the `lo-diff-moved-*` tokens, never green or red: a near-neutral ground, with the
@@ -114,8 +117,9 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   description, a comment's preview, a hover card's docs. Draw it with
   `lo-prose lo-prose--comment read-comment`, spaced as GitHub spaces a comment: nothing above its
   first block, 16 px between blocks, in a quote or an alert too, and under a heading, and 24 above a
-  heading. `lo-prose` alone is the overview's, a document with room around its sections, and never
-  right for a comment.
+  heading. An alert's title is 8 px over the block after it, the title of what follows rather than a
+  block of its own. `lo-prose` alone is the overview's, a document with room around its sections,
+  and never right for a comment.
 - A column's width follows the pane it's in, never the window: size it from its own box
   (`@container`), not a media query or `vw`, since panes resize.
 - Code is `--lo-code-size` on a fixed `--lo-code-line` (12.5/20) so both sides of a diff share one
@@ -262,11 +266,13 @@ where the action's target is.
 - **A choice of two to four is one `SegmentedControl`,** never buttons or pills drawn by hand: the
   header's view switch, the Files panel's Tree and Review order, the threads' filter, a comment
   box's Write and Preview, and Settings' choices are all one. Its thumb slides to the segment
-  chosen, and the key that steps through them follows it. It's `md` in the header alone, and `sm`
-  everywhere else: a panel's toolbar, a box's head, a Settings row. While it can't be changed it's
-  `disabled`, and `why` is each segment's tooltip, as the Files panel's "Reading files…" is; its key
-  chip goes meanwhile, keeping its room. One thing on or off, as "Changed files only" is, stays a
-  toggle of its own.
+  chosen, but to one the reader didn't choose and hasn't seen coming (`jump`), which it goes to in
+  one frame: a tab that goes to its timeline by itself as it opens, before its wait shows. The key
+  that steps through them follows it. It's `md` in the header alone, and `sm` everywhere else: a
+  panel's toolbar, a box's head, a Settings row. While it can't be changed it's `disabled`, and
+  `why` is each segment's tooltip, as the Files panel's "Reading files…" is; its key chip goes
+  meanwhile, keeping its room. One thing on or off, as "Changed files only" is, stays a toggle of
+  its own.
 - **A segment can be its icon alone.** Where a `SegmentedControl` has to narrow, as a comment box's
   Write and Preview do, each segment's label holds its icon and its words, the words marked as a row
   that gives up marks them (`data-gives`). Give the segment its `name`, which a screen reader hears
@@ -287,7 +293,14 @@ where the action's target is.
   right-click opens the menu, at the end of its row (before a chevron that opens or closes the row,
   as on a thread's card), and opens that same menu under itself (`openMenuUnder`), so the two can
   never list different things. It's named "More actions", or "More actions for retry.ts" (`label`)
-  where a row has several.
+  where a row has several. On a card or row a list repeats, as a post in the timeline or a comment
+  in a thread, it's `shy`: it keeps its room, and shows only on the one under the pointer, the one
+  the keyboard is on (`data-shy-scope`, with `data-focused` as for a chip) or has focus in, and
+  while its menu is open, coming and going in a Tint. `Tab` still stops at it, and shows it.
+- **A card or row a list repeats shows only what most readers come to it for.** Its other actions,
+  as a comment's Edit and Delete, are in its menu, each with its key, and not buttons or hints on
+  every one of them: a thread's card keeps Reply and Resolve, and a review comment in the timeline
+  its "Show in diff".
 - **A control a code view draws** in its own DOM, where React doesn't reach, carries its command's
   id in `data-command`. The view runs the command on the line or file the control is drawn at, and
   gives it the tooltip a `Button` would have: the command's label and key, or why it can't run.
@@ -421,7 +434,8 @@ changes in the same frame.
   greyed. Without a `working`, it shows its label beside the ring, so it keeps its name.
 - `working` is a node, for a button that can be its icon alone: give its words the same mark its
   label's have (`data-gives` in a row that gives up, see `useGiveUp`), so as its icon the ring takes
-  the icon's place and no words come back with it, as Delete… on a narrow comment's head does.
+  the icon's place and no words come back with it, as Resolve in a narrow thread popover's head
+  does.
 - It's as wide as the wider of its label and its `working` beside the ring, so keep `working` short:
   "Checking…", not "Checking what merges with it". Where the words change as the work goes on, as
   trusting a repo's do ("Checking…", "Waiting…", "Trusting…"), keep each within the label's width,
@@ -888,9 +902,16 @@ each picture it has drawn by its address: the empty disc, then the Swap, once.
   lines, on one side leaves space (`lo-spacer`) on the other.
 - **A marker sits against the code it's about.** Line numbers, then the thread lane, then the
   overview lane on a side that shows new lines, then the code. A lane is as wide empty as full.
-- **A thread is a bubble, the overview is a ball.** A thread's mark is a `message-square` icon with
-  a bracket up its range, amber while unresolved or pending, grey once resolved or out of date. The
-  overview's is the Powder ball and rail. Neither borrows from the other.
+- **A range is a bracket with its mark at the foot.** A thread and an overview note draw the same
+  way, from the same code (`ui/code/ranges.ts`): the mark on the range's last line, a stem up its
+  lane to a tick on its first, and its lines on `lo-selected` while it's lit, which is under the
+  pointer, open, or where a key landed. A thread's mark is the `message-square` bubble in the thread
+  lane, amber while unresolved or pending, grey once resolved or out of date. An overview note's is
+  the Powder ball in the overview lane. Only the mark, its colour and its lane tell them apart.
+- **Ranges that overlap nest.** In a lane each range keeps a stem of its own, in the first free of
+  three slots 4 px apart, the earliest start outermost, and a stem skips the row of another's mark.
+  Ranges that end on one line share its mark and open together. One range is lit at a time, so no
+  line carries two grounds.
 - **A thread opens over the code, not in it.** With Threads in code at "Beside lines", the default,
   a thread, a reply and a new comment's box open in `ThreadPopover` under the last line they're
   about, and no line of code moves. It never covers its own lines unless they fill the pane.
@@ -994,11 +1015,12 @@ text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" di
   that says "Checking…" comes on screen whole as Lo starts to look, unless the reader has left the
   box. An edit and a resolve follow the same rule: a card's "Resolve not confirmed" offers "Check
   again", and "Try again" only once Lo knows it didn't go. A resolve, an unresolve or a delete shows
-  as asked, its control at work, until the thread itself shows it, so a card never flips back
-  between GitHub's answer and the next read of its threads. If they don't show it in ten seconds the
-  control is its own again, and the card still shows what was asked until they're read again. One
-  change to a thread at a time: while one is at work, resolving it or deleting from it is dimmed,
-  with what's at work as the reason ("Resolving…").
+  as asked, its control at work (a comment being deleted says "Deleting…" in place of its `⋯`),
+  until the thread itself shows it, so a card never flips back between GitHub's answer and the next
+  read of its threads. If they don't show it in ten seconds the control is its own again, and the
+  card still shows what was asked until they're read again. One change to a thread at a time: while
+  one is at work, resolving it or deleting from it is dimmed, with what's at work as the reason
+  ("Resolving…").
 - **Said where it's seen.** A send, an edit, a resolve or a delete that fails, or can't be
   confirmed, where its card or box isn't on screen to say it, as beside lines once its popover has
   closed, is said in one toast, in its note's tone, whose "Show thread" opens the thread where its
@@ -1031,9 +1053,10 @@ comments feature's `Post`, which does this.
 
 **GitHub's alerts look as GitHub draws them,** wherever Markdown is drawn: a comment, an overview, a
 hover card. Each starts with its icon, 16 px, then its word, both in its tone, with Lucide's nearest
-to GitHub's octicons: Note (`info`) and Important (`message-square-exclamation-point`) in `lo-info`,
-Tip (`lightbulb`) in `lo-success`, Warning (`triangle-exclamation-point`) in `lo-warning`, and
-Caution (`octagon-exclamation-point`) in `lo-danger`. The Markdown renderer draws them.
+to GitHub's octicons: Note (`info`) in `lo-info`, Tip (`lightbulb`) in `lo-success`, Important
+(`message-square-exclamation-point`) in `lo-important`, Warning (`triangle-exclamation-point`) in
+`lo-warning`, and Caution (`octagon-exclamation-point`) in `lo-danger`. The Markdown renderer draws
+them.
 
 ## Overviews
 

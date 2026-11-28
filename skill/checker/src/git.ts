@@ -151,6 +151,29 @@ export function isId(name: string): boolean {
   return ID.test(name);
 }
 
+/**
+ * The object `ref` points at, that ref exactly, never one git would guess it means, or undefined
+ * when the repository doesn't have it: its id and its type, such as `commit`.
+ */
+export async function refTarget(
+  git: Git,
+  ref: string,
+): Promise<{ id: string; type: string } | undefined> {
+  // A pattern names a ref and the refs below it, so only the line naming it exactly counts.
+  const listed = await run(git, [
+    'for-each-ref',
+    '--format=%(objectname) %(objecttype) %(refname)',
+    ref,
+  ]);
+  for (const line of listed.toString('utf8').split('\n')) {
+    const [id = '', type = '', name] = line.split(' ');
+    if (name !== ref) continue;
+    if (!isId(id)) throw new GitError(`git for-each-ref answered ${JSON.stringify(line)}.`);
+    return { id, type };
+  }
+  return undefined;
+}
+
 /** What `git cat-file` says an object is. */
 export interface ObjectInfo {
   id: string;
@@ -226,7 +249,8 @@ async function readObject(output: Output, info: ObjectInfo, keep: number): Promi
   return bytes;
 }
 
-function mebibytes(bytes: number): string {
+/** `bytes`, in whole mebibytes, as `256 MiB`. */
+export function mebibytes(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))} MiB`;
 }
 

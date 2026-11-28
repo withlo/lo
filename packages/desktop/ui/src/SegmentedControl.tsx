@@ -63,6 +63,13 @@ export interface SegmentedControlProps<T extends string> {
    * what a screen reader hears on it, as the Files panel's "Reading files…".
    */
   why?: string | undefined;
+  /**
+   * The thumb goes to a choice that changes in this render at once, in one frame, rather than
+   * sliding there: for one the reader didn't make and hasn't seen coming, as a tab that has just
+   * opened goes to another view by itself before its wait shows. A choice the reader makes, by key
+   * or click, always slides.
+   */
+  jump?: boolean | undefined;
 }
 
 const segment = cva(
@@ -108,11 +115,13 @@ export function SegmentedControl<T extends string>({
   keys,
   disabled = false,
   why,
+  jump: jumps = false,
 }: SegmentedControlProps<T>) {
   const buttons = useRef(new Map<T, HTMLButtonElement>());
   // Where the thumb is: under the chosen segment, measured, so it can slide from one to the next.
   // It's put there at once (`jump`) when the segments change around a choice that doesn't, as
-  // when a segment leaves: the choice didn't move.
+  // when a segment leaves: the choice didn't move. So it is where the caller says the choice
+  // jumps.
   const [thumb, setThumb] = useState<{ left: number; width: number; jump: boolean } | undefined>();
   // The segments there are, which a caller's new array of the same ones doesn't change: a label
   // that changes is the observer's to see.
@@ -131,7 +140,7 @@ export function SegmentedControl<T extends string>({
     const under = spanned
       .map((each) => buttons.current.get(each))
       .filter((button): button is HTMLButtonElement => button !== undefined);
-    const jump = measured.current === covered;
+    const jump = measured.current === covered || jumps;
     measured.current = covered;
     const measure = (at = false) => {
       const laid = under.filter((button) => button.offsetWidth > 0);
@@ -147,7 +156,7 @@ export function SegmentedControl<T extends string>({
     for (const button of buttons.current.values()) watch.observe(button);
     return () => watch.disconnect();
     // `spanned` is what `covered` says.
-  }, [covered, segments, size]);
+  }, [covered, segments, size, jumps]);
   // It's put in place, not slid there, the first time.
   const placed = thumb !== undefined;
   const [slides, setSlides] = useState(false);

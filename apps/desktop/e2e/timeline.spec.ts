@@ -119,6 +119,9 @@ test('` steps from the diff to the timeline, read as it’s first shown; j, k an
     const review = rows.nth(6);
     await review.click();
     await expect(timeline).toBeFocused();
+    // Its head's `⋯` first, then the button under its summary.
+    await page.keyboard.press('Tab');
+    await expect(review.getByRole('button', { name: 'More actions' })).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(review.getByRole('button', { name: 'Show in diff' })).toBeFocused();
     await page.keyboard.press('Tab');
