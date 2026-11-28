@@ -6,7 +6,8 @@
 // on another view shows it as it is whenever the reader comes to it. A run of a stack's layers on
 // screen as one diff has none, which it says.
 // While it's on screen the overview's keys act on it (`follow.ts`), and with code beside, the diff
-// follows the block focus lands on to its code.
+// follows the block focus lands on to its code. A right-click on a section's heading is on the
+// heading, whose menu folds sections.
 
 import { NO_TARGET, setScopeSource } from '@lo/ui/commands';
 import { generationOf } from '@lo/ui/markdown';
@@ -55,6 +56,7 @@ import {
 import { useStanding } from './hooks.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import { openingOf, openings } from './opening.ts';
+import { folds, headTarget } from './sections.ts';
 import { Shown } from './Shown.tsx';
 import { CantShow, NoneInRun, NoOverview, ReadFailed } from './States.tsx';
 import { blockPinned } from './threaded.ts';
@@ -295,15 +297,20 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
     return stop;
   }, [tab.id, shown, waiting, tree, generation]);
 
-  // What a key acts on: the block with focus.
+  // What a key acts on: a section's heading with focus on it, its chevron or `⋯`, open or
+  // collapsed, so the menu key opens the heading's menu; else the block with focus.
   useEffect(() => {
     const element = root.current;
     if (!element) return undefined;
     return setScopeSource(element, {
       target: () => {
         const drawn = drawnIn(tab.id);
-        const block = drawn && focusedBlock(drawn);
-        return (drawn && block && targetOf(drawn, block)) ?? NO_TARGET;
+        if (!drawn) return NO_TARGET;
+        const active = document.activeElement;
+        const heading = active ? headTarget(drawn, active) : undefined;
+        if (heading) return heading;
+        const block = focusedBlock(drawn);
+        return (block && targetOf(drawn, block)) ?? NO_TARGET;
       },
     });
   }, [tab.id, waiting]);
@@ -332,6 +339,15 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
     };
   }, [tab.id, waiting]);
 
+  // A section folding with focus on its heading changes the block that has it, as the heading
+  // becomes one or stops being one, with no focus moving.
+  const folded = useTabState(folds, tab.id);
+  useLayoutEffect(() => {
+    const drawn = drawnIn(tab.id);
+    const block = drawn && focusedBlock(drawn);
+    setFocused(block && blockNumber(block));
+  }, [tab.id, folded]);
+
   // The block the reader is at stays where it is on the page as the code beside comes and goes:
   // as the overview takes its new width, and as the blocks above it settle to it.
   const place = useRef<{ block: number; top: number } | undefined>(undefined);
@@ -355,11 +371,13 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
     return drawn && kept && block ? holdBlock(drawn, block, kept.top) : undefined;
   }, [tab.id, beside]);
 
-  // A right-click on a block: the block's menu.
+  // A right-click on a block: the block's menu; on a section's heading, the heading's.
   const menu = useMenuTarget((event) => {
     const drawn = drawnIn(tab.id);
     const box = article.current?.querySelector('.lo-ov__article');
     if (!drawn || !box || !(event.target instanceof Element)) return undefined;
+    const heading = headTarget(drawn, event.target);
+    if (heading) return heading;
     const block = blockAround(box, event.target);
     return block && targetOf(drawn, block);
   });

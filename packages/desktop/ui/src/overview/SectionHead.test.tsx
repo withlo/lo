@@ -73,6 +73,36 @@ describe('SectionHead', () => {
     expect(ran).toEqual([['sections.fold', WHY]]);
   });
 
+  it('collapsed, is a block the keys stop at, with its ring and chip while it has focus', () => {
+    held();
+    const host = render(
+      <>
+        <SectionHead
+          name="Why"
+          open={false}
+          fold={FOLD}
+          number={4}
+          focused
+          chip={<span>chip</span>}
+        >
+          Why
+        </SectionHead>
+        <SectionHead name="How" open fold={FOLD} number={9} focused chip={<span>chip</span>}>
+          How
+        </SectionHead>
+      </>,
+    );
+    const [shut, open] = host.querySelectorAll<HTMLElement>('.lo-section-head');
+    expect(shut?.getAttribute('data-lo-block')).toBe('4');
+    expect(shut?.className).toContain('lo-block is-focused');
+    expect(shut?.textContent).toContain('chip');
+    // Open, it's a heading the article knows, not a block: what's under it are the blocks.
+    expect(open?.getAttribute('data-lo-section')).toBe('9');
+    expect(open?.hasAttribute('data-lo-block')).toBe(false);
+    expect(open?.className).not.toContain('lo-block');
+    expect(open?.textContent).not.toContain('chip');
+  });
+
   it('has neither chevron nor menu on the tl;dr, which never collapses', () => {
     held();
     const host = render(

@@ -124,15 +124,15 @@ async function open(page: Page): Promise<string> {
 const shown = (page: Page) =>
   page.locator('[data-lo-middle-view="overview.view"] [data-lo-overview="shown"]');
 
-/** The overview's block numbered `number`. */
+/** The overview's block numbered `number`, in the article itself or a section's body. */
 const block = (page: Page, number: number) =>
-  shown(page).locator(`.lo-ov__article > [data-lo-block="${number}"]`);
+  shown(page).locator(`:is(.lo-ov__article, .lo-section__body) > [data-lo-block="${number}"]`);
 
 /** What has focus: the block it's in, whether it's the block's own focus, and what it says. */
 function focused(page: Page) {
   return page.evaluate(() => {
     const active = document.activeElement;
-    const found = active?.closest('.lo-ov__article > [data-lo-block]');
+    const found = active?.closest(':is(.lo-ov__article, .lo-section__body) > [data-lo-block]');
     const own =
       active === found || (active?.localName === 'summary' && active.parentElement === found);
     return {
@@ -587,7 +587,9 @@ test('⌃o puts the block back where it was: cut by the top of the screen, the w
     await toBlock(page, BLOCK.format);
     // Just below the screen's top edge, nearer it than `]b` would leave a block it brings on screen.
     await scroller.evaluate((element, number) => {
-      const at = element.querySelector(`.lo-ov__article > [data-lo-block="${number}"]`);
+      const at = element.querySelector(
+        `:is(.lo-ov__article, .lo-section__body) > [data-lo-block="${number}"]`,
+      );
       if (!at) throw new Error(`No block ${number}.`);
       element.scrollTop += at.getBoundingClientRect().top - element.getBoundingClientRect().top - 5;
     }, BLOCK.format);
@@ -609,7 +611,9 @@ test('⌃o puts the block back where it was: cut by the top of the screen, the w
     await fromAbove();
     // Low on the screen, below where the shorter window ends.
     await scroller.evaluate((element, number) => {
-      const at = element.querySelector(`.lo-ov__article > [data-lo-block="${number}"]`);
+      const at = element.querySelector(
+        `:is(.lo-ov__article, .lo-section__body) > [data-lo-block="${number}"]`,
+      );
       if (!at) throw new Error(`No block ${number}.`);
       element.scrollTop +=
         at.getBoundingClientRect().top - element.getBoundingClientRect().bottom + 150;

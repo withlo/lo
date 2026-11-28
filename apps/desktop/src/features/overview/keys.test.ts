@@ -58,3 +58,20 @@ describe('the overview’s scroll keys', () => {
     }
   });
 });
+
+describe('the overview’s fold keys', () => {
+  it('fold the section the keyboard is in, and every section, as Vim folds', () => {
+    const folds: [string, string][] = [
+      ['z a', 'overview.foldSection'],
+      ['z R', 'overview.unfoldAll'],
+      ['z M', 'overview.foldAll'],
+    ];
+    for (const system of ['mac', 'linux'] as const) {
+      for (const [key, command] of folds) {
+        expect(runs(key, inOverview, system), `${key} on ${system}`).toBe(command);
+      }
+    }
+    // The switches that write the setting have no key: they're the heading's menu's.
+    expect(commands.find((each) => each.id === 'overview.foldHere')?.keys).toEqual([]);
+  });
+});
