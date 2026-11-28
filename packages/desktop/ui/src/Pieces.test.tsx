@@ -518,6 +518,36 @@ describe('CopyButton', () => {
     expect(reading(host)).toEqual({ face: 'Copy the log', said: '' });
   });
 
+  it('puts its key’s chip after each thing it says, a button’s gap apart', async () => {
+    const host = render(
+      <CopyButton keys={['y', 'y']} size="sm" onCopy={() => true}>
+        Copy
+      </CopyButton>,
+    );
+    const button = host.querySelector('button')!;
+    // Each face is its words, then the chips, in a row with the button's gap: the chips stay
+    // beside the words that show, not past the room the widest face keeps.
+    const faces = [...button.querySelectorAll('.inline-grid > span')];
+    expect(
+      faces.map((face) => [face.firstChild?.textContent, face.querySelectorAll('kbd').length]),
+    ).toEqual([
+      ['Copy', 2],
+      ['Copied', 2],
+      ['Couldn’t copy', 2],
+    ]);
+    expect(faces.every((face) => face.classList.contains('inline-flex'))).toBe(true);
+    expect(faces.every((face) => face.classList.contains('gap-4'))).toBe(true);
+    // A screen reader hears the key once, as the button's description, not as its chips' letters.
+    expect(button.getAttribute('aria-description')).toBe('Keys y then y');
+    expect(
+      [...button.querySelectorAll('kbd')].every(
+        (kbd) => kbd.getAttribute('aria-hidden') === 'true',
+      ),
+    ).toBe(true);
+    await press(host);
+    expect(reading(host)).toEqual({ face: 'Copiedyy', said: 'Copied' });
+  });
+
   it('says it couldn’t copy when copying fails, and when nothing gives it a way to', async () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     const host = render(

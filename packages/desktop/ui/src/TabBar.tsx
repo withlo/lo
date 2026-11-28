@@ -304,7 +304,11 @@ export function TabBar({
         <NewTab button={plus} onNew={onNew} command={commands?.open} />
         <div className="flex-1 self-stretch" />
       </div>
-      {end !== undefined && <div className="flex flex-none items-center pe-8 no-drag">{end}</div>}
+      {/* On the tabs' line, as the `+` is: under the strip's top edge as the tabs are, so its
+          buttons and the `+` share a centre, and `lo-sp-2` apart, as the tabs are. */}
+      {end !== undefined && (
+        <div className="mt-8 flex flex-none items-center gap-2 pe-8 no-drag">{end}</div>
+      )}
     </div>
   );
 }

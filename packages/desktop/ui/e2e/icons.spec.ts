@@ -94,3 +94,20 @@ test('a key chip draws its symbols as 12 px icons, and its names and letters as 
     shown: 'Ctrl+Shift+P',
   });
 });
+
+test('a chord’s symbols sit apart: two icons side by side in a chip never share room', async () => {
+  const page = await open();
+  // For each chip with two icons or more, how far each icon's box is from the one before it.
+  const apart = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[data-keys] kbd')].flatMap((chip) => {
+      const boxes = [...chip.querySelectorAll('svg')].map((icon) => icon.getBoundingClientRect());
+      return boxes.slice(1).map((box, index) => ({
+        key: chip.textContent,
+        apart: Math.round(box.left - boxes[index]!.right),
+      }));
+    }),
+  );
+  expect(apart.length).toBeGreaterThan(0);
+  // Each icon's ink is about 9 px of its 12: boxes that meet keep the strokes 3 px apart.
+  expect(apart.filter((each) => each.apart < 0)).toEqual([]);
+});

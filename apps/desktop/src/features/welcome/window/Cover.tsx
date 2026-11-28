@@ -146,7 +146,8 @@ function BackButton({ first }: { first: boolean }) {
       <Button
         variant="ghost"
         disabled={off}
-        hint={off ? '' : control.label}
+        // Its key, with its name, where it has one: its name alone would only say its words again.
+        hint={off ? '' : control.keys === undefined ? null : control.label}
         hintKeys={off ? undefined : control.keys}
         hintShortcut={off ? undefined : control.shortcut}
         onClick={() => {
