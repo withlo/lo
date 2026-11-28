@@ -315,7 +315,8 @@ function leadIn(overview: DrawnOverview): (HTMLElement | SVGElement)[] {
         Boolean(element.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING)) &&
       element.tabIndex >= 0 &&
       !(element instanceof HTMLButtonElement && element.disabled) &&
-      element.closest('[hidden], [data-lo-hints]') === null &&
+      // Nor what's out of reach, as the room the banner holds for its widest button is.
+      element.closest('[hidden], [inert], [data-lo-hints]') === null &&
       drawnOnPage(element),
   );
 }
