@@ -462,7 +462,7 @@ test('offline says when the next try really is', async () => {
   await t.runUntil(20);
   expect(t.status().offline?.retryAt).toBe(wall(40));
   // In the background the open PR is next polled 5 minutes after it last answered.
-  t.poller.setForeground(false);
+  t.poller.setPresence('away');
   await t.run();
   expect(t.status().offline?.retryAt).toBe(wall(300));
 });
@@ -531,7 +531,7 @@ test('coming back to the foreground while offline tries at once, a read waited o
   t.http.offline = true;
   await t.runUntil(20);
   expect(t.status().offline?.retryAt).toBe(wall(40));
-  t.poller.setForeground(false);
+  t.poller.setPresence('away');
   let runs = 0;
   const waited = { name: 'Waited', watched: ['/headRefOid'] };
   void t.poller.readCached(
@@ -548,7 +548,7 @@ test('coming back to the foreground while offline tries at once, a read waited o
   // The network is back, and Lo comes to the foreground: the open PR is polled now, not at 40 s,
   // and the read goes once it has.
   t.http.offline = false;
-  t.poller.setForeground(true);
+  t.poller.setPresence('front');
   await t.run();
   expect(t.requests()[0]).toEqual([25, 'GET /pulls/1 (since)']);
   expect(t.status().offline).toBeUndefined();

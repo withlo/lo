@@ -12,12 +12,13 @@ import { cleanUp, click, render, rerender, tipOf } from '../test/dom.ts';
 import { Button } from './Button.tsx';
 import { COPIED_MS, CopyButton, CopyRoute } from './CopyButton.tsx';
 import { Dialog, type DialogState } from './Dialog.tsx';
-import { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS, loadingIn } from './Loading.tsx';
+import { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS, loadingIn, Skeletons } from './Loading.tsx';
 import { LogoMotion } from './LogoMotion.tsx';
 import { logoSeconds } from './logoFrames.ts';
 import { setMotion } from './motion.ts';
 import { Popover } from './Popover.tsx';
 import { Problem } from './Problem.tsx';
+import { Skeleton } from './Spinner.tsx';
 import { StatusItem } from './StatusBar.tsx';
 import { Switch } from './Switch.tsx';
 import { TOAST_LONG_MS, TOAST_MAX, TOAST_MS, ToastStack, type StackedToast } from './Toast.tsx';
@@ -518,6 +519,36 @@ describe('CopyButton', () => {
     expect(reading(host)).toEqual({ face: 'Copy the log', said: '' });
   });
 
+  it('puts its key’s chip after each thing it says, a button’s gap apart', async () => {
+    const host = render(
+      <CopyButton keys={['y', 'y']} size="sm" onCopy={() => true}>
+        Copy
+      </CopyButton>,
+    );
+    const button = host.querySelector('button')!;
+    // Each face is its words, then the chips, in a row with the button's gap: the chips stay
+    // beside the words that show, not past the room the widest face keeps.
+    const faces = [...button.querySelectorAll('.inline-grid > span')];
+    expect(
+      faces.map((face) => [face.firstChild?.textContent, face.querySelectorAll('kbd').length]),
+    ).toEqual([
+      ['Copy', 2],
+      ['Copied', 2],
+      ['Couldn’t copy', 2],
+    ]);
+    expect(faces.every((face) => face.classList.contains('inline-flex'))).toBe(true);
+    expect(faces.every((face) => face.classList.contains('gap-4'))).toBe(true);
+    // A screen reader hears the key once, as the button's description, not as its chips' letters.
+    expect(button.getAttribute('aria-description')).toBe('Keys y then y');
+    expect(
+      [...button.querySelectorAll('kbd')].every(
+        (kbd) => kbd.getAttribute('aria-hidden') === 'true',
+      ),
+    ).toBe(true);
+    await press(host);
+    expect(reading(host)).toEqual({ face: 'Copiedyy', said: 'Copied' });
+  });
+
   it('says it couldn’t copy when copying fails, and when nothing gives it a way to', async () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     const host = render(
@@ -935,6 +966,44 @@ describe('Loading', () => {
     expect(loadingIn(host.querySelector('#waiting')!)).toBe(true);
     expect(loadingIn(host.querySelector('[role="status"]')!)).toBe(true);
     expect(loadingIn(host.querySelector('#drawn')!)).toBe(false);
+  });
+});
+
+describe('Skeletons', () => {
+  it('shows nothing at first, then its skeletons in one Swap, naming the wait to a screen reader', async () => {
+    vi.useFakeTimers();
+    const host = render(
+      <section>
+        <Skeletons status="Reading timeline…">
+          <Skeleton className="w-1/2" />
+        </Skeletons>
+      </section>,
+    );
+    const region = host.querySelector('[role="status"]')!;
+    expect(region.getAttribute('aria-busy')).toBe('true');
+    expect(region.textContent).toBe('Reading timeline…');
+    expect(region.querySelector('.skeleton')).toBeNull();
+    // A view showing it hasn't laid out what it will show, even before it shows.
+    expect(loadingIn(host.querySelector('section')!)).toBe(true);
+    act(() => {
+      vi.advanceTimersByTime(LOADING_DELAY_MS);
+    });
+    const shown = region.querySelector('[aria-hidden="true"]')!;
+    expect(shown.className).toBe('move-swap');
+    expect(shown.querySelector('.skeleton')).not.toBeNull();
+    vi.useRealTimers();
+    expect(await missingRules(host)).toEqual([]);
+  });
+
+  it('shows its skeletons at once, still, in a wait that has run its first moments', () => {
+    const host = render(
+      <Skeletons status="Reading threads…" since={Date.now() - LOADING_DELAY_MS}>
+        <Skeleton className="w-1/2" />
+      </Skeletons>,
+    );
+    const shown = host.querySelector('[aria-hidden="true"]')!;
+    expect(shown.querySelector('.skeleton')).not.toBeNull();
+    expect(shown.className).toBe('');
   });
 });
 

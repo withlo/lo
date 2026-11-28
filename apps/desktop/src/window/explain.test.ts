@@ -74,14 +74,15 @@ describe('the causes beyond GitHub’s answer', () => {
     expect(waitsOut({ kind: 'offline' })).toBe(false);
   });
 
-  it('offers what follows from the cause: signing in, nothing while it waits, or trying again', () => {
+  it('offers what follows from the cause: signing in, adding an account, nothing while it waits, or trying again', () => {
     expect(remedyOf({ kind: 'rateLimit', resets: 1 })).toBe('none');
     expect(remedyOf({ kind: 'signedOut', login: 'rozed-bot' })).toBe('signInAgain');
-    expect(remedyOf({ kind: 'hidden', login: 'rozed-bot' })).toBe('signIn');
+    expect(remedyOf({ kind: 'hidden', login: 'rozed-bot' })).toBe('addAccount');
     expect(remedyOf({ kind: 'private', signedIn: false })).toBe('signIn');
     expect(remedyOf({ kind: 'private', signedIn: true })).toBe('tryAgain');
     expect(remedyOf({ kind: 'github' })).toBe('tryAgain');
     expect(REMEDY_LABELS.signInAgain).toBe('Sign in again');
+    expect(REMEDY_LABELS.addAccount).toBe('Add account…');
   });
 });
 

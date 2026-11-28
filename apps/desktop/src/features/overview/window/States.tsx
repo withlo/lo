@@ -8,6 +8,7 @@ import {
   CopyStatus,
   Countdown,
   EmptyState,
+  Key,
   Problem,
   useCopySaid,
   type CopySaid,
@@ -20,7 +21,7 @@ import { useStore } from 'zustand';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
-import { signIn } from '../../accounts/window/shared.ts';
+import { signInAgain } from '../../accounts/window/shared.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import { useRunLayers, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import updates from '../../updates/keys.ts';
@@ -134,7 +135,7 @@ function openPage(url: string): void {
 function readAction(problem: ReadProblem, again: ProblemAction): ProblemAction | undefined {
   switch (problem.kind) {
     case 'signedOut':
-      return { label: 'Sign in again', onClick: signIn };
+      return { label: 'Sign in again', onClick: signInAgain };
     case 'rateLimited':
       // Until the limit resets, there's nothing to try.
       return problem.secondary ? again : undefined;
@@ -223,9 +224,17 @@ function copyAction(
   copied: CopySaid | undefined,
 ): ProblemAction | undefined {
   if (prompt === undefined) return undefined;
+  const keys = keyOf(COPY_PROMPT);
   return {
-    label: <CopyFaces said={copied}>Copy prompt</CopyFaces>,
-    keys: keyOf(COPY_PROMPT),
+    // Its key's chip goes in each of its faces, beside the words that show.
+    label: (
+      <CopyFaces
+        said={copied}
+        chip={keys === undefined ? undefined : <Key keys={keys} decorative />}
+      >
+        Copy prompt
+      </CopyFaces>
+    ),
     onClick: () => void copyPrompt(id, prompt),
   };
 }

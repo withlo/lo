@@ -1,5 +1,7 @@
 // Made-up jobs for the tests, run on real worker threads.
 
+import { threadId } from 'node:worker_threads';
+
 import { z } from 'zod';
 
 import { IpcError, reply } from '../../ipc/contract.ts';
@@ -13,6 +15,8 @@ export const sample = defineJobs('sample', {
   fill: { input: z.undefined(), reply: reply<never>() },
   refuse: { input: z.undefined(), reply: reply<never>() },
   crash: { input: z.undefined(), reply: reply<never>() },
+  thread: { input: z.number(), reply: reply<number>() },
+  unsendable: { input: z.undefined(), reply: reply<unknown>() },
 });
 
 export default defineRunner(sample, {
@@ -51,5 +55,19 @@ export default defineRunner(sample, {
     run() {
       throw new Error('The secret token is hunter2.');
     },
+  },
+  // The worker it ran on, after keeping it busy for `input` ms.
+  thread: {
+    run(input) {
+      const end = Date.now() + input;
+      while (Date.now() < end) {
+        // Busy, well within its deadline.
+      }
+      return threadId;
+    },
+  },
+  // An answer a port can't carry.
+  unsendable: {
+    run: () => () => 'a function',
   },
 });

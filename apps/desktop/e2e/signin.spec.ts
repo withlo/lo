@@ -144,6 +144,8 @@ test('signs in with GitHub: the code, GitHub’s page, and the account, never it
   await expect(listed).toContainText('Signed in');
   // Signed in the usual way, it says nothing of how.
   await expect(listed).not.toContainText('GitHub CLI');
+  // Another sign-in adds an account, and says so.
+  await expect(accounts(page).getByRole('button', { name: 'Add account…' })).toBeVisible();
 
   // The window has its summary, and nothing of its tokens.
   const reply = await page.evaluate(() => window.lo.invoke('accounts.list'));

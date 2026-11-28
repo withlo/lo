@@ -56,6 +56,7 @@ import type {
 import { imageSize } from '@lo/markdown';
 
 import { Icon } from '../Icon.tsx';
+import type { IconName } from '../icons.ts';
 import { secureLink } from './links.ts';
 import type { Anchors } from './scope.ts';
 
@@ -424,19 +425,57 @@ function heading<X extends Extension>(node: Heading<X>, r: Rendering<X>): ReactN
   }
 }
 
-/** Each alert's word, and the status it's drawn in: the color never shows without the word. */
-function alertTone(kind: Alert['type']): { label: string; box: string; word: string } {
+/** How an alert is drawn: its word, the icon before it, and the status it's drawn in. */
+interface AlertTone {
+  label: string;
+  icon: IconName;
+  box: string;
+  word: string;
+}
+
+/**
+ * Each alert's word, its icon, and the status it's drawn in: the color never shows without the
+ * word. The icons are Lucide's nearest to the octicons GitHub draws: `info` for its info,
+ * `lightbulb` for light-bulb, `message-square-exclamation-point` for report,
+ * `triangle-exclamation-point` for alert, and `octagon-exclamation-point` for stop.
+ */
+function alertTone(kind: Alert['type']): AlertTone {
   switch (kind) {
     case 'note':
-      return { label: 'Note', box: 'border-info-border bg-info-bg', word: 'text-info' };
+      return {
+        label: 'Note',
+        icon: 'info',
+        box: 'border-info-border bg-info-bg',
+        word: 'text-info',
+      };
     case 'tip':
-      return { label: 'Tip', box: 'border-success-border bg-success-bg', word: 'text-success' };
+      return {
+        label: 'Tip',
+        icon: 'lightbulb',
+        box: 'border-success-border bg-success-bg',
+        word: 'text-success',
+      };
     case 'important':
-      return { label: 'Important', box: 'border-info-border bg-info-bg', word: 'text-info' };
+      return {
+        label: 'Important',
+        icon: 'message-square-exclamation-point',
+        box: 'border-info-border bg-info-bg',
+        word: 'text-info',
+      };
     case 'warning':
-      return { label: 'Warning', box: 'border-warning-border bg-warning-bg', word: 'text-warning' };
+      return {
+        label: 'Warning',
+        icon: 'triangle-exclamation-point',
+        box: 'border-warning-border bg-warning-bg',
+        word: 'text-warning',
+      };
     case 'caution':
-      return { label: 'Caution', box: 'border-danger-border bg-danger-bg', word: 'text-danger' };
+      return {
+        label: 'Caution',
+        icon: 'octagon-exclamation-point',
+        box: 'border-danger-border bg-danger-bg',
+        word: 'text-danger',
+      };
     default:
       kind satisfies never;
       throw new Error(`A kind of alert Lo doesn’t know: ${JSON.stringify(kind)}.`);
@@ -450,7 +489,11 @@ function alert<X extends Extension>(node: Alert<X>, r: Rendering<X>): ReactNode 
       role="note"
       className={`comment-blocks measured space-y-6 rounded-md border px-12 py-8 ${tone.box}`}
     >
-      <p className={`font-semibold ${tone.word}`}>{tone.label}</p>
+      {/* GitHub's title: the icon, then the word, both in the alert's tone. */}
+      <p className={`flex items-center gap-8 font-semibold ${tone.word}`}>
+        <Icon name={tone.icon} size={16} />
+        {tone.label}
+      </p>
       {drawBlocks(node.children, r)}
     </div>
   );

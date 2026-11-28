@@ -132,12 +132,15 @@ test('a button busy with what it started says what it’s doing, and runs nothin
   expect(ran).toEqual([]);
 });
 
-/** The face `host`'s button shows, and what its live region says. */
+/**
+ * The face `host`'s button shows, as its words and then its key's chip, which follows them in it, and
+ * what its live region says.
+ */
 function said(host: HTMLElement) {
   return {
     shown: [...host.querySelectorAll('button .inline-grid > span')]
       .filter((face) => !face.classList.contains('invisible'))
-      .map((face) => face.textContent),
+      .map((face) => `${face.firstChild?.textContent} ${face.querySelector('kbd')?.textContent}`),
     heard: host.querySelector('[role="status"]')?.textContent,
   };
 }
@@ -155,7 +158,7 @@ test('a button that copies reads what its last copy came to, as wide as its labe
         />,
       ),
     ),
-  ).toEqual({ shown: ['Copy prompt'], heard: '' });
+  ).toEqual({ shown: ['Copy prompt c'], heard: '' });
   expect(
     said(
       draw(
@@ -166,7 +169,7 @@ test('a button that copies reads what its last copy came to, as wide as its labe
         />,
       ),
     ),
-  ).toEqual({ shown: ['Copied'], heard: 'Copied' });
+  ).toEqual({ shown: ['Copied c'], heard: 'Copied' });
   expect(
     said(
       draw(
@@ -177,7 +180,7 @@ test('a button that copies reads what its last copy came to, as wide as its labe
         />,
       ),
     ),
-  ).toEqual({ shown: ['Couldn’t copy'], heard: 'Couldn’t copy' });
+  ).toEqual({ shown: ['Couldn’t copy c'], heard: 'Couldn’t copy' });
 });
 
 /** The size of `host`'s icon, by its class, and each button's look and size. */

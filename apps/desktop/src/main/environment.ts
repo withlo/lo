@@ -301,9 +301,10 @@ export function devicePoll(options: { packaged: boolean; env: Environment }): nu
 
 /**
  * How often Lo reads what's on screen, in milliseconds, from `LO_POLL_MS` in a build run from
- * source, in place of 20 s: the pull request on screen, the place in the merge queue of one that's
- * queued, and the merge queue's own tab, so a test needn't wait 20 s for each read; nothing to keep
- * Lo's own. A packaged build ignores it.
+ * source: the pull request on screen, in place of 10 s in front of other windows and 20 s behind
+ * them, and the place in the merge queue of one that's queued and the merge queue's own tab, in
+ * place of 20 s, so a test needn't wait for each read; nothing to keep Lo's own. A packaged build
+ * ignores it.
  */
 export function pollEvery(options: { packaged: boolean; env: Environment }): number | undefined {
   const wait = options.env.LO_POLL_MS;

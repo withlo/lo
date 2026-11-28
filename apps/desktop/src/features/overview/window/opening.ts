@@ -1,10 +1,12 @@
 // What a pull request's tab opens on when Settings says the overview: its overview, when it has one
 // Lo can show, else its timeline, where the description is first. The tab opens on the overview's
 // view, which draws the tab's placeholder until it knows, for {@link holdLimit} at most, then stays
-// or hands the middle to the timeline before either has drawn anything. Once chosen, it's never
-// chosen again for the tab: an overview that comes later is offered, never switched to. A view the
-// reader picks while the tab waits is where the tab stays. A tab that opened on another view, as
-// Settings said, shows the overview as it is whenever the reader comes to it.
+// or hands the middle to the timeline. Handing it over, the view draws the placeholder until it's
+// gone from the screen, so the timeline takes the wait over at once and the overview's own state,
+// such as there being none, is never on screen on the way. Once chosen, it's never chosen again for
+// the tab: an overview that comes later is offered, never switched to. A view the reader picks
+// while the tab waits is where the tab stays. A tab that opened on another view, as Settings said,
+// shows the overview as it is whenever the reader comes to it.
 
 import { holdLimit } from '../../revisions/window/shared.ts';
 import { tabState } from '../../tab/window/shared.ts';
@@ -31,13 +33,15 @@ export function openingOf(known: Known, waited: number): Opening {
  * - `on`: what it stayed on, once chosen: the timeline only for want of an overview to show, so
  *   one that comes later is offered;
  * - `seen`: the overview has been on screen since it showed, so it's no longer offered;
- * - `chose`: the reader showed another middle view while it waited, so it stays where they are.
+ * - `chose`: the reader showed another middle view while it waited, so it stays where they are;
+ * - `handing`: it's handing its middle to the timeline, and the overview's view is still on screen.
  */
 export interface Opened {
   readonly since: number | undefined;
   readonly on: Exclude<Opening, 'waiting'> | undefined;
   readonly seen: boolean;
   readonly chose: boolean;
+  readonly handing: boolean;
 }
 
 export const openings = tabState<Opened>(() => ({
@@ -45,6 +49,7 @@ export const openings = tabState<Opened>(() => ({
   on: undefined,
   seen: false,
   chose: false,
+  handing: false,
 }));
 
 /**

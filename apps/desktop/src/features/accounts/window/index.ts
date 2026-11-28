@@ -10,7 +10,7 @@ import { heardSignIn, openSignIn, openSignOut, waitingSignIn } from './dialogs.t
 import { AccountDialogs } from './AccountDialogs.tsx';
 import { main } from './main.ts';
 import { pressCopyCode } from './SignIn.tsx';
-import { accountsStore, showAccounts, unlistedAccounts } from './store.ts';
+import { accountsStore, listedAccounts, showAccounts, unlistedAccounts } from './store.ts';
 
 export default {
   commands: handlers(keys, {
@@ -19,7 +19,11 @@ export default {
       run: () => pressCopyCode(),
       enabled: () => (waitingSignIn() === undefined ? 'No sign-in code to copy' : true),
     },
-    addAccount: { run: () => openSignIn() },
+    addAccount: {
+      run: () => openSignIn(),
+      // Once an account is listed, a sign-in adds another: it says so, wherever it's offered.
+      labelled: () => (listedAccounts().length > 0 ? 'Add account…' : undefined),
+    },
     signOut: {
       run: () => openSignOut((accountsStore.getState().accounts ?? []).map(({ login }) => login)),
       enabled: () =>

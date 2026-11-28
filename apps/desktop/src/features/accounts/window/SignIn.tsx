@@ -14,6 +14,12 @@
 // The line under the title says where to type the code only while there's a code to type. A
 // sign-in that ended keeps its code in the box, dimmed; one that ended before any code came has
 // no box.
+//
+// Once an account is listed, a sign-in adds another, and says so: its title is "Add account", its
+// line says to type the code signed in as the account to add, since GitHub's page signs in
+// whichever account it's signed in to, and it ends with "Added ravi-k", or with the account that
+// was already there. Signing in a given account, as "Sign in again" does one GitHub signed out,
+// says only that it signs in.
 
 import {
   Collapse,
@@ -21,7 +27,6 @@ import {
   Dialog,
   duration,
   Icon,
-  Key,
   Problem,
   Spinner,
   Swap,
@@ -115,14 +120,21 @@ interface Step {
   problem?: DialogProps['problem'];
 }
 
-/** A sign-in that ended without an account: why, and the main button as the way on. */
-function failed(why: SignInFailure | 'cancelled', details: string | undefined): Step {
+/**
+ * A sign-in that ended without an account: why, and the main button as the way on. `dialog` is the
+ * sign-in's: one that added an account says it couldn't add one, and starting over adds again.
+ */
+function failed(
+  dialog: SignInDialog,
+  why: SignInFailure | 'cancelled',
+  details: string | undefined,
+): Step {
   const way: Pick<DialogAction, 'again' | 'onRun'> =
     why === 'noKeyring'
       ? // Lo looks for one as it starts, so it's started again once one answers.
         { again: 'Quit Lo', onRun: quit }
       : // The sign-in is what failed, and starting it over repeats it: "Try again".
-        { onRun: openSignIn };
+        { onRun: () => openSignIn({ adds: dialog.adding !== undefined }) };
   return {
     state: 'failed',
     action: {
@@ -131,7 +143,11 @@ function failed(why: SignInFailure | 'cancelled', details: string | undefined): 
       shortcut: shortcut('enter'),
       ...way,
     },
-    problem: { title: 'Couldn’t sign in', reason: reasonOf(why), details },
+    problem: {
+      title: dialog.adding === undefined ? 'Couldn’t sign in' : 'Couldn’t add the account',
+      reason: reasonOf(why),
+      details,
+    },
   };
 }
 
@@ -144,7 +160,7 @@ function stepOf(dialog: SignInDialog): Step {
     shortcut: shortcut('enter'),
     onRun: () => void openGithub(),
   };
-  if (error !== undefined) return failed('failed', error);
+  if (error !== undefined) return failed(dialog, 'failed', error);
   // Nothing is sent that `Esc` can't stop, so it's still asking: the button waits for the code.
   if (state === undefined) return { state: 'ask', action: { ...action, disabled: 'Getting code' } };
   switch (state.kind) {
@@ -155,9 +171,9 @@ function stepOf(dialog: SignInDialog): Step {
     case 'signedIn':
       return { state: 'done', action };
     case 'failed':
-      return failed(state.why, state.message);
+      return failed(dialog, state.why, state.message);
     case 'cancelled':
-      return failed('cancelled', undefined);
+      return failed(dialog, 'cancelled', undefined);
     default:
       throw new Error(`A sign-in state Lo doesn’t know: ${JSON.stringify(state satisfies never)}`);
   }
@@ -181,13 +197,14 @@ export function SignInView({
     else if (step.state !== 'working' && step.action.disabled === undefined) step.action.onRun();
   };
   const page = dialog?.code?.page;
-  // Where to type the code, while there's one to type. Its line stays, empty, at every other
-  // step, so nothing moves: the code's box closes by itself when the sign-in ends before a code.
+  const adding = dialog?.adding !== undefined;
+  // Where to type the code, while there's one to type, and, while it adds an account, as which:
+  // GitHub's page signs in whichever account it's signed in to. Its line stays, empty, at every
+  // other step, so nothing moves: the code's box closes by itself when the sign-in ends before a
+  // code.
   const where =
     dialog?.state?.kind === 'waiting'
-      ? page === undefined
-        ? 'Enter this code on GitHub'
-        : `Enter this code at ${page}`
+      ? `Enter this code ${page === undefined ? 'on GitHub' : `at ${page}`}${adding ? ', signed in as the account to add' : ''}`
       : '\u00a0';
   return (
     <Dialog
@@ -195,7 +212,8 @@ export function SignInView({
       onOpenChange={(open) => {
         if (!open) closeDialog();
       }}
-      title="Sign in with GitHub"
+      // Once an account is listed, a sign-in adds another, and says so.
+      title={adding ? 'Add account' : 'Sign in with GitHub'}
       description={where}
       state={step?.state}
       action={step?.action}
@@ -258,10 +276,7 @@ function Body({ dialog }: { dialog: SignInDialog }) {
             </Swap>
             {/* Its room is kept while there's nothing to copy. */}
             <span className={waiting ? 'flex-none' : 'invisible flex-none'} {...{ [COPY]: '' }}>
-              <CopyButton variant="secondary" onCopy={copyCode}>
-                Copy
-                {copy !== undefined && <Key keys={copy} decorative />}
-              </CopyButton>
+              <CopyButton variant="secondary" keys={copy} onCopy={copyCode} />
             </span>
           </div>
           <Status dialog={dialog} />
@@ -304,7 +319,40 @@ function Status({ dialog }: { dialog: SignInDialog }) {
   );
 }
 
-function statusOf({ state, error }: SignInDialog, expired: boolean): ReactNode {
+/**
+ * Who the sign-in signed in: "Signed in as ravi-k", or, as it adds an account, "Added ravi-k"; or
+ * that GitHub's page signed in one already listed, so nothing was added, unless it was signed out:
+ * it's signed in again.
+ */
+function SignedIn({
+  dialog,
+  login,
+  name,
+}: {
+  dialog: SignInDialog;
+  login: string;
+  name: string | null;
+}) {
+  const who = (
+    <>
+      <strong className="font-semibold">{login}</strong>
+      {name === null ? '' : ` (${name})`}
+    </>
+  );
+  const listed = dialog.adding?.find((account) => account.login === login.toLowerCase());
+  if (dialog.adding === undefined || listed?.signedOut === true) return <>Signed in as {who}</>;
+  if (listed !== undefined) {
+    return (
+      <>
+        <strong className="font-semibold">{login}</strong> was already added
+      </>
+    );
+  }
+  return <>Added {who}</>;
+}
+
+function statusOf(dialog: SignInDialog, expired: boolean): ReactNode {
+  const { state, error } = dialog;
   if (error !== undefined) return null;
   if (state === undefined) return <Wait>Getting code…</Wait>;
   switch (state.kind) {
@@ -318,8 +366,7 @@ function statusOf({ state, error }: SignInDialog, expired: boolean): ReactNode {
         <>
           <Icon name="circle-check" size={12} className="text-success" />
           <span className="text-fg">
-            Signed in as <strong className="font-semibold">{state.login}</strong>
-            {state.name === null ? '' : ` (${state.name})`}
+            <SignedIn dialog={dialog} login={state.login} name={state.name} />
           </span>
         </>
       );
