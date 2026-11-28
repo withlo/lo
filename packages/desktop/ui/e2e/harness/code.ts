@@ -43,8 +43,9 @@ window.addEventListener(
   { capture: true },
 );
 
-// No command of Lo's: every key is the editor's, and the reader's input as it comes.
-listen(window, new Registry({ system: 'linux', commands: [] }));
+// No command of Lo's: every key is the editor's, and the reader's input as it comes. The scene
+// that picks lines listens with its comment command instead.
+let unlisten = listen(window, new Registry({ system: 'linux', commands: [] }));
 
 let old: string[] = [];
 let changed: string[] = [];
@@ -167,6 +168,8 @@ const commenting = defineCommands('comments', {
   },
 });
 const comments: Target[] = [];
+/** What each right-click menu was opened on, in the scene that picks lines. */
+const menus: Target[] = [];
 
 /**
  * The lines of the scene that picks lines that take a comment: on each side, those of its file's
@@ -308,15 +311,17 @@ const harness = {
    * lines of a hunk take a comment, unless `unknown`: the caller can't tell yet.
    */
   openPicking(layout: DiffLayout, unknown = false): void {
-    holdRegistry(
-      new Registry({
-        system: 'linux',
-        commands: commandsOf(commenting).map((command) => ({
-          ...command,
-          handler: { run: (target: Target) => void comments.push(target) },
-        })),
-      }),
-    );
+    const registry = new Registry({
+      system: 'linux',
+      commands: commandsOf(commenting).map((command) => ({
+        ...command,
+        handler: { run: (target: Target) => void comments.push(target) },
+      })),
+    });
+    holdRegistry(registry);
+    // `c` comments, as in Lo, the key listener taking it before the view hears it.
+    unlisten();
+    unlisten = listen(window, registry);
     known = !unknown;
     const a = Array.from({ length: 80 }, (_, index) => `a ${index + 1}`);
     const changedA = a.map((text, index) =>
@@ -352,7 +357,7 @@ const harness = {
         file: ignore,
         jumped: ignore,
         load: ignore,
-        menu: ignore,
+        menu: (target) => void menus.push(target),
         commentLines: (id) =>
           known
             ? {
@@ -369,6 +374,10 @@ const harness = {
   /** What the `+` ran the comment command on, in the scene that picks lines, in order. */
   commented(): Target[] {
     return comments;
+  },
+  /** What each right-click menu was opened on, in the scene that picks lines, in order. */
+  menus(): Target[] {
+    return menus;
   },
   /** Which lines the caller says take a comment, in the scene that picks lines, from now on. */
   know(): void {

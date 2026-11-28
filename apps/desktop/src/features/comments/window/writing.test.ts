@@ -13,6 +13,7 @@ import {
   blockWhere,
   boxAt,
   commentableOn,
+  commentedOn,
   commentOnText,
   hunksOf,
   linesAt,
@@ -246,6 +247,18 @@ describe('a draft’s place', () => {
     expect(commentOnText({ ...span, side: 'old' }, 'Line 35, removed, to line 40')).toBe(
       'Comment on line 35, removed, to line 40',
     );
+  });
+
+  test('the commands that comment take the lines selected a right-click was inside, and the rest what it was on', () => {
+    const clicked = { file: 'f1', side: 'new' as const, line: 36, column: 4 };
+    const selected = { file: 'f1', side: 'new' as const, from: 35, to: 38 };
+    expect(commentedOn({ kind: 'line', at: clicked, selected })).toEqual({
+      kind: 'line',
+      at: selected,
+    });
+    expect(commentedOn({ kind: 'line', at: clicked })).toEqual({ kind: 'line', at: clicked });
+    const header = { kind: 'header' as const, file: 'f1', side: 'new' as const };
+    expect(commentedOn(header)).toBe(header);
   });
 
   test('a reply’s is its thread’s, and an edit’s its comment’s, whatever the revision', () => {

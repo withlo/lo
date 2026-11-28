@@ -7,6 +7,7 @@
 
 import { CommentableLines, Line, lineRefText, type Lines, type Screen } from '@lo/review';
 import { clock } from '@lo/ui';
+import type { HeaderTarget, LineTarget } from '@lo/ui/commands';
 import type { OnFile, Place, Span } from '@lo/ui/code';
 
 import type { DrawnDiff, ThreadedFile } from '../../diff/window/shared.ts';
@@ -199,6 +200,14 @@ export function whereText(place: DraftPlaceRow): string {
   if (place.kind === 'reply') return 'Reply';
   if (place.kind === 'edit') return 'Edit';
   return lineRefText({ lines: place.lines });
+}
+
+/**
+ * What the commands that comment act on, from `target`: the lines selected that a right-click was
+ * inside, where it gives them, else what it's on.
+ */
+export function commentedOn(target: LineTarget | HeaderTarget): LineTarget | HeaderTarget {
+  return target.kind === 'line' && target.selected ? { kind: 'line', at: target.selected } : target;
 }
 
 /**

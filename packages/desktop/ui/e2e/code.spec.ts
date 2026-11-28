@@ -1739,3 +1739,78 @@ test('a drag from the `+` held near the foot of the pane scrolls it under a stil
     { kind: 'line', at: { file: 'a', side: 'new', from: 5, to: 53 } },
   ]);
 });
+
+test('a right-click inside lines selected gives the menu the line and column clicked, and the lines selected for the commands that comment', async () => {
+  const page = await openPicking('split');
+  const seven = await rowOf(page, 'After', 'a 7');
+  // The cursor at line 7's start, then selected to line 9's: lines 7 and 8.
+  await page.mouse.click(seven.x - 39, seven.y);
+  for (const key of ['Shift+ArrowDown', 'Shift+ArrowDown']) await page.keyboard.press(key);
+  await page.mouse.click(seven.x - 30, seven.y, { button: 'right' });
+  const [menu] = await page.evaluate(() => window.harness.menus());
+  expect(menu).toMatchObject({
+    kind: 'line',
+    at: { file: 'a', side: 'new', line: 7 },
+    selected: { file: 'a', side: 'new', from: 7, to: 8 },
+  });
+  // What acts on a word, as Show definition, has the one clicked.
+  expect(menu && 'at' in menu && 'column' in menu.at).toBe(true);
+});
+
+test('Shift alone leaves the `+` where it is, and a key a command takes after it takes the `+` away', async () => {
+  const page = await openPicking('split');
+  const seven = await rowOf(page, 'After', 'a 7');
+  await page.mouse.click(seven.x, seven.y);
+  await plusAt(page, 'After', 'a 8');
+  const add = page.locator('.lo-gutteradd');
+  await page.keyboard.press('Shift');
+  await frames(page);
+  await expect(add).toBeVisible();
+  // `c`, which the key listener takes for Comment before the view hears it.
+  await page.keyboard.press('c');
+  await frames(page);
+  expect((await picking(page)).commented).toHaveLength(1);
+  await expect(add).toBeHidden();
+});
+
+test('inline, Shift with a click on the `+` of a line no range from the cursor’s line can end on comments on that line alone', async () => {
+  const page = await openPicking('inline');
+  // The cursor on removed line 6; the `+` beside the line added for it, under it.
+  const removed = await rowOf(page, 'Changes', 'a 6');
+  await page.mouse.click(removed.x, removed.y);
+  const at = await plusAt(page, 'Changes', 'a 6, changed');
+  await page.keyboard.down('Shift');
+  await page.mouse.click(at.x, at.y);
+  await page.keyboard.up('Shift');
+  expect((await picking(page)).commented).toEqual([
+    { kind: 'line', at: { file: 'a', side: 'new', line: 6 } },
+  ]);
+});
+
+test('a drag from the `+` whose column stops being drawn, let go before the pointer moves again, comments on nothing', async () => {
+  const page = await openPicking('split');
+  await page.evaluate(() =>
+    document.addEventListener(
+      'pointerdown',
+      (event) => document.body.setAttribute('data-pointer', String(event.pointerId)),
+      { capture: true },
+    ),
+  );
+  await plusAt(page, 'After', 'a 5');
+  await page.mouse.down();
+  await dragTo(page, 'After', 'a 8');
+  expect((await picking(page)).picked.After).toHaveLength(4);
+  // Drawn inline, and let go in the same task, before a frame follows the pointer.
+  await page.evaluate(() => {
+    window.harness.layout('inline');
+    const pointerId = Number(document.body.getAttribute('data-pointer'));
+    document
+      .querySelector('.lo-gutteradd')!
+      .dispatchEvent(new PointerEvent('pointerup', { pointerId, bubbles: true, clientY: 300 }));
+  });
+  await page.mouse.up();
+  await frames(page);
+  const now = await picking(page);
+  expect(now.commented).toEqual([]);
+  expect(now.tip).toBeUndefined();
+});

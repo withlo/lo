@@ -78,8 +78,8 @@ export function restingEnd(
 
 /**
  * Starts picking lines from `control` on the press `event`, a left button's with no modifier, or
- * does nothing for another. Returns what drops the pick from outside, or `undefined` for a press
- * that doesn't pick.
+ * does nothing for another. Returns what drops the pick from outside, at once, or from `follow` as
+ * it's let go, in place of its end; or `undefined` for a press that doesn't pick.
  */
 export function pickLines(
   control: HTMLElement,
@@ -96,6 +96,8 @@ export function pickLines(
   let at = from;
   let started = false;
   let done = false;
+  /** Whether the view dropped it, which may be as it's let go: then it ends in nothing. */
+  let dropped = false;
   let frame = 0;
   let tip: HTMLElement | undefined;
   let stopKeys: (() => void) | undefined;
@@ -131,7 +133,10 @@ export function pickLines(
     if (done) return;
     const by = scrollFor(at.y, pick.band());
     const scrolled = by !== 0 && pick.scroll(by);
-    drawTip(pick.follow(at.y));
+    const words = pick.follow(at.y);
+    // The view may drop it as it follows: its tip and frames are gone with it.
+    if (done) return;
+    drawTip(words);
     // Held near an edge, it scrolls on in the next frame, the pointer still or not, and the end
     // follows again once the view knows where it may rest.
     if (scrolled || !pick.known()) frame = requestAnimationFrame(tick);
@@ -166,9 +171,10 @@ export function pickLines(
       return;
     }
     if (how === 'let go') {
-      // Where the pointer let go, the pane drawn as it is now.
+      // Where the pointer let go, the pane drawn as it is now, unless the view drops it there.
       pick.follow(at.y);
-      pick.end();
+      if (dropped) pick.cancel();
+      else pick.end();
     } else pick.cancel();
   };
 
@@ -178,6 +184,11 @@ export function pickLines(
     end('let go');
   };
   const onCancel = (): void => end('cancel');
+  /** The view drops it: at once, or, while it's let go, in place of its end. */
+  const drop = (): void => {
+    dropped = true;
+    end('cancel');
+  };
 
   function stop(): void {
     cancelAnimationFrame(frame);
@@ -202,5 +213,5 @@ export function pickLines(
   window?.addEventListener('blur', onCancel);
   // The wheel's scroll, or anything else's, moves the lines under a pointer held still.
   document.addEventListener('scroll', soon, { capture: true, passive: true });
-  return onCancel;
+  return drop;
 }

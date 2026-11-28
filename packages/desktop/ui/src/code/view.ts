@@ -4341,6 +4341,8 @@ class View implements DiffView {
       // Without a caller to say, a drag keeps to the lines drawn on its side.
       known: () => drag.lines !== undefined || !this.#on.commentLines,
       end: () => {
+        // Dropped as it was let go, as its file closed: nothing to comment on.
+        if (this.#pick !== drag) return;
         this.#endPick(drag);
         // Back on its own line, it's the `+`'s click there; else Comment on the lines it picked.
         const span = this.#pickSpan(drag);
@@ -4372,7 +4374,8 @@ class View implements DiffView {
         ? this.#inline?.layout.files[drag.file]
         : this.#layout.files[drag.file]?.[drag.pane];
     if (!this.#panes().includes(drag.pane) || !sizes || this.#noteOf(drag.file)) {
-      queueMicrotask(() => drag.stop?.());
+      this.#endPick(drag);
+      drag.stop?.();
       return undefined;
     }
     if (!drag.started) {
@@ -4504,7 +4507,7 @@ class View implements DiffView {
    * edges, when the cursor is in the same file and column, on a line that takes a comment; else
    * nothing, and the click is the `+`'s own line's.
    */
-  #fromCursor(): LineTarget | HeaderTarget | undefined {
+  #fromCursor(): LineTarget | undefined {
     const row = this.#addRow;
     if (!row || row.pane !== this.#activePane()) return undefined;
     const view = this.#viewOf(row.pane);
@@ -4522,7 +4525,8 @@ class View implements DiffView {
     };
     if (pick.lines && pick.lines.on(this.#pickSpan(pick)) === undefined) return undefined;
     pick.end = this.#endOf(pick, row.line);
-    if (pick.end === pick.anchor) return this.#lineTarget(cursor);
+    // No line toward the clicked one takes the range's end: the click is its own line's.
+    if (pick.end === pick.anchor) return undefined;
     return { kind: 'line', at: this.#pickSpan(pick) };
   }
 
@@ -4608,7 +4612,11 @@ class View implements DiffView {
   readonly #keyHidesAdd = (): void => {
     clearTimeout(this.#keyWait);
     this.#keyWait = setTimeout(() => {
-      if (!MODIFIERS.has(this.#lastKey)) this.#hideAdd();
+      // Read once: a key the key listener takes for a command never reaches the view's listener,
+      // so the modifier heard before it mustn't stand for it.
+      const lone = MODIFIERS.has(this.#lastKey);
+      this.#lastKey = '';
+      if (!lone) this.#hideAdd();
     }, 0);
   };
 
@@ -4655,19 +4663,19 @@ class View implements DiffView {
       if (pos === null) return;
       // At the column clicked, so what acts on a word, as `gd` does, acts on the one clicked.
       const line = view.state.doc.lineAt(pos);
-      clicked =
-        this.#selectionAt(pane, line.number) ??
-        this.#lineTarget(this.#placeAt(pane, line.number), pos - line.from);
+      clicked = this.#lineTarget(this.#placeAt(pane, line.number), pos - line.from);
+      const selected = this.#selectionAt(pane, line.number);
+      if (selected && clicked.kind === 'line') clicked.selected = selected;
     }
     event.preventDefault();
     this.#on.menu(clicked, event.clientX, event.clientY);
   }
 
   /**
-   * Inside a selection of more than one line of one file on one side, a right-click on document
-   * line `line` of `pane` acts on those lines, as a key would: what the menu's commands then take.
+   * The lines selected in `pane`, more than one of one file on one side, where document line `line`
+   * is one of them: what a right-click there gives the commands that comment, as a key would.
    */
-  #selectionAt(pane: Pane, line: number): LineTarget | undefined {
+  #selectionAt(pane: Pane, line: number): Span | undefined {
     const lines = selectedLines(this.#viewOf(pane));
     if (lines.anchor === lines.head) return undefined;
     if (line < Math.min(lines.anchor, lines.head) || line > Math.max(lines.anchor, lines.head)) {
@@ -4675,7 +4683,7 @@ class View implements DiffView {
     }
     const target = this.#targetOf(pane);
     return target.kind === 'line' && 'from' in target.at && target.at.from < target.at.to
-      ? target
+      ? target.at
       : undefined;
   }
 

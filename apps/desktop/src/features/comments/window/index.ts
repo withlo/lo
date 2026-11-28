@@ -130,7 +130,7 @@ import {
   takeThreads,
 } from './threads.ts';
 import { followVim, switchVim } from './vim.ts';
-import { commentOnText } from './writing.ts';
+import { commentedOn, commentOnText } from './writing.ts';
 
 /** The pull request's tab on screen, where a comment can be written, or why one can't. */
 function writable(): PullTab | string {
@@ -205,19 +205,18 @@ function changed(view: string): void {
 
 /** On lines selected, what Comment's row in their right-click menu says: "Comment on lines 35–38". */
 function commentOnNamed(target: LineTarget | HeaderTarget): string | undefined {
-  if (target.kind !== 'line' || !('from' in target.at) || target.at.from === target.at.to) {
-    return undefined;
-  }
+  const on = commentedOn(target);
+  if (on.kind !== 'line' || !('from' in on.at) || on.at.from === on.at.to) return undefined;
   const tab = activeTab();
-  const taken = tab?.kind === 'pull' ? linesTaken(tab.id, target.at.file) : undefined;
-  return commentOnText(target.at, taken?.on(target.at));
+  const taken = tab?.kind === 'pull' ? linesTaken(tab.id, on.at.file) : undefined;
+  return commentOnText(on.at, taken?.on(on.at));
 }
 
 /** Opens a box as `c`, `C` or `s` do. */
 function writing(how: 'review' | 'now', suggest = false) {
   return (target: LineTarget | HeaderTarget): void => {
     const tab = inDiff();
-    if (typeof tab !== 'string') void comment(tab, target, how, suggest);
+    if (typeof tab !== 'string') void comment(tab, commentedOn(target), how, suggest);
   };
 }
 
