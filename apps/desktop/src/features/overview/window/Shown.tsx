@@ -48,11 +48,12 @@ import { ExcerptBlock, WalkthroughBlock, type CodeContext } from './Code.tsx';
 import { drawing as firstDraw, FirstDrawContext, useFirstDraw } from './drawing.ts';
 import { copyOf, revisionAt, type Standing } from './facts.ts';
 import { drawnIn, followCode, loadNewer, recordFrom } from './follow.ts';
-import { useNow } from './hooks.ts';
+import { DefinitionsLine, useOverviewTerms } from './Glossary.tsx';
+import { useDefinitions, useNow } from './hooks.ts';
 import { openings } from './opening.ts';
 import { OutOfDateBanner } from './OutOfDate.tsx';
 import { AuthorPicture, WhoWrote } from './Author.tsx';
-import { authorOf, linesOf, shortId } from './says.ts';
+import { authorOf, copyLabel, linesOf, shortId } from './says.ts';
 import { labelOf, staleAgainst } from './stale.ts';
 import { revisions, states } from './store.ts';
 
@@ -225,9 +226,11 @@ function OutlineFoot({ drawing }: { drawing: boolean }) {
 }
 
 /**
- * Who wrote the overview and when, which revision it describes, and a newer one, when pushed: as
- * tall with the offer as without it, at any width, so nothing under it moves as the offer comes,
- * nor as who wrote it does, which main reads after the rest.
+ * Who wrote the overview and when, which revision it describes, whose copy it is where it isn't the
+ * pull request's own (the fork's, the repo's copy of the fork's, or the one Lo saved once GitHub
+ * had none), and a newer one, when pushed: as tall with the offer as without it, at any width, so
+ * nothing under it moves as the offer comes, nor as who wrote it does, which main reads after the
+ * rest. A saved copy is offered nothing newer: there's nowhere to read one from.
  * Where the article is too narrow for the offer beside the rest, the offer has a line of its own,
  * kept free for it, and narrower still, so has what it describes. Who wrote it gives up its room
  * first, clipped, then the offer's words and what it describes; the way to load it never does.
@@ -278,12 +281,11 @@ function Byline({
               <span className="lo-ov-byline__dot" aria-hidden="true">
                 ·
               </span>
-              {/* The repository's copy of the fork's reads as the fork's, for now. */}
-              {copy === 'saved' ? 'saved copy' : 'from fork'}
+              {copyLabel(copy)}
             </>
           )}
         </span>
-        {state?.newer && <NewerOffer tab={tab.id} />}
+        {state?.newer && copy !== 'saved' && <NewerOffer tab={tab.id} />}
       </div>
     </div>
   );
@@ -420,6 +422,9 @@ export function Shown({
   useLayoutEffect(() => {
     return afterHold(openings.get(tab.id).since ?? Date.now(), () => first.open());
   }, [first, tab.id]);
+  // What each term shows with the repo's definitions.
+  const definitions = useDefinitions(tab.id);
+  const terms = useOverviewTerms(tab.id, definitions);
   // Seen once it's drawn and the middle view on screen, as `first.seen` says, but as it renders,
   // so its place on the page is held from the frame that shows it. Drawn behind another view, it's
   // seen only once it's shown.
@@ -431,7 +436,12 @@ export function Shown({
         <OverviewDocument
           ref={scroller}
           tree={parsed.tree}
-          byline={<Byline tab={tab} commit={commit} described={header.commit} />}
+          byline={
+            <>
+              <Byline tab={tab} commit={commit} described={header.commit} />
+              <DefinitionsLine tab={tab} definitions={definitions} />
+            </>
+          }
           banner={
             head !== undefined && <OutOfDateBanner tab={tab} commit={header.commit} head={head} />
           }
@@ -441,6 +451,7 @@ export function Shown({
           focused={focused}
           outlineFoot={<OutlineFoot drawing={drawing} />}
           hints={hints}
+          terms={terms}
           onFollow={follow}
         />
         {drawing && (

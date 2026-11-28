@@ -1,10 +1,17 @@
 import { PreviewCard } from '@base-ui/react/preview-card';
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 
-import type { Definition, Overview, TermTarget } from '@lo/artifact';
+import type { Definition, Overview, OverviewBlock, TermTarget } from '@lo/artifact';
 
-import { drawInlines, useRendering, type Rendering } from '../markdown/index.ts';
-import { useGlossary } from './terms.ts';
+import {
+  FollowLink,
+  MarkdownInlines,
+  MarkdownProvider,
+  useRendering,
+  type Rendering,
+} from '../markdown/index.ts';
+import { TermCard } from './TermCard.tsx';
+import { useGlossary, type TermShown } from './terms.ts';
 
 /** How long the pointer rests on a term before its card opens, and leaves before it closes. */
 export const HOVER_OPEN_MS = 300;
@@ -31,13 +38,16 @@ export function cardsOpen(): boolean {
 
 /**
  * A use of a defined term: a dotted underline, and a card with its definition while the pointer
- * rests on it or it has focus. `⏎`, or a click, goes to its entry in the glossary; `Esc` closes the
+ * rests on it or it has focus. `⏎`, or a click, goes to its row in the glossary; `Esc` closes the
  * card until focus leaves the term or the pointer opens it again. The card never takes focus and
- * holds nothing that can, so `Tab` goes on from the term to whatever follows it. It copies the
- * glossary, which holds the definition whole and describes the term to screen readers.
+ * holds nothing that can, so `Tab` goes on from the term to whatever follows it: its links take a
+ * click, and leave focus where it was. It copies the glossary, which holds the definition whole
+ * and describes the term to screen readers. With the repo's definitions, it shows what the
+ * overview shows for the term: the repo's definition or its own, its tags, the definition a
+ * Changed term replaces, and who it's by.
  */
 export function Term({ term, children }: { term: TermTarget; children: ReactNode }) {
-  const { glossary, container } = useGlossary();
+  const { glossary, container, terms } = useGlossary();
   const r = useRendering<Overview>();
   const element = useRef<HTMLSpanElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -103,7 +113,29 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
     };
   });
   const definition = glossary.definition(term.key);
-  if (!definition) return children;
+  const shown = terms?.of(term.key);
+  // Only a term the overview's glossary lists has a row to go to.
+  const listed = glossary.termId(term.key) !== undefined;
+  // A link in the card goes where it points as the term's own would, from the term: the card
+  // closes first.
+  const card = useMemo<Rendering<Overview>>(
+    () => ({
+      ...r,
+      focusable: false,
+      follow: (target, from) => {
+        clearTimeout(timer.current);
+        setOpen(false);
+        r.follow(target, element.current ?? from);
+      },
+      extension: {
+        ...r.extension,
+        // A term in a definition is a link to its row, never a term with a card of its own.
+        link: (target, inner) => <FollowLink<Overview> target={target}>{inner}</FollowLink>,
+      },
+    }),
+    [r],
+  );
+  if (!definition && !shown) return children;
 
   const later = (next: boolean, wait: number) => {
     clearTimeout(timer.current);
@@ -112,14 +144,14 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
   };
   const follow = (from: HTMLElement) => {
     now(false);
-    r.follow(term, from);
+    if (listed) r.follow(term, from);
   };
 
   return (
     <>
       <span
         ref={element}
-        role="link"
+        role={listed ? 'link' : undefined}
         tabIndex={0}
         aria-describedby={glossary.definitionId(term.key)}
         className={open ? 'lo-term is-active' : 'lo-term'}
@@ -159,7 +191,8 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
         anchor={element}
         container={container}
         definition={definition}
-        rendering={r}
+        shown={shown}
+        rendering={card}
         onClose={() => now(false)}
         onPointerEnter={() => clearTimeout(timer.current)}
         onPointerLeave={() => later(false, HOVER_CLOSE_MS)}
@@ -172,7 +205,11 @@ interface HoverCardProps {
   open: boolean;
   anchor: RefObject<HTMLSpanElement | null>;
   container: RefObject<HTMLElement | null>;
-  definition: Definition;
+  /** The overview's own definition, if its glossary has one. */
+  definition: Definition | undefined;
+  /** What the overview shows for the term with the repo's definitions, once it knows. */
+  shown: TermShown | undefined;
+  /** How the card draws what it shows: its links take a click, and no focus. */
   rendering: Rendering<Overview>;
   onClose: () => void;
   onPointerEnter: () => void;
@@ -180,20 +217,25 @@ interface HoverCardProps {
 }
 
 /**
- * A term's card: its name, its definition's opening words, and the key to the glossary, which has
- * the rest. Base UI's preview card places it and closes it on `Esc` or a press elsewhere; unlike a
- * popover, it adds nothing focusable around the term.
+ * A term's card (`TermCard`): its name and tags, its definition, the one a Changed term replaces,
+ * and who it's by. Base UI's preview card places it and closes it on `Esc` or a press elsewhere;
+ * unlike a popover, it adds nothing focusable around the term.
  */
 function HoverCard({
   open,
   anchor,
   container,
   definition,
+  shown,
   rendering,
   onClose,
   onPointerEnter,
   onPointerLeave,
 }: HoverCardProps) {
+  const own = shown?.source !== 'store';
+  // The overview's own shows its opening paragraph, the repo's whole: it's one paragraph.
+  const blocks = shown?.blocks ?? definition?.children ?? [];
+  const [first, ...rest] = blocks;
   return (
     <PreviewCard.Root
       open={open}
@@ -211,42 +253,31 @@ function HoverCard({
           className="z-popover"
         >
           <PreviewCard.Popup
-            // The glossary holds the same words, and describes the term to screen readers.
-            aria-hidden="true"
-            className="lo-popover lo-hovercard"
+            className="move-pop"
             onPointerEnter={onPointerEnter}
             onPointerLeave={onPointerLeave}
-          >
-            <div className="lo-hovercard__term">{definition.name}</div>
-            <CardBody definition={definition} rendering={rendering} />
-          </PreviewCard.Popup>
+            render={(props) => (
+              <MarkdownProvider rendering={rendering}>
+                <TermCard
+                  {...props}
+                  term={shown?.name ?? definition?.name ?? ''}
+                  marks={shown && { mark: shown.marks.mark, locked: shown.marks.locked }}
+                  definition={first?.kind === 'paragraph' ? <Inlines blocks={blocks} /> : undefined}
+                  more={own && first?.kind === 'paragraph' && rest.length > 0}
+                  before={shown?.before && <Inlines blocks={shown.before} />}
+                  byline={shown?.byline}
+                />
+              </MarkdownProvider>
+            )}
+          />
         </PreviewCard.Positioner>
       </PreviewCard.Portal>
     </PreviewCard.Root>
   );
 }
 
-/**
- * The definition's opening paragraph, as text only: its links show as their words, and nothing in
- * it has an id or takes focus. Headings, code, folds and the rest stay in the glossary, which the
- * card points to when there's more.
- */
-function CardBody({
-  definition,
-  rendering,
-}: {
-  definition: Definition;
-  rendering: Rendering<Overview>;
-}) {
-  const [first, ...rest] = definition.children;
-  const copy = { ...rendering, interactive: false };
-  if (first?.kind !== 'paragraph') {
-    return <div className="lo-hovercard__body lo-hovercard__more">In the glossary.</div>;
-  }
-  return (
-    <div className="lo-hovercard__body">
-      {drawInlines(first.children, copy)}
-      {rest.length > 0 && <span className="lo-hovercard__more"> More in the glossary.</span>}
-    </div>
-  );
+/** A definition's opening paragraph, as words: the card's links take a click and no focus. */
+function Inlines({ blocks }: { blocks: readonly OverviewBlock[] }) {
+  const [first] = blocks;
+  return first?.kind === 'paragraph' ? <MarkdownInlines<Overview> nodes={first.children} /> : null;
 }

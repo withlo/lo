@@ -5,12 +5,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
   authorOf,
+  copyLabel,
+  definitionsLine,
   findingPlace,
   invalidSummary,
   newerDetails,
+  NEWER_REASON,
   problemReason,
   shortId,
   sizeRows,
+  storeReason,
   tooLargeWords,
   writtenText,
 } from './says.ts';
@@ -174,5 +178,83 @@ describe('a ref that couldn’t be fetched', () => {
       cause: 'rozed-dev hasn’t approved Lo.',
       retryAt: at,
     });
+  });
+});
+
+describe('the copy an overview is', () => {
+  it('says whose it is after the byline’s `·`', () => {
+    expect(copyLabel('fork')).toBe('from fork');
+    expect(copyLabel('kept')).toBe('copy from fork');
+    expect(copyLabel('saved')).toBe('saved copy');
+  });
+});
+
+describe('what the pull request does to the repo’s definitions', () => {
+  it('says what it adds and changes, and once merged, what it added and changed', () => {
+    expect(definitionsLine(2, 1, false)).toBe('Adds 2 definitions · changes 1');
+    expect(definitionsLine(2, 1, true)).toBe('Added 2 definitions · changed 1');
+    expect(definitionsLine(1, 0, false)).toBe('Adds 1 definition');
+    expect(definitionsLine(0, 3, false)).toBe('Changes 3 definitions');
+    expect(definitionsLine(0, 1, true)).toBe('Changed 1 definition');
+    expect(definitionsLine(1_200, 1_500, false)).toBe('Adds 1,200 definitions · changes 1,500');
+  });
+
+  it('says nothing when it does neither', () => {
+    expect(definitionsLine(0, 0, false)).toBeUndefined();
+    expect(definitionsLine(0, 0, true)).toBeUndefined();
+  });
+});
+
+describe('repo definitions that can’t be used', () => {
+  it('says which limit they’re past, which trying again can’t help', () => {
+    expect(storeReason({ kind: 'tooMany' })).toEqual({
+      cause: 'It’s over 5,000 terms.',
+      again: false,
+    });
+    expect(storeReason({ kind: 'tooLarge' })).toEqual({
+      cause: 'It’s larger than 2 MB.',
+      again: false,
+    });
+  });
+
+  it('says `terms.json` can’t be read, with the parser’s words behind Details', () => {
+    expect(
+      storeReason({
+        kind: 'invalid',
+        problem: { code: 'syntax', at: 'terms["bucket"].at', message: 'It isn’t a time.' },
+      }),
+    ).toEqual({
+      cause: '`terms.json` can’t be read.',
+      details: 'terms["bucket"].at: It isn’t a time.',
+      again: false,
+    });
+    expect(
+      storeReason({ kind: 'invalid', problem: { code: 'encoding', message: 'It isn’t UTF-8.' } }),
+    ).toEqual({ cause: '`terms.json` can’t be read.', details: 'It isn’t UTF-8.', again: false });
+    expect(storeReason({ kind: 'notStore', why: 'missing' })).toEqual({
+      cause: '`terms.json` can’t be read.',
+      again: false,
+    });
+  });
+
+  it('says one a newer Lo wrote needs a newer version, as an overview does', () => {
+    expect(
+      storeReason({
+        kind: 'invalid',
+        problem: { code: 'format-newer', message: 'It’s in format 3.' },
+      }),
+    ).toEqual({ cause: NEWER_REASON, details: 'It’s in format 3.', again: false });
+  });
+
+  it('says why reading them here failed, and offers to try again where that can help', () => {
+    expect(storeReason({ kind: 'failed', code: 'timeout' })).toEqual({
+      cause: 'It took too long.',
+      again: true,
+    });
+    expect(storeReason({ kind: 'failed', code: 'memory' })).toEqual({
+      cause: 'It ran out of memory.',
+      again: false,
+    });
+    expect(storeReason({ kind: 'failed', code: 'crashed' })).toEqual({ cause: '', again: true });
   });
 });

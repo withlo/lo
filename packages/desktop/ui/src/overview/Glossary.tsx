@@ -1,38 +1,110 @@
-import { Fragment, useContext, useMemo } from 'react';
+// An overview's Glossary section: a row (`TermRow`) for each term it defines, the terms the pull
+// request adds or changes first, by name, then a hairline and the rest, by name. With the repo's
+// definitions, each row shows what the overview shows for its term: the repo's definition or the
+// overview's own, its tags, and the definition a Changed term replaces; and under the section's
+// heading, why the repo's definitions can't be used, where they can't.
 
-import type { Glossary as GlossaryBlock, Overview } from '@lo/artifact';
+import { useContext, useMemo } from 'react';
 
-import { MarkdownBlocks } from '../markdown/index.ts';
+import type { Definition, Glossary as GlossaryBlock, Overview, OverviewBlock } from '@lo/artifact';
+
+import { Swap } from '../Collapse.tsx';
+import { MarkdownBlocks, MarkdownInlines } from '../markdown/index.ts';
+import { TermRow } from './TermRow.tsx';
 import { alphabetical, ReachedContext, useGlossary } from './terms.ts';
 
+/** What marks the Glossary section's own box, which holds its rows. */
+const GLOSSARY_ATTRIBUTE = 'data-lo-glossary';
+
+/** What marks the row of a term the pull request adds or changes. */
+const MARKED_ATTRIBUTE = 'data-lo-marked';
+
 /**
- * Every defined term and its definition, in alphabetical order, whatever order they were written
- * in. The entry a reader reached from a term in the text is marked until they move on.
+ * Every term the overview defines, as a row: those it marks first, then the rest, each by name,
+ * whatever order they were written in. The row a reader reached from a term in the text is tinted
+ * until they move on.
  */
 export function Glossary({ node }: { node: GlossaryBlock }) {
-  const { glossary } = useGlossary();
+  const { glossary, terms } = useGlossary();
   const { target, leave } = useContext(ReachedContext);
-  const terms = useMemo(() => alphabetical(node.terms), [node.terms]);
+  const { marked, rest } = useMemo(() => {
+    const listed = alphabetical(node.terms);
+    const tagged = (term: Definition) => terms?.of(term.key)?.marks.mark !== undefined;
+    return {
+      marked: listed.filter((term) => tagged(term)),
+      rest: listed.filter((term) => !tagged(term)),
+    };
+  }, [node.terms, terms]);
+
+  const row = (own: Definition, isMarked: boolean) => {
+    const shown = terms?.of(own.key);
+    const reached = own.key === target;
+    return (
+      <TermRow
+        key={own.key}
+        {...{ [MARKED_ATTRIBUTE]: isMarked ? '' : undefined }}
+        term={own.name}
+        marks={shown?.marks}
+        definition={
+          // The repo's definition, once it's read, fades in over the overview's own.
+          <Swap id={shown?.source ?? 'overview'} className="lo-term-row__blocks">
+            <MarkdownBlocks<Overview> blocks={shown?.blocks ?? own.children} />
+          </Swap>
+        }
+        before={shown?.before && <Opening blocks={shown.before} />}
+        reached={reached}
+        termId={glossary.termId(own.key)}
+        definitionId={glossary.definitionId(own.key)}
+        onBlur={reached ? leave : undefined}
+      />
+    );
+  };
+
   return (
-    <dl className="lo-glossary">
-      {terms.map((term, index) => {
-        const reached = term.key === target ? 'is-target' : undefined;
-        return (
-          <Fragment key={index}>
-            <dt
-              id={glossary.termId(term.key)}
-              tabIndex={-1}
-              className={reached}
-              onBlur={reached ? leave : undefined}
-            >
-              {term.name}
-            </dt>
-            <dd id={glossary.definitionId(term.key)} className={reached}>
-              <MarkdownBlocks<Overview> blocks={term.children} />
-            </dd>
-          </Fragment>
-        );
-      })}
-    </dl>
+    <div className="lo-glossary" {...{ [GLOSSARY_ATTRIBUTE]: '' }}>
+      {terms?.note !== undefined && terms.note !== null && (
+        <div className="lo-glossary__note">{terms.note}</div>
+      )}
+      {marked.length > 0 && <div>{marked.map((own) => row(own, true))}</div>}
+      {rest.length > 0 && (
+        // A hairline between the terms the pull request adds or changes and the rest.
+        <div className={marked.length > 0 ? 'lo-glossary__rest' : undefined}>
+          {rest.map((own) => row(own, false))}
+        </div>
+      )}
+    </div>
   );
+}
+
+/** A definition the repo's definitions hold, one paragraph, as words that run on from a tag. */
+function Opening({ blocks }: { blocks: readonly OverviewBlock[] }) {
+  const [first] = blocks;
+  return first?.kind === 'paragraph' ? <MarkdownInlines<Overview> nodes={first.children} /> : null;
+}
+
+/** Where an overview's Glossary section is drawn in `article`, its heading and its rows. */
+export interface GlossaryParts {
+  /** The section's own box, which holds its rows. */
+  readonly box: HTMLElement;
+  /** Its heading: the last of the article's second-level headings before its box. */
+  readonly heading: HTMLElement | undefined;
+  /** Its first row: the first term the pull request adds or changes, else its first term. */
+  readonly first: HTMLElement | undefined;
+  /** That row's term, which a jump to the row focuses. */
+  readonly term: HTMLElement | undefined;
+}
+
+/** The Glossary section drawn in `article`, an overview's, if it has one. */
+export function glossaryIn(article: Element): GlossaryParts | undefined {
+  const box = article.querySelector<HTMLElement>(`[${GLOSSARY_ATTRIBUTE}]`);
+  if (!box) return undefined;
+  const headings = [...article.querySelectorAll<HTMLElement>('h2')].filter(
+    (heading) => (heading.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+  );
+  const first =
+    box.querySelector<HTMLElement>(`[data-lo-term-row][${MARKED_ATTRIBUTE}]`) ??
+    box.querySelector<HTMLElement>('[data-lo-term-row]') ??
+    undefined;
+  const term = first?.querySelector<HTMLElement>('.lo-term-row__term') ?? undefined;
+  return { box, heading: headings.at(-1), first, term };
 }

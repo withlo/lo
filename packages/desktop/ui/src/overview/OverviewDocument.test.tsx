@@ -29,11 +29,14 @@ import {
   alphabetical,
   blockHints,
   closeCards,
+  glossaryIn,
   HOVER_CLOSE_MS,
   HOVER_OPEN_MS,
   isStop,
   OverviewDocument,
   type OverviewTarget,
+  type OverviewTerms,
+  type TermShown,
 } from './index.ts';
 
 beforeAll(() => {
@@ -76,7 +79,7 @@ describe('OverviewDocument', () => {
       figure: '.lo-block figure.lo-figure figcaption',
       walkthrough: '.lo-block .lo-walk .lo-walk__step',
       tabs: '.lo-block .lo-tabs [role="tablist"]',
-      glossary: 'dl.lo-glossary dt',
+      glossary: '.lo-glossary [data-lo-term-row] .lo-term-row__term',
     };
     expect(
       Object.entries(kinds).flatMap(([kind, selector]) =>
@@ -421,7 +424,7 @@ describe('blocks', () => {
     );
     const block = page.querySelector('.is-focused')!;
     expect(block.className).toBe('lo-block lo-block--prose is-focused');
-    expect(block.firstElementChild?.localName).toBe('dl');
+    expect(block.firstElementChild?.className).toBe('lo-glossary');
   });
 
   it('stops at prose whose only links go to web pages, which can be followed, but not to http ones', () => {
@@ -523,14 +526,14 @@ describe('terms', () => {
       'Bucketthe tokens a tenant has to spend. Each request takes one.',
     );
     expect(card()?.className).toContain('lo-popover lo-hovercard');
-    expect([...card()!.children].map((part) => part.className)).toEqual([
-      'lo-hovercard__term',
-      'lo-hovercard__body',
-    ]);
+    expect(card()?.querySelector('.lo-hovercard__term')?.textContent).toBe('Bucket');
+    expect(card()?.querySelector('.lo-hovercard__body')?.textContent).toBe(
+      'the tokens a tenant has to spend. Each request takes one.',
+    );
     // The card is a copy: screen readers hear the glossary, which describes the term.
     expect(card()?.getAttribute('aria-hidden')).toBe('true');
     const described = document.getElementById(use.getAttribute('aria-describedby')!);
-    expect(described?.localName).toBe('dd');
+    expect(described?.className).toBe('lo-term-row__definition');
     expect(described?.textContent).toBe(
       'the tokens a tenant has to spend. Each request takes one.',
     );
@@ -686,9 +689,11 @@ describe('terms', () => {
     const use = term(page);
     focus(use);
     press(use, 'Enter');
-    const entry = page.querySelector<HTMLElement>('dt.is-target');
+    const entry = page.querySelector<HTMLElement>('.is-target .lo-term-row__term');
     expect(entry?.textContent).toBe('Bucket');
-    expect(page.querySelector('dd.is-target')?.textContent).toContain('the tokens a tenant');
+    expect(page.querySelector('.is-target .lo-term-row__definition')?.textContent).toContain(
+      'the tokens a tenant',
+    );
     expect(document.activeElement).toBe(entry);
     expect(card()).toBeNull();
     expect(onFollow).toHaveBeenCalledWith({ kind: 'term', key: 'bucket' }, use);
@@ -696,25 +701,50 @@ describe('terms', () => {
     focus(use);
     expect(page.querySelector('.is-target')).toBeNull();
     click(use);
-    expect(document.activeElement).toBe(page.querySelector('dt.is-target'));
+    expect(document.activeElement).toBe(page.querySelector('.is-target .lo-term-row__term'));
   });
 
-  it('shows the definition’s own links as their text in the card', () => {
+  it('shows the definition’s own links in the card, which take a click and no focus', () => {
+    const onFollow = vi.fn<(target: OverviewTarget, from: Element) => void>();
     const page = render(
       <OverviewDocument
         tree={overview(
-          'Uses [a cache](term:cache).\n\n## Glossary\n\n- **Cache**: kept in [the store](code:src/store.ts#L1), see [it](https://example.com/).\n',
+          'Uses [a cache](term:cache).\n\n## Glossary\n\n- **Cache**: kept in [the store](code:src/store.ts#L1), see [it](https://example.com/) and [a cache](term:cache).\n',
         )}
+        onFollow={onFollow}
       />,
     );
-    focus(term(page));
-    expect(card()?.textContent).toContain('kept in the store, see it.');
-    expect(card()?.querySelector('a, [tabindex]')).toBeNull();
-    // The glossary's copy has them as links.
-    expect([...page.querySelectorAll('dd a')].map((link) => link.textContent)).toEqual([
-      'the store',
-      'it',
+    const use = term(page);
+    focus(use);
+    expect(card()?.textContent).toContain('kept in the store, see it and a cache.');
+    const links = [...card()!.querySelectorAll<HTMLElement>('a')];
+    expect(links.map((link) => [link.textContent, link.tabIndex])).toEqual([
+      ['the store', -1],
+      ['it', -1],
+      ['a cache', -1],
     ]);
+    // A term in a definition is only a link, with no card of its own.
+    expect(card()?.querySelector('.lo-term')).toBeNull();
+    // The glossary's copy has them as links too, which take focus, and the term as a term.
+    expect(
+      [...page.querySelectorAll<HTMLElement>('.lo-term-row__definition a')].map((link) => [
+        link.textContent,
+        link.tabIndex,
+      ]),
+    ).toEqual([
+      ['the store', 0],
+      ['it', 0],
+    ]);
+    expect(page.querySelector('.lo-term-row__definition .lo-term')?.textContent).toBe('a cache');
+
+    // A click on one goes where it points, from the term, and closes the card.
+    click(links[0]!);
+    expect(onFollow).toHaveBeenCalledWith(
+      { kind: 'code', path: 'src/store.ts', lines: { start: 1, end: 1 } },
+      use,
+    );
+    expect(card()).toBeNull();
+    expect(document.activeElement).toBe(use);
   });
 
   it('copies only a definition’s opening words: no id, nothing that takes focus, no code view', () => {
@@ -745,7 +775,7 @@ describe('terms', () => {
     const page = render(<OverviewDocument tree={tree} views={views} />);
     // The glossary draws the definition whole.
     expect(excerpt).toHaveBeenCalledTimes(1);
-    expect(page.querySelector('dd h3')?.textContent).toBe('Inside');
+    expect(page.querySelector('.lo-term-row__definition h3')?.textContent).toBe('Inside');
 
     focus(term(page));
     expect(card()?.textContent).toBe('Cachekept in memory. More in the glossary.');
@@ -799,16 +829,15 @@ describe('glossary', () => {
         )}
       />,
     );
-    expect([...page.querySelectorAll('.lo-glossary dt')].map((dt) => dt.textContent)).toEqual([
-      'bucket',
-      'Cost',
-      'item 2',
-      'item 10',
-      'page size',
-      'weight',
-    ]);
+    expect(
+      [...page.querySelectorAll('.lo-glossary .lo-term-row__term')].map((name) => name.textContent),
+    ).toEqual(['bucket', 'Cost', 'item 2', 'item 10', 'page size', 'weight']);
     // Each definition follows its term.
-    expect(page.querySelector('.lo-glossary dt + dd')?.textContent).toBe('what a caller holds.');
+    expect(page.querySelector('.lo-glossary .lo-term-row__definition')?.textContent).toBe(
+      'what a caller holds.',
+    );
+    // With nothing tagged, the terms are one list, with no hairline in it.
+    expect(page.querySelector('.lo-glossary__rest')).toBeNull();
   });
 
   it('keeps the written order for terms that sort alike', () => {
@@ -818,6 +847,200 @@ describe('glossary', () => {
       children: [],
     }));
     expect(alphabetical(terms).map((each) => each.key)).toEqual(['a1', 'A2', 'b0']);
+  });
+});
+
+/** A paragraph of `value`, as a definition's blocks. */
+const words = (value: string): OverviewBlock[] => [
+  { kind: 'paragraph', children: [{ kind: 'text', value }] },
+];
+
+/** What an overview shows for its terms, as `shown` has them by key, under a note of `note`. */
+function shownTerms(shown: Record<string, TermShown>, note?: ReactNode): OverviewTerms {
+  return { of: (key) => (Object.hasOwn(shown, key) ? shown[key] : undefined), note };
+}
+
+/** An overview that uses and defines each of `names`, each defined as "own {name}." */
+function defining(...names: string[]): OverviewTree {
+  return overview(
+    [
+      `Uses ${names.map((name) => `[${name}](term:${name})`).join(', ')}.`,
+      '',
+      '## Glossary',
+      '',
+      ...names.map((name) => `- **${name}**: own ${name}.`),
+      '',
+    ].join('\n'),
+  );
+}
+
+describe('with the repo’s definitions', () => {
+  const rowOf = (page: HTMLElement, name: string) =>
+    [...page.querySelectorAll<HTMLElement>('[data-lo-term-row]')].find(
+      (row) => row.querySelector('.lo-term-row__term')?.textContent === name,
+    )!;
+  const names = (rows: Element | null | undefined) =>
+    [...(rows?.querySelectorAll('.lo-term-row__term') ?? [])].map((name) => name.textContent);
+
+  it('lists the terms the pull request adds or changes first, by name, then a hairline and the rest', () => {
+    const page = render(
+      <OverviewDocument
+        tree={defining('weight', 'limit', 'bucket', 'cost', 'lease')}
+        terms={shownTerms({
+          limit: {
+            source: 'store',
+            name: 'limit',
+            blocks: words('the repo’s limit.'),
+            marks: { mark: 'changed', locked: false, suggestions: 0 },
+            before: words('the limit as it was.'),
+          },
+          bucket: {
+            source: 'overview',
+            name: 'bucket',
+            blocks: words('own bucket.'),
+            marks: { mark: 'new', locked: false, suggestions: 0 },
+          },
+          lease: {
+            source: 'store',
+            name: 'lease',
+            blocks: words('the repo’s lease.'),
+            marks: { locked: true, suggestions: 2 },
+          },
+        })}
+      />,
+    );
+    const glossary = page.querySelector('.lo-glossary')!;
+    const [marked, rest] = [...glossary.children];
+    expect(names(marked)).toEqual(['bucket', 'limit']);
+    expect(rest?.className).toBe('lo-glossary__rest');
+    expect(names(rest)).toEqual(['cost', 'lease', 'weight']);
+    expect(page.querySelectorAll('[data-lo-marked]')).toHaveLength(2);
+
+    // Each row has its tags under its term, and shows the definition the overview shows.
+    const tags = (name: string) =>
+      [...rowOf(page, name).querySelectorAll('.lo-term-row__head .rounded-xs.text-micro')].map(
+        (tag) => tag.textContent,
+      );
+    expect(tags('bucket')).toEqual(['New']);
+    expect(tags('limit')).toEqual(['Changed']);
+    expect(tags('lease')).toEqual(['Locked', '2 suggestions']);
+    expect(tags('cost')).toEqual([]);
+    const definition = (name: string) =>
+      rowOf(page, name).querySelector('.lo-term-row__definition')?.textContent;
+    expect(definition('limit')).toBe('the repo’s limit.Before the limit as it was.');
+    expect(definition('lease')).toBe('the repo’s lease.');
+    expect(definition('cost')).toBe('own cost.');
+    expect(rowOf(page, 'limit').querySelector('[data-lo-before] p')).toBeNull();
+  });
+
+  it('shows the repo’s definition whole in a card, with its tags, the one it replaces and who it’s by', () => {
+    const onOpen = vi.fn<() => void>();
+    const page = render(
+      <OverviewDocument
+        tree={defining('limit')}
+        terms={shownTerms({
+          limit: {
+            source: 'store',
+            name: 'limit',
+            blocks: words('the repo’s limit.'),
+            marks: { mark: 'changed', locked: true, suggestions: 2 },
+            before: words('the limit as it was.'),
+            byline: {
+              by: { login: 'ravi-k' },
+              written: 'agent',
+              pull: { number: 264, onOpen },
+              when: '3 d ago',
+            },
+          },
+        })}
+      />,
+    );
+    const use = term(page);
+    focus(use);
+    const shown = card()!;
+    expect(shown.querySelector('.lo-hovercard__term')?.textContent).toBe('limit');
+    // Its suggestions are a link of their own, not a tag in the card's head.
+    expect(
+      [...shown.querySelectorAll('.rounded-xs.text-micro')].map((tag) => tag.textContent),
+    ).toEqual(['Changed', 'Locked', 'Before']);
+    expect(shown.querySelector('.lo-hovercard__body')?.textContent).toBe('the repo’s limit.');
+    expect(shown.querySelector('[data-lo-before]')?.textContent).toBe(
+      'Before the limit as it was.',
+    );
+    expect(shown.textContent).toContain('ravi-k · agent-written · #264 · 3 d ago');
+    expect(shown.querySelector('.lo-hovercard__more')).toBeNull();
+
+    // Its pull request's link opens it, and leaves focus on the term.
+    const pull = [...shown.querySelectorAll<HTMLElement>('button')].find(
+      (button) => button.textContent === '#264',
+    )!;
+    expect(pull.tabIndex).toBe(-1);
+    click(pull);
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(use);
+  });
+
+  it('shows the overview’s own definition in a card as it does without them, untagged and with no byline where nothing tags it', () => {
+    const tree = defining('cost');
+    glossaryOf(tree).terms[0]!.children.push(...words('More of it.'));
+    const page = render(<OverviewDocument tree={tree} terms={shownTerms({})} />);
+    focus(term(page));
+    expect(card()?.textContent).toBe('costown cost. More in the glossary.');
+    expect(card()?.querySelector('.rounded-xs.text-micro')).toBeNull();
+  });
+
+  it('holds the byline’s place in a card while the repo’s definitions are read', () => {
+    const page = render(
+      <OverviewDocument
+        tree={defining('cost')}
+        terms={shownTerms({
+          cost: {
+            source: 'overview',
+            name: 'cost',
+            blocks: words('own cost.'),
+            marks: { mark: 'new' },
+            byline: { reading: true },
+          },
+        })}
+      />,
+    );
+    focus(term(page));
+    expect(card()?.querySelector('.term-byline-wait')).not.toBeNull();
+  });
+
+  it('says why they can’t be used under the Glossary heading, before the terms', () => {
+    const page = render(
+      <OverviewDocument
+        tree={defining('cost')}
+        terms={shownTerms({}, <p className="why">Can’t read them.</p>)}
+      />,
+    );
+    const glossary = page.querySelector('.lo-glossary')!;
+    expect(glossary.firstElementChild?.className).toBe('lo-glossary__note');
+    expect(glossary.firstElementChild?.textContent).toBe('Can’t read them.');
+    expect(names(glossary)).toEqual(['cost']);
+  });
+
+  it('finds the Glossary section, its heading and the first row the pull request adds or changes', () => {
+    const page = render(
+      <OverviewDocument
+        tree={defining('weight', 'limit')}
+        terms={shownTerms({
+          weight: {
+            source: 'overview',
+            name: 'weight',
+            blocks: words('own weight.'),
+            marks: { mark: 'new' },
+          },
+        })}
+      />,
+    );
+    const parts = glossaryIn(page.querySelector('.lo-ov')!)!;
+    expect(parts.heading?.textContent).toBe('Glossary');
+    expect(parts.box.className).toBe('lo-glossary');
+    expect(parts.term?.textContent).toBe('weight');
+    expect(parts.first?.contains(parts.term!)).toBe(true);
+    expect(glossaryIn(render(<OverviewDocument tree={overview('No terms.')} />))).toBeUndefined();
   });
 });
 
@@ -903,17 +1126,24 @@ describe('folds', () => {
 
 /** The overview's allowlist: the renderer's, and what the document draws around it. */
 const DOCUMENT: Readonly<Record<string, readonly string[]>> = {
-  div: ['role', 'id', 'aria-labelledby', 'hidden', 'data-lo-block', 'tabindex'],
+  div: [
+    'role',
+    'id',
+    'aria-labelledby',
+    'hidden',
+    'data-lo-block',
+    'tabindex',
+    'data-lo-glossary',
+    'data-lo-term-row',
+    'data-key-scope',
+  ],
   nav: ['aria-label'],
   article: [],
   button: ['type', 'role', 'id', 'aria-selected', 'aria-controls', 'aria-current', 'tabindex'],
-  dl: [],
-  dt: ['id', 'tabindex'],
-  dd: ['id'],
   figure: [],
   figcaption: [],
   b: [],
-  span: ['role', 'tabindex', 'aria-describedby', 'aria-hidden'],
+  span: ['role', 'id', 'tabindex', 'aria-describedby', 'aria-hidden'],
   details: ['data-lo-block'],
   kbd: ['aria-hidden'],
   // The shapes of Lo's own icons, as `Icon` draws them, beside the paths the renderer's have.
@@ -927,9 +1157,13 @@ function allowed(element: string, attribute?: string): boolean {
   return isMarkdownAttribute(element, attribute) || (extra?.includes(attribute) ?? false);
 }
 
-/** What a term's card may hold: text and its inline marks, with classes, and hidden key caps. */
+/**
+ * What a term's card may hold: text and its inline marks, with classes, links that take no focus,
+ * and hidden key caps.
+ */
 const CARD: Readonly<Record<string, readonly string[]>> = {
   div: [],
+  a: ['role', 'tabindex'],
   span: [],
   strong: [],
   em: [],
