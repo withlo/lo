@@ -931,13 +931,15 @@ status bar.
   nothing until it's loaded.
 - The `tab.open` setting says which middle view a pull request's tab opens on: the overview, the
   timeline or the diff. A tab that opens on the overview waits for it, up to `HOLD_LIMIT`, and goes
-  to the timeline, where the description is first, when there's none or it's late. The tab keeps its
-  middle view by id (`Panels.middle`): while that view isn't there, as the overview isn't with
-  `overview.on` off, the timeline stands in, and the tab goes back to it when it returns. The key
-  `tab.open` replaced, `overview.open`, stays declared, file-only: main carries a `diff` saved there
-  over once, while the file has no `tab.open`, then sets it to `null` (`tab/main/carry.ts`). A
-  `tab.open` the file has stays, even `overview`, its default. Until it's carried, the window reads
-  it the same way (`useOpensOn`), for the tab and for Settings' row, so both show where tabs open.
+  to the timeline, where the description is first, when there's none or it's late, drawing nothing
+  of the overview on the way: the overview's view draws the tab's placeholder until it's gone from
+  the screen, and the timeline takes that wait over at once. The tab keeps its middle view by id
+  (`Panels.middle`): while that view isn't there, as the overview isn't with `overview.on` off, the
+  timeline stands in, and the tab goes back to it when it returns. The key `tab.open` replaced,
+  `overview.open`, stays declared, file-only: main carries a `diff` saved there over once, while the
+  file has no `tab.open`, then sets it to `null` (`tab/main/carry.ts`). A `tab.open` the file has
+  stays, even `overview`, its default. Until it's carried, the window reads it the same way
+  (`useOpensOn`), for the tab and for Settings' row, so both show where tabs open.
 - The row's layout is the window's, every pull request's tab alike: each panel open or not, and its
   width, unset while it's the default. Main keeps it in `tab_window` (`tab.layout`,
   `tab.keepLayout`), clamping each width to its limits as it's read, and a layout that won't read is
@@ -979,8 +981,12 @@ status bar.
   meanwhile, not `inert`, so it takes focus that's free and keys typed meanwhile land in it; then it
   fades in over the other, itself in its sheet or its sheet over the other's, and the other goes
   once the move has run. A view that only comes or only goes, as the code beside one does, does so
-  at once. A middle view with nothing to draw yet draws `Loading` or `MiddlePlaceholder`, never
-  nothing, or a switch to it shows it empty.
+  at once, and so does a switch from views that only wait, drawing the tab's placeholder
+  (`useWaiting`): there's nothing drawn to keep, and the view coming takes the wait over. A middle
+  view with nothing to draw yet draws `Loading` or `MiddlePlaceholder`, never nothing, or a switch
+  to it shows it empty; and one that draws something else as it leaves draws it under the view
+  coming, so a view that gives the middle up as it opens, as the overview does to the timeline,
+  draws its placeholder until it's gone from the screen.
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.

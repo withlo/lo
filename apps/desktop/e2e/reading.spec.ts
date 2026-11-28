@@ -54,6 +54,8 @@ declare global {
     loCodeSeen?: Record<string, string>;
     /** How the tab's overview opened, as {@link watchOpening} saw it. */
     loOpening?: Opening;
+    /** What of the overview was on screen as the tab went to its timeline: each state, a frame. */
+    loHandedOver?: string[];
   }
 }
 
@@ -645,11 +647,14 @@ test.describe('as a pull request opens', () => {
     ref,
   }) => {
     ref.holds = { kind: 'none' };
+    await watchHandOver(page);
     const id = await open(page);
     const none = overview(page, 'none');
 
     await test.step('opens on the timeline, which offers the prompt to write one', async () => {
       await expect(middleView(page, 'timeline.view')).toBeVisible({ timeout: 10_000 });
+      // Nothing of the overview was on screen on the way: no frame drew that there's none.
+      await expect.poll(() => page.evaluate(() => window.loHandedOver)).toEqual([]);
       await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('No overview yet');
       await overviewTab(page).click();
       await expect(overview(page, 'none')).toBeVisible();
@@ -1304,6 +1309,29 @@ async function openAgain(
   expect(await opened(), 'The tab opened on its timeline: Lo knew too late.').toBe('overview');
   await expect(overviewTab(page)).toHaveAttribute('aria-selected', 'true');
   return tab;
+}
+
+/**
+ * Watches, every frame from now until the timeline is on screen, what of the overview is: its view
+ * on screen, drawing what the overview is rather than the tab's placeholder, is a state of it seen
+ * as the tab went to the timeline, and is kept in `loHandedOver` for each frame. Once the timeline
+ * is on screen, the list is done.
+ */
+async function watchHandOver(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const seen: string[] = [];
+    const seenAs = { visibilityProperty: true, opacityProperty: true };
+    const tick = () => {
+      const view = document.querySelector('[data-lo-middle-view="overview.view"]');
+      const state = view?.querySelector('[data-lo-overview]');
+      if (state && view?.checkVisibility(seenAs))
+        seen.push(state.getAttribute('data-lo-overview') ?? '');
+      const timeline = document.querySelector('[data-lo-middle-view="timeline.view"]');
+      if (timeline?.checkVisibility(seenAs)) window.loHandedOver = seen;
+      else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
 }
 
 /**
