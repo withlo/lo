@@ -1,6 +1,6 @@
-// "Show overview note", which has no key: offered in the diff alone, which draws the overview's markers,
-// on a line with one, and listed on that line's menu only. And `gm`, a jump, which `⌃o` comes back
-// from.
+// "Show overview note", which `⏎` runs on a line an overview note is over: offered in the diff alone,
+// which draws the overview's marks, on a line with one, and listed on that line's menu only. And
+// `gm`, a jump, which `⌃o` comes back from.
 
 import {
   commandsOf,
@@ -63,6 +63,20 @@ describe('Show overview note', () => {
         .map((item) => item.label);
     expect(menu(line(4))).toContain('Show overview note');
     expect(menu(line(5))).not.toContain('Show overview note');
+  });
+});
+
+/** The keys `id` has, each as its strokes' ids. */
+function keysOf(id: string): string[] {
+  return registry.keysOf(id).map((each) => each.map((stroke) => stroke.id).join(' '));
+}
+
+describe('the overview’s notes’ keys', () => {
+  it('step to the next and previous note, open what’s on the line, and show it in the overview', () => {
+    expect(keysOf('diff.nextNote')).toEqual(['] o']);
+    expect(keysOf('diff.previousNote')).toEqual(['[ o']);
+    expect(keysOf('diff.overviewNote')).toEqual(['enter']);
+    expect(keysOf('diff.showInOverview')).toEqual(['g o']);
   });
 });
 

@@ -24,6 +24,7 @@ import { type Entry, listen, Registry } from '@lo/ui/commands';
 import type { Loaded, PullFile, PullReply, Result } from '../shared/protocol.ts';
 import { commandsFor } from './commands.ts';
 import { fillerText } from './filler.ts';
+import { plainNotes } from './notes.ts';
 import { type Comment, PlainThreads } from './threads.ts';
 
 declare global {
@@ -93,6 +94,7 @@ view = createDiffView(
     threads: 'beside',
     vimKeys: registry.vimKeys(),
     nonce,
+    renderNotes: plainNotes,
   },
   {
     cursor() {},

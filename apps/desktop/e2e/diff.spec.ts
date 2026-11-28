@@ -431,7 +431,8 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
     }, place);
     await expect(page.locator('.lo-diffview .lo-ov-marker:visible')).toHaveCount(1);
     expect(await page.evaluate((line) => window.loDiff?.openNote(line), place)).toBe(true);
-    const note = page.locator('.lo-diffview .lo-ovnote:visible');
+    // Beside lines, in the threads' popover, pinned, focus in it.
+    const note = page.locator('.lo-diffview .lo-threadpop [data-note-key]:visible');
     await expect(note).toHaveText(/Why this line changed\./);
     await press(page, 'Escape');
     await expect(note).toHaveCount(0);

@@ -1,11 +1,11 @@
 // An overview's markers in the diff view, on the small pull request, as drawn, side by side and
-// inline. The line at the top of the screen and the one in its middle are watched every frame: on a
-// frame with no input, neither may move. Markers that arrive or go while the reader is part way
-// down move nothing; nor do notes opened or closed above the screen, two at a time included; a note
-// opened from its ball, or closed with `Esc`, leaves the line at the top where it is; a note on
-// screen whose mark changes or goes stays as it is until it's scrolled away; and a note closed above
-// the screen just after a scroll that came with no input, as a script's, leaves the screen where
-// that scroll put it.
+// inline, their notes opening between lines, in the flow. The line at the top of the screen and the
+// one in its middle are watched every frame: on a frame with no input, neither may move. Markers
+// that arrive or go while the reader is part way down move nothing; nor do notes opened or closed
+// above the screen, two at a time included; a note opened from its ball, or closed with `Esc`,
+// leaves the line at the top where it is; a note on screen whose mark changes or goes stays as it
+// is until it's scrolled away; and a note closed above the screen just after a scroll that came
+// with no input, as a script's, leaves the screen where that scroll put it.
 
 import type { OverviewMark, Place, Spot } from '@lo/ui/code';
 import type { Page } from '@playwright/test';
@@ -27,7 +27,7 @@ for (const layout of ['split', 'inline'] as const) {
   test(`markers that arrive late, and go, move nothing on screen, ${name(layout)}`, async ({
     page,
   }) => {
-    await partWay(page, layout);
+    await between(page, layout);
     const middle = await middleOfScreen(page);
     await watch(page);
     await page.evaluate(
@@ -57,7 +57,7 @@ for (const layout of ['split', 'inline'] as const) {
   test(`notes opened and changed above the screen, two in one go, move nothing on screen, ${name(layout)}`, async ({
     page,
   }) => {
-    await partWay(page, layout);
+    await between(page, layout);
     // Far enough down a file to have lines above the screen to mark.
     let top = await lineAt(page, 0);
     for (let tries = 0; top.line < 52 && tries < 10; tries++) {
@@ -117,7 +117,7 @@ for (const layout of ['split', 'inline'] as const) {
   test(`a note closed above the screen just after a scroll with no input leaves the screen where that scroll put it, ${name(layout)}`, async ({
     page,
   }) => {
-    await partWay(page, layout);
+    await between(page, layout);
     let top = await lineAt(page, 0);
     for (let tries = 0; top.line < 52 && tries < 10; tries++) {
       await scrollBy(page, 400);
@@ -144,7 +144,7 @@ for (const layout of ['split', 'inline'] as const) {
   test(`a note on screen stays as it is while its mark changes and goes, until it's scrolled away, ${name(layout)}`, async ({
     page,
   }) => {
-    await partWay(page, layout);
+    await between(page, layout);
     const middle = await middleOfScreen(page);
     const shown = mark(middle.file, 'new', middle.line - 3, middle.line - 2);
     await page.evaluate((marks) => window.perfOverview(marks), [shown]);
@@ -154,7 +154,7 @@ for (const layout of ['split', 'inline'] as const) {
         line: middle.line - 2,
       }),
     ).toBe(true);
-    const note = page.locator('.lo-ovnote:visible');
+    const note = page.locator('.lo-diffthread__note:visible');
     await expect(note).toContainText('A query over');
     await frames(page, 10);
     await watch(page);
@@ -173,13 +173,13 @@ for (const layout of ['split', 'inline'] as const) {
     const past = await scrollPastNote(page);
     expect(past.off).toBeLessThanOrEqual(0.5);
     await scrollBy(page, -past.by);
-    await expect(page.locator('.lo-ovnote')).toHaveCount(0);
+    await expect(page.locator('.lo-diffthread__note')).toHaveCount(0);
   });
 
   test(`a note held on screen takes its mark's new lines and words once it's scrolled away, ${name(layout)}`, async ({
     page,
   }) => {
-    await partWay(page, layout);
+    await between(page, layout);
     const middle = await middleOfScreen(page);
     const shown = mark(middle.file, 'new', middle.line - 3, middle.line - 2);
     await page.evaluate((marks) => window.perfOverview(marks), [shown]);
@@ -193,20 +193,20 @@ for (const layout of ['split', 'inline'] as const) {
     };
     await page.evaluate((marks) => window.perfOverview(marks), [moved]);
     await frames(page, 10);
-    await expect(page.locator('.lo-ovnote:visible')).toContainText('A query over');
+    await expect(page.locator('.lo-diffthread__note:visible')).toContainText('A query over');
     expect(await stopWatching(page)).toEqual([]);
     // Past the line the note goes under now, too: a note that comes on screen moves what's below.
     const past = await scrollPastNote(page, placeOf(moved));
     expect(past.off).toBeLessThanOrEqual(0.5);
     await scrollBy(page, -past.by);
-    await expect(page.locator('.lo-ovnote:visible')).toHaveText(/Moved down a line\./);
+    await expect(page.locator('.lo-diffthread__note:visible')).toHaveText(/Moved down a line\./);
     await expect(page.locator('.lo-ov-marker.is-open:visible')).toHaveCount(1);
   });
 
   test(`a note opened from its ball leaves the top of the screen where it is, ${name(layout)}`, async ({
     page,
   }) => {
-    await partWay(page, layout);
+    await between(page, layout);
     const middle = await middleOfScreen(page);
     await page.evaluate(
       (marks) => window.perfOverview(marks),
@@ -220,7 +220,7 @@ for (const layout of ['split', 'inline'] as const) {
     const top = await topOfScreen(page);
     await watch(page);
     await page.locator('.lo-ov-marker:visible').first().click();
-    await expect(page.locator('.lo-ovnote:visible')).toHaveCount(1);
+    await expect(page.locator('.lo-diffthread__note:visible')).toHaveCount(1);
     await expect(page.locator('.lo-ov-marker.is-open:visible')).toHaveCount(1);
     await frames(page, 10);
     // What's below the note moves down in the click's frame; the top stays, and nothing moves after.
@@ -236,7 +236,7 @@ for (const layout of ['split', 'inline'] as const) {
   test(`notes closed above the screen, with Esc or as their marks go, leave the screen where it is, ${name(layout)}`, async ({
     page,
   }) => {
-    await partWay(page, layout);
+    await between(page, layout);
     const middle = await middleOfScreen(page);
     await page.evaluate(
       (marks) => window.perfOverview(marks),
@@ -246,11 +246,11 @@ for (const layout of ['split', 'inline'] as const) {
       ],
     );
     for (const ball of await page.locator('.lo-ov-marker:visible').all()) await ball.click();
-    await expect(page.locator('.lo-ovnote:visible')).toHaveCount(2);
+    await expect(page.locator('.lo-diffthread__note:visible')).toHaveCount(2);
     // Scrolled on until the notes are above the screen.
     const below = await page.evaluate(() => {
       const box = document.querySelector('.lo-diffview')!;
-      const notes = [...document.querySelectorAll('.lo-ovnote')].filter(
+      const notes = [...document.querySelectorAll('.lo-diffthread__note')].filter(
         (note) => note.getClientRects().length > 0,
       );
       const bottom = Math.max(...notes.map((note) => note.getBoundingClientRect().bottom));
@@ -277,7 +277,7 @@ for (const layout of ['split', 'inline'] as const) {
     await frames(page, 10);
     expect(await stopWatching(page)).toEqual([]);
     expect(await movedSince(page, top)).toBeLessThanOrEqual(0.5);
-    await expect(page.locator('.lo-ovnote')).toHaveCount(0);
+    await expect(page.locator('.lo-diffthread__note')).toHaveCount(0);
   });
 }
 
@@ -302,6 +302,12 @@ async function clickMiddle(page: Page, layout: 'split' | 'inline'): Promise<void
   await frames(page, 5);
 }
 
+/** Part way down the diff in `layout`, notes showing between lines, as they open in the flow. */
+async function between(page: Page, layout: 'split' | 'inline'): Promise<void> {
+  await page.evaluate(() => window.perfThreadsMode('between'));
+  await partWay(page, layout);
+}
+
 function mark(file: string, side: 'old' | 'new', from: number, to: number): OverviewMark {
   return {
     kind: 'overview',
@@ -321,7 +327,7 @@ function mark(file: string, side: 'old' | 'new', from: number, to: number): Over
 async function scrollPastNote(page: Page, also?: Place): Promise<{ by: number; off: number }> {
   const before = await page.evaluate((line) => {
     const box = document.querySelector('.lo-diffview')!.getBoundingClientRect();
-    const note = [...document.querySelectorAll('.lo-ovnote')].find(
+    const note = [...document.querySelectorAll('.lo-diffthread__note')].find(
       (each) => each.getClientRects().length > 0,
     );
     if (!note) throw new Error('No note is drawn.');

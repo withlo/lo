@@ -25,6 +25,7 @@ import {
   followOverviews,
   isCodeBlock,
   onOverviewChanged,
+  overviews,
   setBlockThreads,
   writingBlockIn,
 } from '../../overview/window/shared.ts';
@@ -285,13 +286,16 @@ export default {
     closeThread: { run: closePopover, enabled: popoverPinned },
     nextComment: { run: moveRing(1) },
     previousComment: { run: moveRing(-1) },
+    // With overviews off there are no overview notes, so they say what they do to threads alone.
     threadsBeside: {
       run: () => void changeSetting(threadsSetting, 'beside'),
       checked: () => settingNow(threadsSetting) === 'beside',
+      described: () => (overviews.now() ? undefined : 'Threads open over the code.'),
     },
     threadsBetween: {
       run: () => void changeSetting(threadsSetting, 'between'),
       checked: () => settingNow(threadsSetting) === 'between',
+      described: () => (overviews.now() ? undefined : 'Threads open under their lines.'),
     },
     reply: { run: actOn(reply), enabled: enabled(writable) },
     resolve: {

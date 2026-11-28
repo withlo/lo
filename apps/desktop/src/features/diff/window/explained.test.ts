@@ -22,7 +22,7 @@ const files = [
 ];
 
 describe('marksOf', () => {
-  it('marks each file’s newer side by its path there, and nothing on a file it hasn’t', () => {
+  it('marks each file’s newer side by its path there, heard by its lines, and nothing on a file it hasn’t', () => {
     expect(
       marksOf(
         [
@@ -34,8 +34,20 @@ describe('marksOf', () => {
         files,
       ),
     ).toEqual([
-      { kind: 'overview', at: { file: 'f0', side: 'new', from: 8, to: 10 }, block: '1.4', note },
-      { kind: 'overview', at: { file: 'f2', side: 'new', from: 1, to: 1 }, block: '1.4', note },
+      {
+        kind: 'overview',
+        at: { file: 'f0', side: 'new', from: 8, to: 10 },
+        block: '1.4',
+        note,
+        words: 'lines 8–10',
+      },
+      {
+        kind: 'overview',
+        at: { file: 'f2', side: 'new', from: 1, to: 1 },
+        block: '1.4',
+        note,
+        words: 'line 1',
+      },
     ]);
   });
 
