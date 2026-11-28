@@ -1302,9 +1302,10 @@ and nothing while there's no stack.
   overview's window code never imports the stacks'. A stack's `start` is where its bottom layer's
   changes start, which a stack overview's code diffs from, and its code goes up to the layer whose
   head the overview describes (`stacks.layerAt`). Main reads the layers' overviews for Layers with
-  one request for every ref, kept a minute (`layerOverviews`), and their descriptions' first lines
-  with their ETags (`layerLines`), in the account's queue at background priority; the view on screen
-  reads them again every minute. Only the repository's own overview of a layer names its stack.
+  one request for every ref, kept a minute, or five while Lo is off screen (`layerOverviews`), and
+  their descriptions' first lines with their ETags (`layerLines`), in the account's queue at
+  background priority; the view on screen reads them again every minute. Only the repository's own
+  overview of a layer names its stack.
 - The merge panel makes the tree's offer too, for a chain it merges only once it's a GitHub stack,
   and only while the stack says it's offered (`offered`: on in Settings, and not dismissed for one
   of its layers, by which offer the tree makes, or `convert` where it makes none). It reads that
