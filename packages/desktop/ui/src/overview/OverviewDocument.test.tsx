@@ -1305,9 +1305,9 @@ const by = (login: string, number: number, when: string) => ({
   when,
 });
 
-describe('a term’s row and card, with what they run', () => {
-  /** "lease", which the repo's definitions hold, locked, and "cost", which they don't. */
-  const terms = (open: boolean): OverviewTerms => ({
+/** "lease", which the repo's definitions hold, locked, and "cost", which they don't. */
+function leaseAndCost(open: boolean): OverviewTerms {
+  return {
     ...shownTerms({
       lease: {
         source: 'store',
@@ -1337,11 +1337,15 @@ describe('a term’s row and card, with what they run', () => {
     }),
     expanded: (key) => open && key === 'lease',
     commands: TERM_COMMANDS,
-  });
+  };
+}
 
+describe('a term’s row and card, with what they run', () => {
   it('expands the row of a term the repo’s definitions hold, by its chevron or its term: who it’s by, its lock, its other names, its suggestions and its earlier definitions', () => {
     const ran = heldTerms();
-    const page = render(<OverviewDocument tree={defining('lease', 'cost')} terms={terms(false)} />);
+    const page = render(
+      <OverviewDocument tree={defining('lease', 'cost')} terms={leaseAndCost(false)} />,
+    );
     const chevron = (name: string) =>
       rowOf(page, name).querySelector<HTMLButtonElement>('.lo-term-row__end [aria-expanded]');
     expect(chevron('cost')).toBeNull();
@@ -1355,7 +1359,10 @@ describe('a term’s row and card, with what they run', () => {
       { kind: 'term', term: 'lease', row: true },
     ]);
 
-    rerender(page, <OverviewDocument tree={defining('lease', 'cost')} terms={terms(true)} />);
+    rerender(
+      page,
+      <OverviewDocument tree={defining('lease', 'cost')} terms={leaseAndCost(true)} />,
+    );
     const definition = rowOf(page, 'lease').querySelector('.lo-term-row__definition')!;
     expect(chevron('lease')?.getAttribute('aria-expanded')).toBe('true');
     expect(definition.textContent).toContain('ravi-k · agent-written · #264 · 3 d ago');
@@ -1373,7 +1380,9 @@ describe('a term’s row and card, with what they run', () => {
 
   it('gives a term’s card its foot and its suggestions’ link, which run Show history on the term', () => {
     const ran = heldTerms(['cost']);
-    const page = render(<OverviewDocument tree={defining('lease', 'cost')} terms={terms(false)} />);
+    const page = render(
+      <OverviewDocument tree={defining('lease', 'cost')} terms={leaseAndCost(false)} />,
+    );
     const [lease, cost] = page.querySelectorAll<HTMLElement>('.lo-term');
     focus(lease!);
     const shown = card()!;
