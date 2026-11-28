@@ -131,8 +131,11 @@ function openPage(url: string): void {
     .catch((error: unknown) => console.error("Lo couldn't open the page:", error));
 }
 
-/** What to do about a read that failed: sign in again, GitHub's own page, or `again`, Try now. */
-function readAction(problem: ReadProblem, again: ProblemAction): ProblemAction | undefined {
+/**
+ * What to do about a read that failed: sign in again, GitHub's own page, or `again`, Try now. For
+ * the repo's definitions too, whose reads fail as the overview's do.
+ */
+export function readAction(problem: ReadProblem, again: ProblemAction): ProblemAction | undefined {
   switch (problem.kind) {
     case 'signedOut':
       return { label: 'Sign in again', onClick: signInAgain };

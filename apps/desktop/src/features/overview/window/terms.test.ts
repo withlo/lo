@@ -206,7 +206,11 @@ describe("a tab's repository's definitions", () => {
       kind: 'unreadable',
       why: { kind: 'failed', code: 'timeout' },
     });
-    await readTermsAgain('t1');
+    // Why they couldn't be read stays while they're read again, as does the note that says it.
+    const failed = terms.get('t1');
+    const again = readTermsAgain('t1');
+    expect(terms.get('t1')).toBe(failed);
+    await again;
     await settle();
     expect(terms.get('t1').kind).toBe('read');
     expect(fake.parse).toHaveBeenCalledTimes(2);

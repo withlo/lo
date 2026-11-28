@@ -148,6 +148,20 @@ describe('which definition shows', () => {
       stored: { key: 'bucket' },
     });
   });
+
+  it('counts a term it changes once, under its name and an alias alike', () => {
+    const parsed = overviewOf(
+      '- **Bucket** (changed): The tokens a tenant holds.',
+      '- **Buckets** (changed): The tokens a tenant holds.',
+      '- **Lease** (new): How long.',
+    );
+    const definitions = shown(
+      parsed,
+      read(stored('Bucket', 'The tokens.', { aliases: ['buckets'] })),
+    );
+    expect(definitions.marked.map(({ name }) => name)).toEqual(['Bucket', 'Buckets', 'Lease']);
+    expect([definitions.added, definitions.changed]).toEqual([1, 1]);
+  });
 });
 
 describe('tags', () => {
@@ -196,6 +210,29 @@ describe('tags', () => {
     const merged = shown(parsed, terms, MERGED);
     expect(merged.of('bucket')).toMatchObject({ tag: 'new', source: 'overview' });
     expect(merged.of('token')).toMatchObject({ tag: 'changed', source: 'overview' });
+  });
+
+  it('on an open pull request, follow the repository as it is now: new where it lacks the term, changed where it differs', () => {
+    const parsed = overviewOf(
+      // Marked changed, and not in them: new.
+      '- **Limit** (changed): The most a tenant may take.',
+      // Marked new, and in them since with another definition: changed, replacing theirs.
+      '- **Bucket** (new): The tokens a tenant holds.',
+    );
+    const terms = read(stored('Bucket', 'The tokens a tenant has.'));
+    for (const subject of [OPEN, { kind: 'stack' } as const]) {
+      const definitions = shown(parsed, terms, subject);
+      expect(definitions.of('limit')).toMatchObject({ tag: 'new', source: 'overview' });
+      expect(definitions.of('bucket')).toMatchObject({ tag: 'changed', source: 'overview' });
+      expect(definitions.of('bucket')?.before?.definition).toBe('The tokens a tenant has.');
+      expect([definitions.added, definitions.changed]).toEqual([1, 1]);
+    }
+    // Until they're read, as marked.
+    const reading = shown(parsed, { kind: 'reading' });
+    expect([reading.of('limit')?.tag, reading.of('bucket')?.tag]).toEqual(['changed', 'new']);
+    // Merged, as marked.
+    const merged = shown(parsed, terms, MERGED);
+    expect([merged.of('limit')?.tag, merged.of('bucket')?.tag]).toEqual(['changed', 'new']);
   });
 
   it('merged, closed or without them, are as the overview marks them', () => {
@@ -273,6 +310,51 @@ describe('what a changed term replaces', () => {
     expect(
       shown(parsed, { kind: 'none', repository: REPO, problem: null }).of('bucket')?.before,
     ).toBeUndefined();
+  });
+});
+
+describe('who a definition is by', () => {
+  const byline = {
+    written: 'agent',
+    by: { login: 'ravi-k' },
+    from: 200,
+    at: '2026-11-20T10:00:00Z',
+  };
+
+  it("is the repository's entry's, where its definition shows", () => {
+    const parsed = overviewOf('- **Bucket**: Tokens.', '- **Quota**: How much.');
+    const definitions = shown(parsed, read(stored('Bucket', 'The tokens a tenant has.')));
+    expect(definitions.of('bucket')?.byline).toEqual(byline);
+    // A term they don't hold has none.
+    expect(definitions.of('quota')?.byline).toBeUndefined();
+    // Nor does any term while they can't be read.
+    const none = shown(parsed, { kind: 'none', repository: REPO, problem: null });
+    expect(none.of('bucket')?.byline).toBeUndefined();
+  });
+
+  it('is of the definition a changed term replaces on a pull request that didn’t merge', () => {
+    const parsed = overviewOf('- **Bucket** (changed): The tokens a tenant holds.');
+    const terms = read(stored('Bucket', 'The tokens a tenant has.'));
+    expect(shown(parsed, terms).of('bucket')?.byline).toEqual(byline);
+    // Closed without merging, the repository's definition is still the one it replaces.
+    const closed = { kind: 'pull', number: 264, state: 'closed' } as const;
+    expect(shown(parsed, terms, closed).of('bucket')).toMatchObject({
+      tag: 'changed',
+      before: { definition: 'The tokens a tenant has.' },
+      byline,
+    });
+    // A term it marks new that they hold shows its own, and so names no one.
+    const added = overviewOf('- **Bucket** (new): The tokens a tenant holds.');
+    expect(shown(added, terms, closed).of('bucket')?.byline).toBeUndefined();
+  });
+
+  it("merged, is the merge's own entry's while nothing has changed it since", () => {
+    const parsed = overviewOf('- **Bucket** (changed): The tokens a tenant holds.');
+    const ours = stored('Bucket', 'The tokens a tenant holds.', { from: 264 });
+    expect(shown(parsed, read(ours), MERGED).of('bucket')?.byline).toMatchObject({ from: 264 });
+    // Edited in Lo since, or locked at the merge: who wrote a definition nothing here shows.
+    const edited = stored('Bucket', 'Tokens, now.', { from: 'lo', written: 'human' });
+    expect(shown(parsed, read(edited), MERGED).of('bucket')?.byline).toBeUndefined();
   });
 });
 

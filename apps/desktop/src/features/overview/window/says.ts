@@ -1,12 +1,24 @@
-// What the overview's view says: who wrote it and when, why it can't be shown (its findings by
-// line, its sizes by kind, the format it's in) and why it couldn't be fetched, with when it's
-// fetched again. Plain functions of what main and the check found, so each wording is tested alone.
+// What the overview's view says: who wrote it and when, and whose copy it is; why it can't be shown
+// (its findings by line, its sizes by kind, the format it's in) and why it couldn't be fetched,
+// with when it's fetched again; the terms it adds and changes; and why the repo's definitions
+// can't be used. Plain functions of what main and the check found, so each wording is tested
+// alone.
 
-import { FORMAT, LIMITS, type Finding, type SizeKind, type Sizes } from '@lo/artifact';
+import {
+  FORMAT,
+  LIMITS,
+  STORE_LIMITS,
+  type Finding,
+  type SizeKind,
+  type Sizes,
+} from '@lo/artifact';
 import { ago, bytes, clock, plainName } from '@lo/ui';
 
 import { explain } from '../../../window/explain.ts';
+import type { PullState } from '../../tab/contract.ts';
 import type { Byline, OverviewCommit, Problem } from '../contract.ts';
+import type { Copy } from './facts.ts';
+import type { StoreFailure } from './terms.ts';
 
 /**
  * Who wrote an overview: their login, when GitHub matched the commit to an account; else the name
@@ -163,5 +175,103 @@ export function problemReason(problem: Problem): { cause: string; retryAt?: numb
     default:
       problem satisfies never;
       return { cause: '', retryAt };
+  }
+}
+
+/** What an overview's byline says, after `·`, of the copy it shows. */
+export function copyLabel(copy: Copy): string {
+  switch (copy) {
+    case 'fork':
+      return 'from fork';
+    case 'kept':
+      return 'copy from fork';
+    case 'saved':
+      return 'saved copy';
+    default:
+      copy satisfies never;
+      throw new Error(`A copy Lo doesn’t know: ${JSON.stringify(copy)}.`);
+  }
+}
+
+/**
+ * The line at the top of an overview whose glossary adds or changes terms, as a pull request in
+ * state `state` does them: "Adds 2 definitions · changes 1", "Changes 3 definitions"; once it's
+ * merged, as done: "Added 2 definitions · changed 1"; and closed without merging, as what it
+ * would have done, one fact: "Would have added 2 definitions and changed 1". None when it does
+ * neither.
+ */
+export function definitionsLine(
+  added: number,
+  changed: number,
+  state: PullState,
+): string | undefined {
+  const [adds, changes, changesAlone] = LINE_WORDS[state];
+  if (added > 0 && changed > 0) {
+    return `${adds} ${counted(added, 'definition')}${changes} ${changed.toLocaleString('en-US')}`;
+  }
+  if (added > 0) return `${adds} ${counted(added, 'definition')}`;
+  if (changed > 0) return `${changesAlone} ${counted(changed, 'definition')}`;
+  return undefined;
+}
+
+/**
+ * The line's words, by state: for adding; for changing after it, with what joins the two, `·`
+ * between two facts, or "and" within one, for what a closed pull request would have done; and for
+ * changing alone.
+ */
+const LINE_WORDS: Readonly<Record<PullState, readonly [string, string, string]>> = {
+  open: ['Adds', ' · changes', 'Changes'],
+  draft: ['Adds', ' · changes', 'Changes'],
+  merged: ['Added', ' · changed', 'Changed'],
+  closed: ['Would have added', ' and changed', 'Would have changed'],
+};
+
+/** The title of the Glossary section's note, when the repo's definitions can't be used. */
+export const STORE_TITLE = 'Can’t read the repo’s glossary';
+
+/** What the note says last: each definition shown is the overview's own. */
+export const OWN_DEFINITIONS = 'These definitions are this overview’s own.';
+
+/**
+ * Why the repo's definitions can't be used, for any cause but GitHub's, which `problemReason`
+ * words: the cause, with a file's name in backticks, which the note draws as code, or nothing
+ * where it isn't known; what's behind Details, the parser's own words; and whether trying again
+ * could help, which it can't for a store that's past its limits or can't be read, until it changes.
+ */
+export function storeReason(why: Exclude<StoreFailure, { kind: 'problem' }>): {
+  cause: string;
+  details?: string | undefined;
+  again: boolean;
+} {
+  switch (why.kind) {
+    case 'tooMany':
+      return {
+        cause: `It’s over ${STORE_LIMITS.terms.toLocaleString('en-US')} terms.`,
+        again: false,
+      };
+    case 'tooLarge':
+      return { cause: `It’s larger than ${bytes(STORE_LIMITS.size)}.`, again: false };
+    case 'invalid': {
+      const { at, code, message } = why.problem;
+      const details = at === undefined ? message : `${at}: ${message}`;
+      // One in a format a newer Lo writes says so, as an overview does.
+      const cause = code === 'format-newer' ? NEWER_REASON : '`terms.json` can’t be read.';
+      return { cause, details, again: false };
+    }
+    case 'notStore':
+      return { cause: '`terms.json` can’t be read.', again: false };
+    case 'failed':
+      // Reading it on this computer: too long, out of memory, or a cause Lo can't tell.
+      switch (why.code) {
+        case 'timeout':
+          return { cause: 'It took too long.', again: true };
+        case 'memory':
+          return { cause: 'It ran out of memory.', again: false };
+        default:
+          return { cause: '', again: true };
+      }
+    default:
+      why satisfies never;
+      throw new Error(`A failure Lo doesn’t know: ${JSON.stringify(why)}.`);
   }
 }

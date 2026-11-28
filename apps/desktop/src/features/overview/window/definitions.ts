@@ -2,9 +2,10 @@
 // every term they hold that the overview doesn't mark, in every overview, old ones too; the
 // overview's own for a term it marks new or changed, which its review reviews; and the overview's
 // own for every term while the repository has none, or Lo can't read them. Only the overview's
-// marks tag a term: an unmarked one is never new or changed, whatever the repository holds. A plain
-// function of the overview, the definitions and the pull request, tested alone; the views draw
-// what it says.
+// marks tag a term: an unmarked one is never new or changed, whatever the repository holds. While
+// the pull request is open, a marked term's tag follows the repository's definitions as they are
+// now. A plain function of the overview, the definitions and the pull request, tested alone; the
+// views draw what it says.
 
 import type { Account, Definition, GlossaryEntry, Origin, OverviewBlock } from '@lo/artifact';
 
@@ -35,16 +36,22 @@ export interface Before extends TermByline {
  * - `source`: whose definition shows: the repository's current one (`store`), or the overview's own
  *   (`overview`);
  * - `blocks`: the definition that shows, to draw;
- * - `tag`: whether the pull request adds the term (`new`) or changes it (`changed`), as the
- *   overview marks it: an unmarked term has none. On an open or draft pull request, and a stack's
- *   overview, a mark the repository's definitions have made moot, as they are now, is dropped: one
- *   on a term they hold with the same definition, which the pull request then changes nothing in,
- *   so theirs shows. Merged or closed, every mark stays, since the merge is what took it;
+ * - `tag`: whether the pull request adds the term (`new`) or changes it (`changed`), for a term
+ *   the overview marks: an unmarked term has none. On an open or draft pull request, and a stack's
+ *   overview, it follows the repository's definitions as they are now: a marked term they don't
+ *   hold is new, one they hold otherwise is changed, and one they hold with the same definition,
+ *   which the pull request then changes nothing in, has none, so theirs shows. Merged or closed,
+ *   or without definitions Lo can read, it's as the overview marks it, since the merge is what
+ *   took it;
  * - `before`: for a changed term, the definition it replaces, when Lo knows it: the repository's
  *   current one, or for a merged pull request, the one its merge replaced, from the term's earlier
  *   definitions;
  * - `stored`: the repository's entry for it, when they hold it, under its name or an alias: who
  *   wrote it, whether it's locked, its suggestions and earlier definitions;
+ * - `byline`: who wrote the repository's current definition of it, where what shows for the term
+ *   holds that definition: as the definition that shows, as the one a changed term replaces on a
+ *   pull request that didn't merge, or as the one a merged pull request's merge brought, while
+ *   it's still the current one. None where it would name who wrote a definition nothing shows;
  * - `own`: the overview's own entry, when its glossary defines it.
  */
 export interface ShownTerm {
@@ -55,6 +62,7 @@ export interface ShownTerm {
   tag: 'new' | 'changed' | undefined;
   before: Before | undefined;
   stored: StoredTerm | undefined;
+  byline: TermByline | undefined;
   own: Definition | undefined;
 }
 
@@ -106,7 +114,7 @@ export function definitionsOf(
     if (shown.has(own.key)) continue;
     const stored = store && storedTerm(store, own.key);
     const entry = written.get(own.key);
-    const tag = live && moot(entry, stored) ? undefined : own.mark;
+    const tag = live && store ? tagNow(own.mark, entry, stored) : own.mark;
     const theirs = tag === undefined && stored !== undefined;
     shown.set(own.key, {
       key: own.key,
@@ -116,6 +124,7 @@ export function definitionsOf(
       tag,
       before: tag === 'changed' && stored ? beforeOf(stored, subject) : undefined,
       stored,
+      byline: stored && (theirs || current(stored, tag, subject)) ? bylineOf(stored) : undefined,
       own,
     });
   }
@@ -142,15 +151,28 @@ export function definitionsOf(
         tag: undefined,
         before: undefined,
         stored,
+        byline: bylineOf(stored),
         own: undefined,
       };
     },
     marked,
     rest,
-    added: marked.filter(({ tag }) => tag === 'new').length,
-    changed: marked.filter(({ tag }) => tag === 'changed').length,
+    added: counted(marked, 'new'),
+    changed: counted(marked, 'changed'),
     terms,
   };
+}
+
+/**
+ * How many terms of `marked` are tagged `tag`: two entries the repository's definitions hold as
+ * one term, under its name and an alias, count once.
+ */
+function counted(marked: readonly ShownTerm[], tag: ShownTerm['tag']): number {
+  const terms = new Set<string>();
+  for (const term of marked) {
+    if (term.tag === tag) terms.add(term.stored ? `stored ${term.stored.key}` : `own ${term.key}`);
+  }
+  return terms.size;
 }
 
 /** The items of an overview's glossary, in the order written: its `## Glossary` section's. */
@@ -173,6 +195,38 @@ function isOpen(state: PullState): boolean {
       state satisfies never;
       return false;
   }
+}
+
+/**
+ * The tag of a term the overview marks `mark`, written as `entry`, on an open pull request, as the
+ * repository's definitions hold it now, `stored`: new where they don't hold it, none where they
+ * hold the definition the overview gives it, which makes the mark moot, and changed otherwise.
+ */
+function tagNow(
+  mark: Definition['mark'],
+  entry: GlossaryEntry | undefined,
+  stored: StoredTerm | undefined,
+): ShownTerm['tag'] {
+  if (mark === undefined) return undefined;
+  if (stored === undefined) return 'new';
+  return moot(entry, stored) ? undefined : 'changed';
+}
+
+/**
+ * Whether what shows for a term the overview tags `tag`, and doesn't show the repository's
+ * definition of, still holds their current one, `stored`'s: as the definition a changed term
+ * replaces, unless the pull request merged, or as the one a merged pull request's merge brought,
+ * which nothing has changed since.
+ */
+function current(stored: StoredTerm, tag: ShownTerm['tag'], subject: Subject): boolean {
+  if (subject.kind === 'stack' || subject.state !== 'merged') return tag === 'changed';
+  return stored.from === subject.number;
+}
+
+/** Who wrote the repository's current definition of a term, where from, and when. */
+function bylineOf(stored: StoredTerm): TermByline {
+  const { written, by, from, at } = stored;
+  return { written, by, from, at };
 }
 
 /**

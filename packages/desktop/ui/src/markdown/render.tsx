@@ -55,6 +55,7 @@ import type {
 } from '@lo/markdown';
 import { imageSize } from '@lo/markdown';
 
+import { UNFOCUSABLE } from '../focus.ts';
 import { Icon } from '../Icon.tsx';
 import type { IconName } from '../icons.ts';
 import { secureLink } from './links.ts';
@@ -92,6 +93,11 @@ export interface Rendering<X extends Extension = Plain> {
    * term's definition in its hover card, shows them as their text.
    */
   readonly interactive: boolean;
+  /**
+   * Whether its links take focus: `false` on a surface that takes none, as a term's card, where a
+   * link takes a click, which leaves focus where it was, and the keyboard never reaches it.
+   */
+  readonly focusable?: boolean | undefined;
   /**
    * Which way a paragraph reads. `auto` leaves it to the paragraph's own text, as GitHub does, so
    * a line of Hebrew in English docs reads from the right and the rest from the left. Without it
@@ -916,7 +922,9 @@ export interface FollowLinkProps<X extends Extension> {
 
 /**
  * A link with no address: a click or `⏎` hands its target to the document. With no `href`, the
- * page itself can't navigate, open a window or drag the address anywhere.
+ * page itself can't navigate, open a window or drag the address anywhere. Where the document's
+ * links take no focus, as in a term's card, it's out of the tab order, and a click on it leaves
+ * focus where it was.
  */
 export function FollowLink<X extends Extension>({
   target,
@@ -928,7 +936,7 @@ export function FollowLink<X extends Extension>({
   return (
     <a
       role="link"
-      tabIndex={0}
+      {...(r.focusable === false ? UNFOCUSABLE : { tabIndex: 0 })}
       aria-label={label}
       className={className}
       onClick={(event) => {
