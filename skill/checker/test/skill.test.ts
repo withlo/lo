@@ -5,10 +5,18 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
-import { pullOf, takeLock } from '@lo/skill/hook.mjs';
+import { cloneLink, pullOf, takeLock } from '@lo/skill/hook.mjs';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 import { git, gitBytes, testGitEnvironment } from '@lo/testing/git';
@@ -237,8 +245,8 @@ describe('SKILL.md', () => {
       "'<n>'": '4797',
       "'<stack>'": '4790',
       "'<link>'": 'https://github.com/acme/demo/pull/4797',
-      // The git folder of the clone the writer started in, whose lock it keeps.
-      "'<local>'": join(repo, '.git'),
+      // The clone the hook named, whose lock the writer keeps.
+      "'<lock-clone>'": cloneLink(repo),
     };
     const said = npx.map((line) => {
       const [, spec, rest] = shape.exec(line) ?? [];
@@ -247,30 +255,31 @@ describe('SKILL.md', () => {
     });
     const link = 'https://github.com/acme/demo/pull/4797';
     expect(said.map(({ spec, args }) => `${spec} ${args.join(' ')}`)).toEqual([
-      `${manifest.name}@{version} start ${link} --repo ${join(repo, '.git')}`,
+      `${manifest.name}@{version} start ${link} --repo ${cloneLink(repo)}`,
       `${manifest.name}@{version} transcript --out ${work}`,
       `${manifest.name}@{version} check ${dir} --pr 4797 --repo ${repo}`,
       `${manifest.name}@{version} commit ${dir} --pr 4797 --repo ${repo}`,
       `${manifest.name}@{version} check ${stack} --stack 4790 --repo ${repo}`,
       `${manifest.name}@{version} commit ${stack} --stack 4790 --repo ${repo}`,
-      `${manifest.name}@{version} done ${link} --repo ${join(repo, '.git')}`,
+      `${manifest.name}@{version} done ${link} --repo ${cloneLink(repo)}`,
     ]);
 
     // Marked as being written, and done, with the hook's lock between, in the git folder of the
-    // clone it started in, where the hook keeps it.
+    // clone the hook named, where it keeps it.
     const pull = pullOf(link);
     if (pull === undefined) throw new Error('Not a link.');
     const [start, , , , , , done] = said;
-    expect(runChecker(start!.args, join(work, 'tools'))).toMatchObject({
+    const env = { ...testGitEnvironment(), LO_OVERVIEW_TMP: work };
+    expect(runChecker(start!.args, join(work, 'tools'), env)).toMatchObject({
       status: 0,
       stdout: expect.stringContaining(`Lo marked the overview of ${link} as being written`),
     });
-    expect(takeLock(pull, { dir: repo })).toBe('held');
-    expect(runChecker(done!.args, join(work, 'tools'))).toMatchObject({
+    expect(takeLock(pull, { dir: repo, env })).toBe('held');
+    expect(runChecker(done!.args, join(work, 'tools'), env)).toMatchObject({
       status: 0,
       stdout: expect.stringContaining(`A push came in while you wrote`),
     });
-    expect(runChecker(done!.args, join(work, 'tools'))).toMatchObject({
+    expect(runChecker(done!.args, join(work, 'tools'), env)).toMatchObject({
       status: 0,
       stdout: `Nothing came in while you wrote the overview of ${link}.\n`,
     });
@@ -522,6 +531,24 @@ describe('its git commands, run as written', () => {
     const promisor = run(command('promisor'), {}, partial);
     expect(promisor.status).toBe(0);
     expect(promisor.stdout).not.toBe('');
+  });
+
+  test('keep the lock of a shallow or partial clone it started in, which it makes no clone from', () => {
+    for (const depth of ['--depth=1', '--filter=blob:none']) {
+      const started = mkdtempSync(join(root.dir, 'started-'));
+      git(root.dir, 'clone', '-q', depth, `file://${remote}`, started);
+      const work = mkdtempSync(join(root.dir, 'work-'));
+      mkdirSync(join(work, 'tools'));
+      const env = { ...testGitEnvironment(), LO_OVERVIEW_TMP: work };
+      // Its git folder is still `<local>`, and the lock the writer keeps is its.
+      const common = run(command('--git-common-dir'), {}, started, env).stdout.trim();
+      expect(common).toBe(join(realpathSync(started), '.git'));
+      const values = { work, link: 'https://github.com/acme/demo/pull/4797', 'lock-clone': common };
+      expect(run(command("start '<link>'"), values, work, env).status).toBe(0);
+      expect(readdirSync(join(common, 'lo-overview'))).toEqual(['acme.demo.4797.lock']);
+      expect(run(command("done '<link>'"), values, work, env).stdout).toContain('Nothing came in');
+      expect(readdirSync(join(common, 'lo-overview'))).toEqual([]);
+    }
   });
 
   test('stop when the clone it started in has no email address for its commits', () => {

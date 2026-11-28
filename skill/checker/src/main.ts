@@ -76,7 +76,7 @@ Commands:
             its messages, and the commands it ran with their exit codes. The session is the one
             --from names, or the one Claude Code or Codex says is running.
   start     Mark the overview of the pull request as being written, in the repository's git
-            folder, so that the skill's hook starts no other writer for it meanwhile.
+            folder or /tmp, so that the skill's hook starts no other writer for it meanwhile.
   done      Say the overview is written. When a push came in meanwhile, it says to write it again.
   keep      For the repository's workflow: when pull request <number> comes from a fork, copy
             the fork's refs/lo/pr/<number>, and the stack overview its header names, to
@@ -100,7 +100,7 @@ Options:
                   same one, in place of a pull request.
   --repo <folder> The pull request's repository: the one the current folder is in unless given.
                   For install, the clone to install the skill in; for start and done, the clone
-                  whose git folder keeps the lock.
+                  whose lock it is, by its path or its file: link.
   --out <folder>  The folder to write transcript.txt in.
   --from <file>   The transcript to copy: a Claude Code or Codex session's .jsonl or .jsonl.zst.
   --json          Print what was found, or done, as JSON.

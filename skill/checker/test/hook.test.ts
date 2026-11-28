@@ -34,13 +34,16 @@ import {
   keepLock,
   lastPullIn,
   LOCK_MS,
+  cloneLink,
   lockFolder,
+  lockFolders,
   offBy,
   personalSettings,
   pullOf,
   readJsonc,
   takeLock,
   textOf,
+  tmpLockFolder,
 } from '@lo/skill/hook.mjs';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
@@ -322,43 +325,56 @@ function locksIn(dir: string): string {
   return join(realpathSync(dir), '.git', 'lo-overview');
 }
 
+/** A temporary folder of the test's own for the person's folder of locks there. */
+function tmpEnv(): { LO_OVERVIEW_TMP: string } {
+  return { LO_OVERVIEW_TMP: fresh('tmp') };
+}
+
+/** What's in `folder`, if it's there, in order. */
+function inFolder(folder: string): string[] {
+  return existsSync(folder) ? readdirSync(folder).toSorted() : [];
+}
+
 describe('one writer per pull request', () => {
   const pull = pullOf('https://github.com/Acme/Demo/pull/7')!;
 
   test('takes the lock, holds it with one follow-up, and gives it back', () => {
     const dir = lockingRepo();
-    expect(takeLock(pull, { dir, call: 'a' })).toBe('taken');
+    const env = tmpEnv();
+    expect(takeLock(pull, { dir, env, call: 'a' })).toBe('taken');
     // The same call again, as one that pushes and opens a pull request runs the hook twice.
-    expect(takeLock(pull, { dir, call: 'a' })).toBe('same');
-    expect(takeLock(pull, { dir, call: 'b' })).toBe('held');
-    expect(takeLock(pull, { dir, call: 'c' })).toBe('held');
+    expect(takeLock(pull, { dir, env, call: 'a' })).toBe('same');
+    expect(takeLock(pull, { dir, env, call: 'b' })).toBe('held');
+    expect(takeLock(pull, { dir, env, call: 'c' })).toBe('held');
     // Case is the same pull request on GitHub.
-    expect(takeLock(pullOf('https://github.com/acme/demo/pull/7')!, { dir })).toBe('held');
+    expect(takeLock(pullOf('https://github.com/acme/demo/pull/7')!, { dir, env })).toBe('held');
     // One follow-up, however many pushes came.
-    expect(giveBack(pull, { dir })).toBe('again');
-    expect(takeLock(pull, { dir, call: 'd' })).toBe('held');
-    expect(giveBack(pull, { dir })).toBe('again');
-    expect(giveBack(pull, { dir })).toBe('done');
-    expect(takeLock(pull, { dir, call: 'e' })).toBe('taken');
+    expect(giveBack(pull, { dir, env })).toBe('again');
+    expect(takeLock(pull, { dir, env, call: 'd' })).toBe('held');
+    expect(giveBack(pull, { dir, env })).toBe('again');
+    expect(giveBack(pull, { dir, env })).toBe('done');
+    expect(takeLock(pull, { dir, env, call: 'e' })).toBe('taken');
     // Another pull request has a lock of its own.
-    expect(takeLock(pullOf('https://github.com/acme/demo/pull/8')!, { dir })).toBe('taken');
+    expect(takeLock(pullOf('https://github.com/acme/demo/pull/8')!, { dir, env })).toBe('taken');
   });
 
   test('lapses a lock no writer kept within its time, follow-up and all', () => {
     const dir = lockingRepo();
-    expect(takeLock(pull, { dir })).toBe('taken');
-    expect(takeLock(pull, { dir })).toBe('held');
+    const env = tmpEnv();
+    expect(takeLock(pull, { dir, env })).toBe('taken');
+    expect(takeLock(pull, { dir, env })).toBe('held');
     const later = Date.now() + LOCK_MS + 1000;
-    expect(takeLock(pull, { dir, now: later })).toBe('taken');
+    expect(takeLock(pull, { dir, env, now: later })).toBe('taken');
     // The follow-up went with it.
-    expect(giveBack(pull, { dir })).toBe('done');
+    expect(giveBack(pull, { dir, env })).toBe('done');
     // A writer that starts keeps it, as one does.
-    expect(keepLock(pull, { dir })).toBe('kept');
-    expect(takeLock(pull, { dir })).toBe('held');
+    expect(keepLock(pull, { dir, env })).toBe('kept');
+    expect(takeLock(pull, { dir, env })).toBe('held');
   });
 
   test('keeps them in the repository’s git folder, which its worktrees share, whatever TMPDIR says', () => {
     const dir = lockingRepo();
+    const tmp = tmpEnv();
     git(dir, 'commit', '-q', '--allow-empty', '-m', 'Start');
     const tree = join(fresh('worktrees'), 'tree');
     git(dir, 'worktree', 'add', '-q', tree);
@@ -366,77 +382,124 @@ describe('one writer per pull request', () => {
     expect(lockFolder(dir)).toBe(locksIn(dir));
     expect(lockFolder(join(tree, 'deep'), { TMPDIR: fresh('tmpdir') })).toBe(locksIn(dir));
     // A sandboxed command's TMPDIR is another, which the hook never sees: the lock is the same.
-    expect(takeLock(pull, { dir: tree, env: { TMPDIR: fresh('sandboxed') } })).toBe('taken');
-    expect(takeLock(pull, { dir, env: { TMPDIR: fresh('hook') } })).toBe('held');
-    expect(giveBack(pull, { dir: tree })).toBe('again');
+    expect(takeLock(pull, { dir: tree, env: { ...tmp, TMPDIR: fresh('sandboxed') } })).toBe(
+      'taken',
+    );
+    expect(takeLock(pull, { dir, env: { ...tmp, TMPDIR: fresh('hook') } })).toBe('held');
+    expect(giveBack(pull, { dir: tree, env: tmp })).toBe('again');
+    expect(inFolder(locksIn(dir))).toEqual(['acme.demo.7.lock']);
   });
 
-  test('keeps locks only in a folder of the person’s own, and says when it couldn’t', () => {
+  test('takes it in /tmp for Codex, whose sandbox lets its commands write there and no git folder', () => {
     const dir = lockingRepo();
+    const env = tmpEnv();
+    const tmp = tmpLockFolder(env);
+    expect(tmp).toBe(join(env.LO_OVERVIEW_TMP, `lo-overview-${process.getuid?.() ?? ''}`));
+    expect(takeLock(pull, { dir, env, host: 'codex' })).toBe('taken');
+    expect(inFolder(tmp)).toEqual(['acme.demo.7.lock']);
+    expect(inFolder(locksIn(dir))).toEqual([]);
+    // Held wherever it is: a push from Claude Code meanwhile is told so, and leaves its follow-up
+    // beside it.
+    expect(takeLock(pull, { dir, env, host: 'claude' })).toBe('held');
+    expect(inFolder(tmp)).toEqual(['acme.demo.7.again', 'acme.demo.7.lock']);
+    expect(lockFolders(dir, env)).toEqual([locksIn(dir), tmp]);
+    expect(lockFolders(dir, env, { first: 'tmp' })).toEqual([tmp, locksIn(dir)]);
+  });
+
+  test.skipIf(process.getuid?.() === 0)(
+    'lets a writer that can’t write the git folder keep, and give back, the lock in /tmp',
+    () => {
+      const dir = lockingRepo();
+      const env = tmpEnv();
+      expect(takeLock(pull, { dir, env, host: 'codex' })).toBe('taken');
+      expect(takeLock(pull, { dir, env, host: 'codex' })).toBe('held');
+      // As in Codex's sandbox, whose commands can't write a git folder.
+      const gitFolder = locksIn(dir);
+      chmodSync(gitFolder, 0o500);
+      try {
+        expect(keepLock(pull, { dir, env })).toBe('kept');
+        expect(giveBack(pull, { dir, env })).toBe('again');
+        expect(giveBack(pull, { dir, env })).toBe('done');
+        // With none to keep, it takes one where it can write.
+        expect(keepLock(pull, { dir, env })).toBe('kept');
+        expect(inFolder(tmpLockFolder(env))).toEqual(['acme.demo.7.lock']);
+      } finally {
+        chmodSync(gitFolder, 0o700);
+      }
+    },
+  );
+
+  test('keeps locks only in folders of the person’s own, and says when it couldn’t', () => {
+    const dir = lockingRepo();
+    const env = tmpEnv();
     const folder = lockFolder(dir)!;
     chmodSync(folder, 0o777);
     expect(lockFolder(dir)).toBeUndefined();
-    expect(takeLock(pull, { dir })).toBe('unlocked');
-    expect(keepLock(pull, { dir })).toBe('failed');
-    expect(giveBack(pull, { dir })).toBe('failed');
+    // Only /tmp's is left.
+    expect(lockFolders(dir, env)).toEqual([tmpLockFolder(env)]);
+    chmodSync(tmpLockFolder(env), 0o777);
+    expect(takeLock(pull, { dir, env })).toBe('unlocked');
+    expect(keepLock(pull, { dir, env })).toBe('failed');
 
     const linked = lockingRepo();
     symlinkSync(fresh('target'), join(linked, '.git', 'lo-overview'));
     expect(lockFolder(linked)).toBeUndefined();
-    // Outside any repository there's no folder for them.
+    // Outside any repository there's no git folder, so done can't tell what's left in one.
     const nowhere = fresh('nowhere');
     expect(lockFolder(nowhere)).toBeUndefined();
-    expect(keepLock(pull, { dir: nowhere })).toBe('failed');
-    expect(giveBack(pull, { dir: nowhere })).toBe('failed');
+    expect(giveBack(pull, { dir: nowhere, env: tmpEnv() })).toBe('failed');
   });
 
   test.skipIf(process.getuid?.() === 0)(
     'says it couldn’t give the lock back when its follow-up can’t be taken',
     () => {
       const dir = lockingRepo();
-      expect(takeLock(pull, { dir })).toBe('taken');
-      expect(takeLock(pull, { dir })).toBe('held');
+      const env = tmpEnv();
+      expect(takeLock(pull, { dir, env })).toBe('taken');
+      expect(takeLock(pull, { dir, env })).toBe('held');
       const folder = lockFolder(dir)!;
       chmodSync(folder, 0o500);
       try {
-        expect(giveBack(pull, { dir })).toBe('failed');
-        expect(keepLock(pullOf('https://github.com/acme/demo/pull/9')!, { dir })).toBe('failed');
+        expect(giveBack(pull, { dir, env })).toBe('failed');
       } finally {
         chmodSync(folder, 0o700);
       }
       // The follow-up is still there for the writer.
-      expect(giveBack(pull, { dir })).toBe('again');
+      expect(giveBack(pull, { dir, env })).toBe('again');
     },
   );
 
   test('takes the lock itself when the writer gave it back as the follow-up was recorded', () => {
     const dir = lockingRepo();
+    const env = tmpEnv();
     const folder = lockFolder(dir)!;
-    expect(takeLock(pull, { dir })).toBe('taken');
+    expect(takeLock(pull, { dir, env })).toBe('taken');
     // The writer's `done` looked for a follow-up, found none, and takes the lock away just after.
     const gone = () => rmSync(join(folder, 'acme.demo.7.lock'));
-    expect(takeLock(pull, { dir, meanwhile: gone })).toBe('taken');
+    expect(takeLock(pull, { dir, env, meanwhile: gone })).toBe('taken');
     expect(readdirSync(folder)).toEqual(['acme.demo.7.lock']);
   });
 
   test('hands the writer a follow-up recorded as it gave the lock back', () => {
     const dir = lockingRepo();
+    const env = tmpEnv();
     const folder = lockFolder(dir)!;
-    expect(takeLock(pull, { dir })).toBe('taken');
+    expect(takeLock(pull, { dir, env })).toBe('taken');
     // The hook saw the lock held, and records its follow-up as the lock goes.
     const recorded = () => writeFileSync(join(folder, 'acme.demo.7.again'), `${pull.url}\n`);
-    expect(giveBack(pull, { dir, meanwhile: recorded })).toBe('again');
-    expect(takeLock(pull, { dir })).toBe('held');
-    expect(giveBack(pull, { dir })).toBe('again');
-    expect(giveBack(pull, { dir })).toBe('done');
+    expect(giveBack(pull, { dir, env, meanwhile: recorded })).toBe('again');
+    expect(takeLock(pull, { dir, env })).toBe('held');
+    expect(giveBack(pull, { dir, env })).toBe('again');
+    expect(giveBack(pull, { dir, env })).toBe('done');
   });
 
   test('drops a follow-up no writer is left to take, as a new writer reads it all', () => {
     const dir = lockingRepo();
+    const env = tmpEnv();
     const folder = lockFolder(dir)!;
     writeFileSync(join(folder, 'acme.demo.7.again'), `${pull.url}\n`);
-    expect(takeLock(pull, { dir })).toBe('taken');
-    expect(giveBack(pull, { dir })).toBe('done');
+    expect(takeLock(pull, { dir, env })).toBe('taken');
+    expect(giveBack(pull, { dir, env })).toBe('done');
   });
 
   test('moves a lapsed lock aside before it removes it, and puts back one taken meanwhile', () => {
@@ -501,14 +564,14 @@ describe('the hook', () => {
   const link = 'https://github.com/acme/demo/pull/7';
 
   test('asks Claude Code to start the skill in the background, once per writer', () => {
-    const env = { HOME: fresh('home') };
+    const env = { HOME: fresh('home'), ...tmpEnv() };
     const top = clone();
     const first = answer(claudeInput('git push', top), env, { '*': link });
     expect(first.hookEventName).toBe('PostToolUse');
     expect(first.additionalContext).toContain(`write the overview of ${link} for this push`);
     expect(first.additionalContext).toContain('`mktemp -d`');
     expect(first.additionalContext).toContain(
-      `Start the lo-overview skill with the arguments \`${link} <folder>/handoff.md\`. It runs in the background`,
+      `Start the lo-overview skill with the arguments \`${link} <folder>/handoff.md ${cloneLink(top)}\`. It runs in the background`,
     );
     // Short: the brief is the handoff file's.
     expect(first.additionalContext.length).toBeLessThan(1000);
@@ -519,7 +582,7 @@ describe('the hook', () => {
   });
 
   test('asks Codex to start it with spawn_agent, from what Codex gives it', () => {
-    const env = { HOME: fresh('home') };
+    const env = { HOME: fresh('home'), ...tmpEnv() };
     const top = clone();
     const said = answer(
       {
@@ -538,7 +601,9 @@ describe('the hook', () => {
       { work: link },
     );
     expect(said.additionalContext).toContain('Start a subagent with spawn_agent');
-    expect(said.additionalContext).toContain(`\`${link} <folder>/handoff.md\``);
+    expect(said.additionalContext).toContain(`\`${link} <folder>/handoff.md ${cloneLink(top)}\``);
+    // Codex's writer keeps its lock in /tmp, as Codex's sandbox lets its commands write there.
+    expect(readdirSync(tmpLockFolder(env))).toEqual(['acme.demo.7.lock']);
     // A failed command, which Codex gives the hook too, starts nothing.
     expect(
       answer(
@@ -547,14 +612,14 @@ describe('the hook', () => {
           turn_id: 't',
           tool_response: 'Exit code: 1\nOutput:\nfatal: x',
         },
-        { HOME: env.HOME },
+        { HOME: env.HOME, ...tmpEnv() },
         { '*': link },
       ),
     ).toBeUndefined();
   });
 
   test('finds an opened pull request from what was printed, or what Claude Code read of it', () => {
-    const env = { HOME: fresh('home') };
+    const env = { HOME: fresh('home'), ...tmpEnv() };
     const top = clone();
     const created = answer(
       claudeInput(
@@ -586,7 +651,7 @@ describe('the hook', () => {
   });
 
   test('answers once for a command that pushes and opens the same pull request', () => {
-    const env = { HOME: fresh('home') };
+    const env = { HOME: fresh('home'), ...tmpEnv() };
     const top = clone();
     const input = claudeInput('git push -u origin work && gh pr create --fill', top, `${link}\n`);
     // Claude Code runs it once for each of the hook's rules the command matches.
@@ -598,7 +663,7 @@ describe('the hook', () => {
 
   test('says nothing when it’s off, the push changed nothing, or there’s no open pull request', () => {
     const home = fresh('home');
-    const env = { HOME: home, XDG_CONFIG_HOME: join(home, '.config') };
+    const env = { HOME: home, XDG_CONFIG_HOME: join(home, '.config'), ...tmpEnv() };
     expect(
       answer(claudeInput('git push', clone('{ "overview.auto": false }')), env, { '*': link }),
     ).toBeUndefined();
@@ -623,7 +688,7 @@ describe('the hook', () => {
   });
 
   test('says nothing for a clone that never installed the skill, or a folder it can’t tell', () => {
-    const env = { HOME: fresh('home') };
+    const env = { HOME: fresh('home'), ...tmpEnv() };
     const top = clone();
     const other = fresh('other');
     mkdirSync(join(other, '.git'));
@@ -645,7 +710,7 @@ describe('the hook', () => {
   });
 
   test('says nothing yet for a push that runs in the background', () => {
-    const env = { HOME: fresh('home') };
+    const env = { HOME: fresh('home'), ...tmpEnv() };
     const input = {
       ...claudeInput('git push', clone(), ''),
       tool_input: { command: 'git push', run_in_background: true },
@@ -655,7 +720,7 @@ describe('the hook', () => {
   });
 
   test('takes an opened pull request’s printed link only when it’s the one printed', () => {
-    const env = { HOME: fresh('home') };
+    const env = { HOME: fresh('home'), ...tmpEnv() };
     const top = clone();
     const printed =
       'https://github.com/acme/demo/pull/9\n{"url":"https://github.com/acme/demo/pull/3"}\n';
@@ -670,7 +735,7 @@ describe('the hook', () => {
   });
 
   test('asks gh about three branches at most, however many a push names', () => {
-    const env = { HOME: fresh('home') };
+    const env = { HOME: fresh('home'), ...tmpEnv() };
     const asked: string[] = [];
     const said = hook(claudeInput('git push origin a b c d e', clone()), {
       env,
@@ -684,7 +749,7 @@ describe('the hook', () => {
   });
 
   test('looks for the branch named, on the remote pushed to, or the head gh pr create names', () => {
-    const env = { HOME: fresh('home') };
+    const env = { HOME: fresh('home'), ...tmpEnv() };
     const top = clone();
     const targets: unknown[] = [];
     const find = (_dir: string, target: unknown) => {
@@ -706,14 +771,35 @@ describe('the hook', () => {
     const two = pullOf('https://github.com/acme/demo/pull/8')!;
     const said = answerFor(
       [
-        { pull: one, lock: 'held' },
-        { pull: two, lock: 'taken' },
+        { pull: one, top: '/work/one', lock: 'held' },
+        { pull: two, top: '/work/two', lock: 'taken' },
       ],
       'claude',
     );
     expect(said.split('\n')).toHaveLength(4);
     expect(said).toContain(`${link} is being written`);
     expect(said).toContain(`write the overview of ${two.url}`);
+    expect(said).toContain(`\`${two.url} <folder>/handoff.md file:///work/two\``);
+  });
+
+  test('names the clone the push came from, whose lock it took, for the writer to keep', () => {
+    const env = { HOME: fresh('home'), ...tmpEnv() };
+    const top = clone();
+    const other = clone();
+    const said = answer(claudeInput(`cd '${other}' && git push`, top), env, { '*': link });
+    expect(said.additionalContext).toContain(`\`${link} <folder>/handoff.md ${cloneLink(other)}\``);
+    expect(inFolder(locksIn(other))).toEqual(['acme.demo.7.lock']);
+    expect(inFolder(locksIn(top))).toEqual([]);
+  });
+
+  test('names a clone whose path holds a space or a quote by a link that holds neither', () => {
+    for (const name of ["it's here", 'a b', 'x$(y)`z`']) {
+      const top = join(fresh('odd'), name);
+      mkdirSync(top);
+      const named = cloneLink(top);
+      expect(named).toMatch(/^file:\/\/\/[^\s'"$`()]+$/);
+      expect(fileURLToPath(named)).toBe(top);
+    }
   });
 });
 
@@ -767,7 +853,7 @@ function run(input: string, bin: string, env: Record<string, string> = {}) {
   return spawnSync(process.execPath, [HOOK], {
     input,
     encoding: 'utf8',
-    env: { PATH: `${bin}:${process.env.PATH}`, HOME: fresh('home'), ...env },
+    env: { PATH: `${bin}:${process.env.PATH}`, HOME: fresh('home'), ...tmpEnv(), ...env },
   });
 }
 

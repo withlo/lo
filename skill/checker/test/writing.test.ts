@@ -8,8 +8,8 @@
 import { chmodSync, mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { lockFolder, pullOf, takeLock } from '@lo/skill/hook.mjs';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { cloneLink, lockFolder, pullOf, takeLock } from '@lo/skill/hook.mjs';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
 import { git } from '@lo/testing/git';
 
@@ -40,13 +40,20 @@ function repo(): string {
   return dir;
 }
 
+/** The person's temporary folder, where `/tmp`'s folder of locks goes, shared by the hook. */
+let shared: { LO_OVERVIEW_TMP: string };
+
+beforeEach(() => {
+  shared = { LO_OVERVIEW_TMP: fresh('shared') };
+});
+
 /**
  * Runs the checker with `args` from a folder outside the repository, as the skill does from its
  * own, with a temporary folder of its own, as a sandboxed command has.
  */
 function run(args: readonly string[]): Ran {
   const tmp = fresh('tmp');
-  return runChecker(args, tmp, { PATH: process.env.PATH, HOME: tmp, TMPDIR: tmp });
+  return runChecker(args, tmp, { PATH: process.env.PATH, HOME: tmp, TMPDIR: tmp, ...shared });
 }
 
 /** The pull request `LINK` names. */
@@ -65,7 +72,7 @@ describe('start and done', () => {
       stderr: '',
     });
     // The hook, with a temporary folder of its own, for a push meanwhile, and another.
-    const hook = { dir, env: { TMPDIR: fresh('hook') } };
+    const hook = { dir, env: { TMPDIR: fresh('hook'), ...shared } };
     expect(takeLock(pull(), hook)).toBe('held');
     expect(takeLock(pull(), hook)).toBe('held');
     expect(run(['done', LINK, '--repo', dir])).toEqual({
@@ -88,7 +95,7 @@ describe('start and done', () => {
   test('keep a lock the hook took, as the writer it started, from a folder in the clone', () => {
     const dir = repo();
     mkdirSync(join(dir, 'src'));
-    expect(takeLock(pull(), { dir })).toBe('taken');
+    expect(takeLock(pull(), { dir, env: shared })).toBe('taken');
     expect(JSON.parse(run(['start', LINK, '--repo', join(dir, 'src'), '--json']).stdout)).toEqual({
       locked: true,
     });
@@ -100,28 +107,74 @@ describe('start and done', () => {
 
   test('say plainly when they couldn’t keep or give back the lock', () => {
     const nowhere = fresh('nowhere');
-    expect(run(['start', LINK, '--repo', nowhere])).toEqual({
-      status: 2,
-      stdout: '',
-      stderr: `Lo couldn't mark the overview of ${LINK} as being written: it couldn't write its lock in the git folder of ${nowhere}. Go on, and say so when you report: a push meanwhile may start another writer.\n`,
-    });
+    // Outside a repository, start keeps it in /tmp, but done can't see a git folder's.
+    expect(run(['start', LINK, '--repo', nowhere]).status).toBe(0);
     expect(run(['done', LINK, '--repo', nowhere])).toEqual({
       status: 2,
       stdout: '',
-      stderr: `Lo couldn't say the overview of ${LINK} is written: it couldn't read or write its lock in the git folder of ${nowhere}. Say so when you report: a push that came in while you wrote may get no overview.\n`,
+      stderr: `Lo couldn't say the overview of ${LINK} is written: it couldn't read or remove its lock for ${nowhere}, in the repository's git folder or in /tmp. Say so when you report: a push that came in while you wrote may get no overview.\n`,
     });
     expect(JSON.parse(run(['done', LINK, '--repo', nowhere, '--json']).stdout)).toEqual({
       again: false,
       failed: true,
     });
+    // With /tmp's folder someone else's to write, start has nowhere to keep it.
+    const open = join(shared.LO_OVERVIEW_TMP, `lo-overview-${process.getuid?.() ?? ''}`);
+    mkdirSync(open, { recursive: true });
+    chmodSync(open, 0o777);
+    expect(run(['start', LINK, '--repo', nowhere])).toEqual({
+      status: 2,
+      stdout: '',
+      stderr: `Lo couldn't mark the overview of ${LINK} as being written: it could write its lock neither in the git folder of ${nowhere} nor in /tmp. Go on, and say so when you report: a push meanwhile may start another writer.\n`,
+    });
   });
+
+  test('take the clone the hook names by its link, whatever its path holds', () => {
+    const dir = join(fresh('odd'), "it's a clone");
+    mkdirSync(dir);
+    git(dir, 'init', '-q');
+    expect(takeLock(pull(), { dir, env: shared })).toBe('taken');
+    const link = cloneLink(dir);
+    expect(run(['start', LINK, '--repo', link]).status).toBe(0);
+    expect(takeLock(pull(), { dir, env: shared })).toBe('held');
+    expect(JSON.parse(run(['done', LINK, '--repo', link, '--json']).stdout)).toEqual({
+      again: true,
+      failed: false,
+    });
+    expect(run(['done', LINK, '--repo', 'file://elsewhere/x']).stderr).toBe(
+      `"file://elsewhere/x" isn't a link to a folder here.\n`,
+    );
+  });
+
+  test.skipIf(process.getuid?.() === 0)(
+    'keep and give back the lock in /tmp where they can’t write the git folder, as in Codex',
+    () => {
+      const dir = repo();
+      // Codex's hook takes it in /tmp, which its sandbox lets its commands write.
+      expect(takeLock(pull(), { dir, env: shared, host: 'codex' })).toBe('taken');
+      const folder = lockFolder(dir);
+      if (folder === undefined) throw new Error('No folder of locks.');
+      chmodSync(folder, 0o500);
+      try {
+        expect(run(['start', LINK, '--repo', dir]).status).toBe(0);
+        expect(takeLock(pull(), { dir, env: shared, host: 'codex' })).toBe('held');
+        expect(run(['done', LINK, '--repo', dir]).stdout).toContain(
+          'A push came in while you wrote',
+        );
+        expect(run(['done', LINK, '--repo', dir]).stdout).toContain('Nothing came in');
+      } finally {
+        chmodSync(folder, 0o700);
+      }
+      expect(takeLock(pull(), { dir, env: shared, host: 'codex' })).toBe('taken');
+    },
+  );
 
   test.skipIf(process.getuid?.() === 0)(
     'say done couldn’t when the follow-up a push left can’t be taken, never that nothing came',
     () => {
       const dir = repo();
       expect(run(['start', LINK, '--repo', dir]).status).toBe(0);
-      expect(takeLock(pull(), { dir })).toBe('held');
+      expect(takeLock(pull(), { dir, env: shared })).toBe('held');
       const folder = lockFolder(dir);
       if (folder === undefined) throw new Error('No folder of locks.');
       chmodSync(folder, 0o500);

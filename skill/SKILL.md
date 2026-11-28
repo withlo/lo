@@ -11,7 +11,7 @@ description:
   file's path. On Codex, start it in a subagent with spawn_agent, or run it yourself where you
   can't. When Lo's hook answers a push, do as it says instead. Also use it when asked to write,
   update or explain a Lo overview.
-argument-hint: '[pull-request] [handoff-file]'
+argument-hint: '[pull-request] [handoff-file] [clone]'
 context: fork
 ---
 
@@ -40,6 +40,9 @@ have `<…>`.
   is for, its key decisions, and what it ran with what result), then its goal, the alternatives it
   rejected, the commands it ran with their results, and its open questions. If you can't read it, go
   on without it, and say so when you report.
+- **The clone the push came from,** `<clone>`, when Lo's hook started you: the third argument, a
+  link that starts `file:///`. Lo's lock on writing this overview is that clone's, and `start` and
+  `done` keep it. If it's anything else, go on as if you hadn't been given it.
 
 Without a handoff file, a person asked you: work from the pull request alone, and skip step 3.
 
@@ -120,9 +123,9 @@ git config --get extensions.partialClone
 git config --get-regexp '^remote\..*\.promisor$'
 ```
 
-If the first prints a folder, `<local>`, the second prints `false`, and the last two print nothing,
-make your clone from it. It borrows the repository's objects, so it takes little time or space, and
-it takes none of its tags and checks out no files:
+If the first prints a folder, that's `<local>`. When the second prints `false` and the last two
+print nothing, make your clone from it. It borrows the repository's objects, so it takes little time
+or space, and it takes none of its tags and checks out no files:
 
 ```sh
 git clone --shared --no-checkout --no-tags --quiet '<local>' '<work>/clone'
@@ -137,7 +140,7 @@ git init --quiet '<work>/clone'
 
 Your clone has none of a repository's hooks or settings, so fetching and pushing in it runs nothing
 of theirs. Never change the clone you started in, or anything else outside `<work>`: only `start`
-and `done`, below, write there, in a folder of Lo's own in `<local>`.
+and `done`, below, write there, in a folder of Lo's own in its git folder.
 
 Your overviews' commits are by whoever the clone you started in commits as. From the folder you
 started in, copy that name and email address to your clone, with the author's and committer's where
@@ -221,12 +224,13 @@ git -C '<work>/clone' diff --no-ext-diff --no-textconv 'refs/writer/base...<comm
 Read the changed files as they are at `<commit>`, and the code around them, with
 `git -C '<work>/clone' cat-file blob '<commit>:<path>'`.
 
-Then, when step 1 found `<local>`, mark the overview as being written, so that Lo's hook starts no
-other writer for this pull request while you write, and keeps a push that comes in meanwhile for
-you. It holds for 30 minutes:
+Then mark the overview as being written, so that Lo's hook starts no other writer for this pull
+request while you write, and keeps a push that comes in meanwhile for you. The clone the lock is
+for, `<lock-clone>`, is `<clone>` when you were given it, else `<local>`; skip this, and `done` in
+step 13, only when you have neither. It holds for 30 minutes:
 
 ```sh
-(cd '<work>/tools' && npx --prefix '<work>/tools' --yes @withlo/overview@{version} start '<link>' --repo '<local>')
+(cd '<work>/tools' && npx --prefix '<work>/tools' --yes @withlo/overview@{version} start '<link>' --repo '<lock-clone>')
 ```
 
 If it says it couldn't, go on, and say so when you report. From here on, whatever happens, step 13
@@ -658,12 +662,13 @@ git -C '<work>/clone' ls-remote '<url>' 'refs/lo/stack/<stack>'
 
 Name the fork with `<fork-url>` in place of `<url>` where you pushed there.
 
-Then, when step 1 found `<local>`, say you're done with the pull request, pushed or not, so that
-Lo's hook can start a writer for it again. Name it by `<link>`, or, when you stopped before step 2
-found it, by `<pr>` if that's a link; skip this when you have neither:
+Then say you're done with the pull request, pushed or not, so that Lo's hook can start a writer for
+it again, for `<lock-clone>` as in step 2: `<clone>` when you were given it, else `<local>`. Name
+the pull request by `<link>`, or, when you stopped before step 2 found it, by `<pr>` if that's a
+link. Skip this only when you have no `<lock-clone>`, or neither of those:
 
 ```sh
-(cd '<work>/tools' && npx --prefix '<work>/tools' --yes @withlo/overview@{version} done '<link>' --repo '<local>')
+(cd '<work>/tools' && npx --prefix '<work>/tools' --yes @withlo/overview@{version} done '<link>' --repo '<lock-clone>')
 ```
 
 If it says it couldn't, say so when you report, and go on.

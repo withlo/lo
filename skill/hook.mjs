@@ -15,10 +15,11 @@
  *   settings file (`~/.config/lo/settings.json`, or `$XDG_CONFIG_HOME/lo` on Linux);
  * - the pull request can't be found, or isn't open.
  *
- * One writer per pull request: the hook takes a lock for it in a folder of the person's own in the
- * repository's git folder, which `start` and `done` in `@withlo/overview` take and give back. When a
- * writer holds it, the hook records one follow-up, which `done` hands the writer, so it runs once
- * more.
+ * One writer per pull request: the hook takes a lock for it in a folder of the person's own, in the
+ * repository's git folder for Claude Code and in `/tmp` for Codex, where each one's sandbox lets the
+ * writer write, which `start` and `done` in `@withlo/overview` take and give back. It names the
+ * clone in its answer, for the writer to give the lock back for. When a writer holds it, the hook
+ * records one follow-up, which `done` hands the writer, so it runs once more.
  *
  * What it reads is the agent's command and what the command printed, so it's never run, and only
  * a pull request's link that reads back the same goes into what it answers. Whatever goes wrong,
@@ -44,9 +45,9 @@ import {
   utimesSync,
   writeSync,
 } from 'node:fs';
-import { homedir, platform } from 'node:os';
+import { homedir, platform, tmpdir, userInfo } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /**
  * A pull request on GitHub, as its link names it.
@@ -704,27 +705,83 @@ export function offBy(top, env) {
 // --- One writer per pull request ------------------------------------------------------------------
 
 /**
- * The folder the locks for the repository at `dir` are kept in: `lo-overview` in its git folder,
- * the one its worktrees share, made for the person alone; or `undefined` when there's no repository,
- * or the folder can't be made, is a link, or is someone else's or open to others. It's there, not in
- * a temporary folder, since Claude Code gives a command in its sandbox a temporary folder of its
- * own, which the hook, run outside it, doesn't see, and lets it write in little else but the
- * repository it works in.
+ * Where the locks for the repository at `dir` may be kept: `lo-overview` in its git folder, the one
+ * its worktrees share, and `lo-overview-<uid>` in `/tmp` (the person's temporary folder on Windows),
+ * or in `LO_OVERVIEW_TMP` when that names a folder, as tests do. Each agent's sandbox lets its
+ * commands write one of them: Claude Code's, the repository it works in, but not `/tmp`; Codex's,
+ * `/tmp`, but never a git folder. The hook, run outside either, reaches both. A folder is left out
+ * when it isn't there and `make` is false, or can't be made, is a link, or is someone else's or open
+ * to others; the git folder, when `dir` is in no repository.
  *
  * @param {string | undefined} dir
  * @param {NodeJS.ProcessEnv} env
- * @returns {string | undefined}
+ * @param {{ first?: 'git' | 'tmp', make?: boolean }} [options]
+ * @returns {string[]}
+ */
+export function lockFolders(dir, env = process.env, { first = 'git', make = true } = {}) {
+  const git = gitLockFolder(dir, env);
+  const tmp = tmpLockFolder(env);
+  const order = first === 'git' ? [git, tmp] : [tmp, git];
+  return order.flatMap((folder) => {
+    const found = folder === undefined ? undefined : ownFolder(folder, make);
+    return found === undefined ? [] : [found];
+  });
+}
+
+/**
+ * The folder of locks in the git folder of the repository at `dir`, made if it isn't there: what
+ * `lockFolders` says of it.
+ *
+ * @param {string | undefined} dir
+ * @param {NodeJS.ProcessEnv} env
  */
 export function lockFolder(dir, env = process.env) {
+  const git = gitLockFolder(dir, env);
+  return git === undefined ? undefined : ownFolder(git, true);
+}
+
+/**
+ * Where the folder of locks in the git folder of the repository at `dir` goes, or `undefined` when
+ * `dir` is in none.
+ *
+ * @param {string | undefined} dir
+ * @param {NodeJS.ProcessEnv} env
+ */
+function gitLockFolder(dir, env) {
   if (dir === undefined) return undefined;
   const common = gitLine(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir'], env);
-  if (common === undefined || !isAbsolute(common)) return undefined;
+  return common === undefined || !isAbsolute(common) ? undefined : join(common, 'lo-overview');
+}
+
+/**
+ * Where the person's folder of locks in the temporary folder goes.
+ *
+ * @param {NodeJS.ProcessEnv} env
+ */
+export function tmpLockFolder(env = process.env) {
   const uid = typeof process.getuid === 'function' ? process.getuid() : undefined;
-  const folder = join(common, 'lo-overview');
-  try {
-    mkdirSync(folder, { mode: 0o700 });
-  } catch (error) {
-    if (!isCode(error, 'EEXIST')) return undefined;
+  const who = uid ?? userInfo().username.replace(/[^A-Za-z0-9_-]/g, '_');
+  const named = env.LO_OVERVIEW_TMP;
+  const base =
+    named !== undefined && isAbsolute(named) ? named : platform() === 'win32' ? tmpdir() : '/tmp';
+  return join(base, `lo-overview-${who}`);
+}
+
+/**
+ * `folder` when it's a folder of the person's own, open to no one else and no link, made so when
+ * `make` is true and it isn't there; else `undefined`.
+ *
+ * @param {string} folder
+ * @param {boolean} make
+ */
+function ownFolder(folder, make) {
+  const uid = typeof process.getuid === 'function' ? process.getuid() : undefined;
+  if (make) {
+    try {
+      mkdirSync(folder, { mode: 0o700 });
+    } catch (error) {
+      if (!isCode(error, 'EEXIST')) return undefined;
+    }
   }
   try {
     const stats = lstatSync(folder);
@@ -817,42 +874,48 @@ function held(path, now) {
 }
 
 /**
- * Takes the lock on writing `pull`'s overview for the tool call `call`, in the repository at `dir`:
- * `taken` when it was free, or held by a writer gone past `LOCK_MS`; `same` when the same call took
- * it, as a command that both pushes and opens a pull request runs the hook twice; `held` when a
- * writer has it, after recording one follow-up for it; `unlocked` when there's nowhere to keep
- * locks, so nothing stops another. `meanwhile` runs once a follow-up is recorded, as a writer's
- * `done` might, for tests.
+ * Takes the lock on writing `pull`'s overview for the tool call `call`, for the repository at
+ * `dir`: `taken` when it was free, or held by a writer gone past `LOCK_MS`; `same` when the same
+ * call took it, as a command that both pushes and opens a pull request runs the hook twice; `held`
+ * when a writer has it, in either of its folders, after recording one follow-up beside it;
+ * `unlocked` when there's nowhere to keep locks, so nothing stops another. A lock it takes goes in
+ * the folder the writer it starts can write: the git folder for Claude Code's, `/tmp` for Codex's.
+ * `meanwhile` runs once a follow-up is recorded, as a writer's `done` might, for tests.
  *
  * @param {Pull} pull
- * @param {{ dir?: string, env?: NodeJS.ProcessEnv, now?: number, call?: string, meanwhile?: () => void }} [options]
+ * @param {{ dir?: string, env?: NodeJS.ProcessEnv, now?: number, call?: string, host?: 'claude' | 'codex', meanwhile?: () => void }} [options]
  * @returns {'taken' | 'same' | 'held' | 'unlocked'}
  */
-export function takeLock(pull, { dir, env = process.env, now = Date.now(), call, meanwhile } = {}) {
-  const folder = lockFolder(dir, env);
-  if (folder === undefined) return 'unlocked';
-  const { lock, again } = lockFiles(folder, pull);
+export function takeLock(
+  pull,
+  { dir, env = process.env, now = Date.now(), call, host = 'claude', meanwhile } = {},
+) {
+  const first = host === 'codex' ? 'tmp' : 'git';
+  const files = lockFolders(dir, env, { first }).map((folder) => lockFiles(folder, pull));
+  if (files.length === 0) return 'unlocked';
   try {
     // A few tries, as a writer may give the lock back, or a hook take it, as this looks.
     for (let tries = 0; tries < 3; tries++) {
-      if (held(lock, now)) {
-        if (call !== undefined && takenBy(lock) === call) return 'same';
-        makeNew(again, `${pull.url}\n`);
+      const holding = files.find(({ lock }) => held(lock, now));
+      if (holding !== undefined) {
+        if (call !== undefined && takenBy(holding.lock) === call) return 'same';
+        makeNew(holding.again, `${pull.url}\n`);
         meanwhile?.();
         // Still held once the follow-up is there: the writer's `done` will find it.
-        if (held(lock, now)) return 'held';
+        if (held(holding.lock, now)) return 'held';
         // Given back meanwhile, by a writer that may never have seen it: take the lock instead.
-        removeIfThere(again);
+        removeIfThere(holding.again);
         continue;
       }
-      clearStale(lock, again, now);
-      if (makeNew(lock, `${JSON.stringify({ pr: pull.url, call: call ?? null })}\n`)) {
+      for (const { lock, again } of files) clearStale(lock, again, now);
+      const [ours] = files;
+      if (ours && makeNew(ours.lock, `${JSON.stringify({ pr: pull.url, call: call ?? null })}\n`)) {
         // A follow-up left from before is for a writer that's gone: the new one reads it all.
-        removeIfThere(again);
+        for (const { again } of files) removeIfThere(again);
         return 'taken';
       }
     }
-    return held(lock, now) ? 'held' : 'unlocked';
+    return files.some(({ lock }) => held(lock, now)) ? 'held' : 'unlocked';
   } catch {
     return 'unlocked';
   }
@@ -891,78 +954,96 @@ export function clearStale(lock, again, now) {
 }
 
 /**
- * Keeps the lock on writing `pull`'s overview in the repository at `dir`, as a writer does as it
- * starts: taken when it's free, and its time set again when it's held, so it holds for `LOCK_MS`
- * from `now`. `failed` when there's no folder for it, or it couldn't be written there.
+ * Keeps the lock on writing `pull`'s overview for the repository at `dir`, as a writer does as it
+ * starts: its time set again where the hook took it, so it holds for `LOCK_MS` from `now`, or taken
+ * where the writer can write when there's none. `failed` when it could do neither.
  *
  * @param {Pull} pull
  * @param {{ dir?: string, env?: NodeJS.ProcessEnv, now?: number }} [options]
  * @returns {'kept' | 'failed'}
  */
 export function keepLock(pull, { dir, env = process.env, now = Date.now() } = {}) {
-  const folder = lockFolder(dir, env);
-  if (folder === undefined) return 'failed';
-  return keepIn(folder, pull, now) ? 'kept' : 'failed';
+  const files = lockFolders(dir, env).map((folder) => lockFiles(folder, pull));
+  return keepIn(files, pull, now) ? 'kept' : 'failed';
 }
 
 /**
- * Keeps the lock on writing `pull`'s overview in `folder`, from `now`: whether it could.
+ * Keeps the lock on writing `pull`'s overview in the first of `files` it can, from `now`: whether
+ * it could.
  *
- * @param {string} folder
+ * @param {readonly { lock: string }[]} files
  * @param {Pull} pull
  * @param {number} now
  */
-function keepIn(folder, pull, now) {
-  const { lock } = lockFiles(folder, pull);
-  try {
-    if (!makeNew(lock, `${JSON.stringify({ pr: pull.url, call: null })}\n`)) {
-      if (!lstatSync(lock).isFile()) return false;
-      utimesSync(lock, now / 1000, now / 1000);
+function keepIn(files, pull, now) {
+  for (const { lock } of files) {
+    try {
+      if (lstatSync(lock, { throwIfNoEntry: false })?.isFile()) {
+        utimesSync(lock, now / 1000, now / 1000);
+        return true;
+      }
+    } catch {
+      // Not one this writer can write: another may be.
     }
-    return true;
-  } catch {
-    return false;
   }
+  for (const { lock } of files) {
+    try {
+      if (makeNew(lock, `${JSON.stringify({ pr: pull.url, call: null })}\n`)) return true;
+    } catch {
+      // As above.
+    }
+  }
+  return false;
 }
 
 /**
- * Gives back the lock on writing `pull`'s overview in the repository at `dir`, as a writer does
- * once it's done: `again`, with the lock kept, when a follow-up was recorded meanwhile, which it
- * then takes; `done` otherwise; `failed` when there's no folder for it, or it couldn't be read or
- * written there, so a follow-up may be left that no one takes. `meanwhile` runs once the lock's
- * gone, as a hook might, for tests.
+ * Gives back the lock on writing `pull`'s overview for the repository at `dir`, as a writer does
+ * once it's done, from either folder it's in: `again`, with the lock kept, when a follow-up was
+ * recorded meanwhile, which it then takes; `done` otherwise; `failed` when `dir` is in no
+ * repository, or a lock or a follow-up couldn't be read or removed, so one may be left that no one
+ * takes. `meanwhile` runs once the lock's gone, as a hook might, for tests.
  *
  * @param {Pull} pull
  * @param {{ dir?: string, env?: NodeJS.ProcessEnv, now?: number, meanwhile?: () => void }} [options]
  * @returns {'again' | 'done' | 'failed'}
  */
 export function giveBack(pull, { dir, env = process.env, now = Date.now(), meanwhile } = {}) {
-  const folder = lockFolder(dir, env);
-  if (folder === undefined) return 'failed';
-  const { lock, again } = lockFiles(folder, pull);
-  /** Takes the follow-up, if there's one; throws when it can't tell, or can't take it. */
-  const followUp = () => {
-    const stats = lstatSync(again, { throwIfNoEntry: false });
-    if (stats === undefined) return false;
-    unlinkSync(again);
-    return true;
+  const files = lockFolders(dir, env, { make: false }).map((folder) => lockFiles(folder, pull));
+  let failed = false;
+  /** Takes the follow-ups there are: whether there were any. */
+  const followUps = () => {
+    let took = false;
+    for (const { again } of files) {
+      try {
+        if (lstatSync(again, { throwIfNoEntry: false }) === undefined) continue;
+        unlinkSync(again);
+        took = true;
+      } catch {
+        failed = true;
+      }
+    }
+    return took;
   };
-  try {
-    if (followUp()) {
-      keepIn(folder, pull, now);
-      return 'again';
-    }
-    removeIfThere(lock);
-    meanwhile?.();
-    // A push the hook took in between the look and the lock's removal, which it left for this
-    // writer: this writer's, unless a hook has taken the lock since, for a writer of its own.
-    if (followUp() && makeNew(lock, `${JSON.stringify({ pr: pull.url, call: null })}\n`)) {
-      return 'again';
-    }
-    return 'done';
-  } catch {
-    return 'failed';
+  if (followUps()) {
+    keepIn(files, pull, now);
+    return 'again';
   }
+  for (const { lock } of files) {
+    try {
+      removeIfThere(lock);
+    } catch {
+      failed = true;
+    }
+  }
+  meanwhile?.();
+  // A push the hook took in between the look and the lock's removal, which it left for this
+  // writer: this writer's, unless a hook has taken the lock since, for a writer of its own.
+  if (followUps() && !files.some(({ lock }) => held(lock, now))) {
+    keepIn(files, pull, now);
+    return 'again';
+  }
+  // Outside a repository, a lock the hook took in one's git folder is out of sight.
+  return failed || gitLockFolder(dir, env) === undefined ? 'failed' : 'done';
 }
 
 /**
@@ -1391,15 +1472,16 @@ function commandText(input) {
 
 /**
  * What the hook adds to the agent's context: for each pull request it took the lock on, how to
- * start the skill; for each another writer has, that it will run again.
+ * start the skill, naming the clone `top` the push came from, whose lock the writer keeps; for each
+ * another writer has, that it will run again.
  *
- * @param {{ pull: Pull, lock: 'taken' | 'same' | 'held' | 'unlocked' }[]} each
+ * @param {{ pull: Pull, top: string, lock: 'taken' | 'same' | 'held' | 'unlocked' }[]} each
  * @param {'claude' | 'codex'} host
  */
 export function answerFor(each, host) {
   const start = each
     .filter(({ lock }) => lock === 'taken' || lock === 'unlocked')
-    .map(({ pull }) => pull.url);
+    .map(({ pull, top }) => `${pull.url} <folder>/handoff.md ${cloneLink(top)}`);
   const running = each.filter(({ lock }) => lock === 'held').map(({ pull }) => pull.url);
   /** @type {string[]} */
   const lines = [];
@@ -1408,11 +1490,12 @@ export function answerFor(each, host) {
       `Lo: the overview of ${url} is being written, and will be updated for this push once that's done. Don't start the lo-overview skill for it now.`,
     );
   }
-  for (const url of start) {
+  for (const args of start) {
+    const [url] = args.split(' ');
     const run =
       host === 'codex'
-        ? `Start a subagent with spawn_agent, asking it to use the lo-overview skill ($lo-overview) with the arguments \`${url} <folder>/handoff.md\`, and go on with your work; it reports one line when it's done. Where you can't start one, use the skill yourself now, with those arguments.`
-        : `Start the lo-overview skill with the arguments \`${url} <folder>/handoff.md\`. It runs in the background: go on with your work, and pass on the one line it reports when it's done.`;
+        ? `Start a subagent with spawn_agent, asking it to use the lo-overview skill ($lo-overview) with the arguments \`${args}\`, and go on with your work; it reports one line when it's done. Where you can't start one, use the skill yourself now, with those arguments.`
+        : `Start the lo-overview skill with the arguments \`${args}\`. It runs in the background: go on with your work, and pass on the one line it reports when it's done.`;
     lines.push(
       `Lo: write the overview of ${url} for this push, with the lo-overview skill.`,
       `1. Make a folder with \`mktemp -d\` and write handoff.md in it: the change's goal, the decisions you made and the alternatives you rejected, the commands you ran and what came of them, and open questions. Only facts about the change: no secrets, tokens or personal details.`,
@@ -1420,6 +1503,21 @@ export function answerFor(each, host) {
     );
   }
   return lines.join('\n');
+}
+
+/**
+ * The clone at `top` as the skill's third argument: its `file:` link, with every character a shell
+ * or a list of arguments reads, a space or a `'`, written as `%` and its code, so that it goes into
+ * a command in single quotes as it is.
+ *
+ * @param {string} top
+ */
+export function cloneLink(top) {
+  return pathToFileURL(top).href.replace(/[^A-Za-z0-9/:._~%-]/g, (char) =>
+    [...Buffer.from(char)]
+      .map((byte) => `%${byte.toString(16).toUpperCase().padStart(2, '0')}`)
+      .join(''),
+  );
 }
 
 /**
@@ -1436,12 +1534,13 @@ export function hook(input, { env = process.env, find, now = Date.now() } = {}) 
   if (pulls.length === 0) return undefined;
   const id = field(input, 'tool_use_id');
   const call = typeof id === 'string' ? id : undefined;
+  const host = field(input, 'turn_id') === undefined ? 'claude' : 'codex';
   const each = pulls.map(({ pull, top }) => ({
     pull,
-    lock: takeLock(pull, { dir: top, env, now, call }),
+    top,
+    lock: takeLock(pull, { dir: top, env, now, call, host }),
   }));
   if (each.every(({ lock }) => lock === 'same')) return undefined;
-  const host = field(input, 'turn_id') === undefined ? 'claude' : 'codex';
   const additionalContext = answerFor(each, host);
   return JSON.stringify({
     hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext },

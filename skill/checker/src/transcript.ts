@@ -425,6 +425,9 @@ const TOKENS: readonly [start: string, body: string, least: number, marked: bool
   ['npm_', 'A-Za-z0-9', 20, true],
   ['xox[abeprs]-', 'A-Za-z0-9-', 15, true],
   ['[rs]k_(?:live|test)_', 'A-Za-z0-9', 18, true],
+  // Google's API keys, and JSON Web Tokens, whose header starts so.
+  ['AIza', 'A-Za-z0-9_-', 39, true],
+  ['eyJ', 'A-Za-z0-9_.-', 20, true],
   // AWS's access key ids, and keys such as OpenAI's and Anthropic's, whose starts a word may have.
   ['(?:AKIA|ASIA)', 'A-Z0-9', 20, false],
   ['sk-', 'A-Za-z0-9_-', 19, false],
@@ -487,6 +490,24 @@ const SECRETS: readonly Secret[] = [
     put: quoted,
   },
   {
+    // As a config file sets one: `password: hunter2`, on a line of its own.
+    find: new RegExp(
+      String.raw`^(?<lead>\s*(?:-\s+)?["']?${ENV_NAME}["']?\s*:\s+)(?<secret>"[^"\n]*"?|'[^'\n]*'?|[^\s"'\x60;,)]+)(?=\s*$)`,
+      'gi',
+    ),
+    body: VALUE_BODY,
+    least: 1,
+    marked: false,
+    put: quoted,
+  },
+  {
+    // A user's password, as curl takes it: `-u user:password`.
+    find: /(?<![\w-])(?<lead>(?:-u|--user)(?:\s+|=)?["']?[^\s:"']*:)(?<secret>[^\s"']+)/g,
+    body: VALUE_BODY,
+    least: 1,
+    marked: false,
+  },
+  {
     find: /\b(?<lead>Bearer\s+)(?<secret>[A-Za-z0-9._~+/=-]+)/gi,
     body: 'A-Za-z0-9._~+/=-',
     least: 12,
@@ -509,17 +530,22 @@ const KEY_BLOCK =
 const KEY_TAIL =
   /^(?:[ \t]*[A-Za-z0-9+/=]{16,}[ \t]*\n)+(?=[ \t]*-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----)/gm;
 
-/** The password or token in an address such as `https://user:token@host`. */
-const ADDRESS_USER = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi;
+/**
+ * The user and password in an address such as `https://user:token@host`: up to the last `@` before
+ * its host, as a password may hold an `@` or a `/`.
+ */
+const ADDRESS_USER =
+  /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@:]*:[^\s?#]*@(?=[^\s@/?#]*(?:[/?#\s"'\x60]|$))/gim;
 
 /** What a command prints where it cut a long line short. */
 const CUT_LINE = ' […]';
 
 /**
  * `text` with what reads as a secret replaced by `REDACTED`: tokens known by how they start
- * (GitHub's, GitLab's, npm's, Slack's, Stripe's, AWS's, and keys of the form `sk-…`), the value a
- * name such as `API_KEY` or `password` is set to, a bearer token, an `Authorization:` header's
- * value, a private key's block, and the password or token in an address such as
+ * (GitHub's, GitLab's, npm's, Slack's, Stripe's, AWS's, Google's API keys, JSON Web Tokens, and keys
+ * of the form `sk-…`), the value a name such as `API_KEY` or `password` is set to (`=`, or `:` in
+ * JSON or a config file), the password `curl -u` takes, a bearer token, an `Authorization:` header's
+ * value, a private key's block, and the user and password in an address such as
  * `https://user:token@host`. A secret that runs to a line's end goes on in the lines after that are
  * made of its characters, as a long one wraps, and those go too.
  */

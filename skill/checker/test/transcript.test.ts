@@ -447,6 +447,8 @@ describe('what the copy holds', () => {
     ['Stripe', ['s', 'k_live_', tail].join('')],
     ['Stripe, restricted', ['r', 'k_live_', tail].join('')],
     ['AWS', ['AK', 'IAIOSFODNN7EXAMPLE'].join('')],
+    ['Google API', ['AI', 'za', 'SyA', tail, 'x0ab'].join('')],
+    ['JSON Web', ['ey', 'JhbGciOiJIUzI1NiJ9.', 'eyJzdWIiOiIxIn0.', tail].join('')],
   ])('leaves out a %s token', (_kind, token) => {
     expect(redacted(`said ${token} here`)).toBe('said [redacted] here');
   });
@@ -477,9 +479,53 @@ describe('what the copy holds', () => {
         'TOKEN=""',
       ].join('\n'),
     );
+    // As a config file sets one, on a line of its own; a type in code stays.
+    expect(
+      redacted(
+        [
+          `password: ${tail}`,
+          `  - DB_PASSWORD: "${tail}"`,
+          `passwd=${tail}`,
+          '  password: string;',
+        ].join('\n'),
+      ),
+    ).toBe(
+      [
+        'password: [redacted]',
+        '  - DB_PASSWORD: "[redacted]"',
+        'passwd=[redacted]',
+        '  password: string;',
+      ].join('\n'),
+    );
     // Names that aren't a secret's, comparisons and counts stay.
     const kept = 'MAX_TOKENS=4096\nif (token === undefined) return\nmonkey=1\nKEY_ID=7';
     expect(redacted(kept)).toBe(kept);
+  });
+
+  test('leaves out the password in an address, or that curl -u takes', () => {
+    expect(
+      redacted(
+        [
+          `git clone https://ann:${tail}@example.com/a/b.git`,
+          `curl 'ssh://ann:p@ss/w0rd@host.example:22/x'`,
+          `pip install --index-url https://:${tail}@pypi.example/simple pkg`,
+          `curl -u ann:${tail} https://api.example`,
+          `curl --user="ann:${tail}" https://api.example`,
+          'curl -u ann https://api.example',
+          'git push -u origin feat:main',
+        ].join('\n'),
+      ),
+    ).toBe(
+      [
+        'git clone https://[redacted]@example.com/a/b.git',
+        "curl 'ssh://[redacted]@host.example:22/x'",
+        'pip install --index-url https://[redacted]@pypi.example/simple pkg',
+        'curl -u ann:[redacted] https://api.example',
+        'curl --user="ann:[redacted]" https://api.example',
+        'curl -u ann https://api.example',
+        'git push -u origin feat:main',
+      ].join('\n'),
+    );
   });
 
   test('leaves out a private key’s block, or what’s left of one cut short', () => {
