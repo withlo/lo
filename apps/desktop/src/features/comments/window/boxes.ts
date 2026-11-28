@@ -84,18 +84,20 @@ import {
   tabState,
   type PullTab,
 } from '../../tab/window/shared.ts';
-import type {
-  ActOutcome,
-  Commentable,
-  DraftHomeRow,
-  DraftPlaceRow,
-  DraftRow,
-  DraftsView,
-  JoinedView,
-  SendOutcome,
-  Sending,
-  ThreadRow,
+import {
+  type ActOutcome,
+  type Commentable,
+  type DraftHomeRow,
+  type DraftPlaceRow,
+  type DraftRow,
+  type DraftsView,
+  type JoinedView,
+  refusedAtOnce,
+  type SendOutcome,
+  type Sending,
+  type ThreadRow,
 } from '../contract.ts';
+import { Answers } from './answers.ts';
 import { threadsOnBlock } from './blocks.ts';
 import { main, tabs } from './main.ts';
 import { threadsMode } from './mode.ts';
@@ -358,11 +360,16 @@ function told(box: Box, was: BoxState): void {
   if (box.composer && mayFocus(box)) box.composer.focus();
 }
 
-/** What's said to a screen reader once GitHub took a box's comment: its card shows the rest. */
+/**
+ * What's said to a screen reader once GitHub took a box's comment: its card shows the rest. A
+ * comment on the pull request itself joins no review, however it was sent.
+ */
 function sentWords(place: DraftPlaceRow, how: Send): string {
   if (place.kind === 'edit') return 'Saved edit';
   const what = place.kind === 'reply' ? 'reply' : 'comment';
-  return how === 'now' ? `Sent ${what}` : `Added ${what} to review`;
+  return how === 'now' || place.kind === 'conversation'
+    ? `Sent ${what}`
+    : `Added ${what} to review`;
 }
 
 /** A comment box of a view's diff. */
@@ -560,11 +567,21 @@ const ASK_AGAIN_MS = 1000;
 const dropped = new Map<string, Set<string>>();
 
 /**
- * Each view's places whose comments GitHub's answer said it took, until main's drafts no longer
- * show them on their way: main sends its drafts before its answer, but they can come after it, and
- * those bring no box back.
+ * What main's drafts say of each view's comments sent from here, by place, against main's answers:
+ * main says in its drafts that a comment is on its way, then that it isn't, before it answers, but
+ * they can come after the answer, and those change nothing at its place.
  */
-const answered = new Map<string, Set<string>>();
+const answers = new Map<string, Answers>();
+
+/** What main's drafts say of view `view`'s comments sent from here. */
+function answersOf(view: string): Answers {
+  let own = answers.get(view);
+  if (!own) {
+    own = new Answers();
+    answers.set(view, own);
+  }
+  return own;
+}
 
 /** Whether main's draft row `row` shows a comment on its way: sent, or about to be. */
 function onItsWay(row: DraftRow): boolean {
@@ -1260,21 +1277,22 @@ export function takeDrafts(given: DraftsView): void {
     if (rows.has(key)) rows.delete(key);
     else dropping?.delete(key);
   }
-  // What main sent before its answer that GitHub took a box's comment, still showing it on its
-  // way, can come after the answer: it changes nothing. Main's drafts that don't are from after it.
-  const taken = answered.get(view);
-  const stale = new Set<string>();
-  for (const key of taken ?? []) {
+  // What main sent before its answer to a box's comment can come after the answer: it changes
+  // nothing at its place, until what main sent with its answer comes.
+  const older = answers.get(view)?.take((key) => {
     const row = rows.get(key);
-    if (!row || !onItsWay(row)) taken?.delete(key);
+    return row !== undefined && onItsWay(row);
+  });
+  const stale = new Set<string>();
+  for (const key of older ?? []) {
     // The box that sent it, still there as it waits for its card, takes them as it did.
-    else if (!own.get(key)?.state.landing) stale.add(key);
+    if (!own.get(key)?.state.landing) stale.add(key);
   }
   const gone: Box[] = [];
   // Those the status bar counts, kept with nowhere to open, which count on wherever main moves them.
   const counted = new Set(keptAway.get(view).map((each) => each.box));
   for (const [key, box] of own) {
-    if (rows.has(key)) continue;
+    if (rows.has(key) || stale.has(key)) continue;
     if (box.sentMark) {
       // What GitHub's lost answer was to posted, or what was sent and posted before its answer
       // came here: it's done, and its box goes as its card comes. The answer still to come says
@@ -1770,15 +1788,20 @@ export async function send(box: Box, how: Send): Promise<void> {
   box.editedAt = undefined;
   box.sentBefore = place.kind === 'conversation' ? beforeOnPull(view, text) : undefined;
   box.set({ busy: true, refusal: undefined });
+  const answer = answersOf(view);
+  const asked = answer.ask(box.key);
+  let answeredYet = false;
   try {
     const outcome: SendOutcome | ActOutcome =
       place.kind === 'edit'
         ? await main().edit({ id: view, place, text })
         : await main().send({ id: view, place, text, how });
+    answeredYet = true;
+    // What main's drafts said of it on its way, still to come, changes nothing at its place.
+    answer.answered(asked, saidFirst(outcome));
     switch (outcome.kind) {
       case 'done':
         box.editedAt = outcome.editedAt;
-        holdAnswered(box);
         closeOnceLanded(box, null);
         tell(sentWords(place, how));
         if (place.kind === 'edit' && place.thread === null) {
@@ -1790,7 +1813,6 @@ export async function send(box: Box, how: Send): Promise<void> {
         const { home } = box;
         const went = home.kind === 'block' ? wentFrom(view, home.block, place, outcome) : undefined;
         box.copy = outcome.comment;
-        holdAnswered(box);
         if (went) closeSent(box);
         else closeOnceLanded(box, outcome.thread);
         if (place.kind === 'conversation') wrotePull(view, { kind: 'posted', text });
@@ -1807,7 +1829,12 @@ export async function send(box: Box, how: Send): Promise<void> {
         break;
       }
       case 'refused':
-        box.set({ refusal: outcome.refusal });
+        // One main refused on its way is no longer: so its drafts said last, which may come after.
+        if (refusedAtOnce(outcome.refusal)) box.set({ refusal: outcome.refusal });
+        else {
+          box.sentMark = false;
+          box.set({ refusal: outcome.refusal, sending: null });
+        }
         break;
       case 'lost':
         break;
@@ -1815,6 +1842,7 @@ export async function send(box: Box, how: Send): Promise<void> {
         outcome satisfies never;
     }
   } catch (error) {
+    if (!answeredYet) answer.answered(asked, false);
     box.set({
       refusal: { kind: 'github', message: error instanceof Error ? error.message : String(error) },
     });
@@ -2350,18 +2378,23 @@ function discard(box: Box): void {
 }
 
 /**
- * GitHub's answer says it took what `box` sent: main's drafts from before the answer, which can
- * come after it, bring no box back at its place. Unless they've closed it already, as when main took
- * its draft down before the answer came, and those after it are all there are to come.
+ * Whether main said in its drafts that a comment was on its way before it answered `outcome`, and
+ * then that it wasn't: for every answer but a refusal it gave at once, and a lost one, after which
+ * its drafts go on saying how the comment stands.
  */
-function holdAnswered(box: Box): void {
-  if (sentBoxes.has(box) || landings.has(box)) return;
-  let own = answered.get(box.view);
-  if (!own) {
-    own = new Set();
-    answered.set(box.view, own);
+function saidFirst(outcome: SendOutcome | ActOutcome): boolean {
+  switch (outcome.kind) {
+    case 'sent':
+    case 'done':
+      return true;
+    case 'refused':
+      return !refusedAtOnce(outcome.refusal);
+    case 'lost':
+      return false;
+    default:
+      outcome satisfies never;
+      throw new Error(`An answer Lo doesn’t know: ${JSON.stringify(outcome)}.`);
   }
-  own.add(box.key);
 }
 
 /** Keeps drafts main sent before it heard `box`'s went from bringing it back. */
@@ -2448,7 +2481,7 @@ export function keepBoxesOf(kept: ReadonlySet<string>): void {
     }
     pulls.delete(view);
     dropped.delete(view);
-    answered.delete(view);
+    answers.delete(view);
     if (discarded?.view === view) setDiscarded(undefined);
     caught.delete(view);
     clearTimeout(retrying.get(view));

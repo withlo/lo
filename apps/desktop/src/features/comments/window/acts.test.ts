@@ -14,11 +14,14 @@ import type { ActRow, ThreadCommentRow, ThreadRow } from '../contract.ts';
 import {
   acting,
   closeAct,
+  confirmDelete,
   edit,
   followFailures,
   markFailures,
   reply,
   resolveThread,
+  setAsking,
+  SETTLE_WAIT,
   takeActs,
   threw,
   type ThreadKeyTarget,
@@ -34,6 +37,7 @@ const said = vi.hoisted(() => ({
   resolves: 0,
   screen: 'v0' as string | undefined,
   resolve: (() => Promise.resolve({ kind: 'done' })) as () => Promise<unknown>,
+  remove: (() => Promise.resolve({ kind: 'done' })) as () => Promise<unknown>,
   /**
    * The boxes opened: where, with a diff to draw them in or none yet, in the diff or on a block,
    * and what's in them.
@@ -79,6 +83,7 @@ vi.mock('./main.ts', () => ({
       said.resolves += 1;
       return said.resolve();
     },
+    remove: () => said.remove(),
     editing: () => Promise.resolve({ kind: 'editing' }),
   }),
 }));
@@ -216,6 +221,7 @@ beforeEach(() => {
     resolves: 0,
     screen: VIEW,
     resolve: () => Promise.resolve({ kind: 'done' }),
+    remove: () => Promise.resolve({ kind: 'done' }),
     opened: [],
     drawn: true,
     diffShown: false,
@@ -232,6 +238,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   acting.set(VIEW, new Map());
   threw.set(VIEW, new Map());
   document.body.replaceChildren();
@@ -576,3 +583,155 @@ function onT1(id?: string): ThreadKeyTarget {
     ? { kind: 'thread', thread: 'T1' }
     : { kind: 'thread', thread: 'T1', comment: id };
 }
+
+/** Main's answer to a request, given when the test says. */
+function answerLater(): { asked: () => Promise<unknown>; answer: (outcome: unknown) => void } {
+  let answer: ((outcome: unknown) => void) | undefined;
+  return {
+    asked: () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    answer: (outcome) => answer?.(outcome),
+  };
+}
+
+/** GitHub's refusal of a change once it was on its way, as main answers it. */
+const REFUSED = { kind: 'refused', refusal: { kind: 'github', message: 'GitHub refused it.' } };
+
+/** Deleting your comment IC_1 on the pull request itself, as main says it stands. */
+function deleting(stands: ActRow['stands']): ActRow {
+  return { thread: null, comment: 'IC_1', change: 'delete', stands };
+}
+
+/** Deletes your comment IC_1 on the pull request itself, as the question's Delete does. */
+function deleteOnPull(): Promise<void> {
+  setAsking({
+    tab: TAB,
+    thread: null,
+    comment: 'IC_1',
+    body: 'Ship it.',
+    pending: false,
+    onlyComment: false,
+  });
+  return confirmDelete();
+}
+
+describe('what main’s acts said of a change before its answer, coming after it', () => {
+  test('a resolve refused before they said it was on its way shows nothing of it', async () => {
+    vi.useFakeTimers();
+    const main = answerLater();
+    said.resolve = main.asked;
+    const going = resolveThread(TAB, row());
+    main.answer(REFUSED);
+    await going;
+    expect(said.refused).toHaveLength(1);
+    takeActs({ id: VIEW, acts: [resolving('waiting')] });
+    takeActs({ id: VIEW, acts: [resolving('sending')] });
+    expect(acting.get(VIEW).size).toBe(0);
+    takeActs({ id: VIEW, acts: [] });
+    await vi.advanceTimersByTimeAsync(SETTLE_WAIT);
+    expect(acting.get(VIEW).size).toBe(0);
+    expect(said.told).toEqual([]);
+    // What main says after its answer is taken as ever.
+    takeActs({ id: VIEW, acts: [resolving('sending')] });
+    expect(said.told).toEqual(['Resolving…']);
+  });
+
+  test('a resolve refused while they said it was on its way goes back at once, and nothing says it went', async () => {
+    vi.useFakeTimers();
+    const main = answerLater();
+    said.resolve = main.asked;
+    const going = resolveThread(TAB, row());
+    takeActs({ id: VIEW, acts: [resolving('sending')] });
+    expect(acting.get(VIEW).get('T1')?.stands).toBe('sending');
+    main.answer(REFUSED);
+    await going;
+    expect(acting.get(VIEW).size).toBe(0);
+    takeActs({ id: VIEW, acts: [] });
+    await vi.advanceTimersByTimeAsync(SETTLE_WAIT);
+    expect(acting.get(VIEW).size).toBe(0);
+    expect(said.told).toEqual(['Resolving…']);
+  });
+
+  test('a resolve refused once they said it no longer was goes back at once, as ever', async () => {
+    vi.useFakeTimers();
+    const main = answerLater();
+    said.resolve = main.asked;
+    const going = resolveThread(TAB, row());
+    takeActs({ id: VIEW, acts: [resolving('sending')] });
+    takeActs({ id: VIEW, acts: [] });
+    main.answer(REFUSED);
+    await going;
+    expect(acting.get(VIEW).size).toBe(0);
+    await vi.advanceTimersByTimeAsync(SETTLE_WAIT);
+    expect(said.told).toEqual(['Resolving…']);
+    // Asked again, what main says of it is taken.
+    said.resolve = () => Promise.resolve({ kind: 'done' });
+    await resolveThread(TAB, row());
+    takeActs({ id: VIEW, acts: [resolving('sending')] });
+    expect(acting.get(VIEW).get('T1')?.stands).toBe('sending');
+  });
+
+  test('a resolve main refused at once leaves what they say of the thread be', async () => {
+    // Another change to it is on its way, from another tab of the pull request.
+    said.resolve = () => Promise.resolve({ kind: 'refused', refusal: { kind: 'busy' } });
+    await resolveThread(TAB, row());
+    takeActs({ id: VIEW, acts: [resolving('sending')] });
+    expect(acting.get(VIEW).get('T1')?.stands).toBe('sending');
+  });
+
+  test('a resolve GitHub took, answered first, shows at work as they go on to say, until its threads show it', async () => {
+    await resolveThread(TAB, row());
+    takeActs({ id: VIEW, acts: [resolving('sending')] });
+    takeActs({ id: VIEW, acts: [] });
+    expect(acting.get(VIEW).get('T1')?.stands).toBe('sending');
+    expect(said.told).toEqual(['Resolving…']);
+  });
+
+  test('a delete on the pull request refused never says it went, in either order', async () => {
+    const main = answerLater();
+    said.remove = main.asked;
+    let going = deleteOnPull();
+    takeActs({ id: VIEW, acts: [deleting('sending')] });
+    takeActs({ id: VIEW, acts: [] });
+    main.answer(REFUSED);
+    await going;
+    expect(said.told).toEqual(['Deleting…']);
+    said.told.length = 0;
+    going = deleteOnPull();
+    main.answer(REFUSED);
+    await going;
+    takeActs({ id: VIEW, acts: [deleting('sending')] });
+    takeActs({ id: VIEW, acts: [] });
+    expect(said.told).toEqual([]);
+    expect(said.refused).toHaveLength(2);
+  });
+
+  test('a delete on the pull request GitHub took says so once, as its answer comes, in either order', async () => {
+    const main = answerLater();
+    said.remove = main.asked;
+    let going = deleteOnPull();
+    takeActs({ id: VIEW, acts: [deleting('sending')] });
+    takeActs({ id: VIEW, acts: [] });
+    expect(said.told).toEqual(['Deleting…']);
+    main.answer({ kind: 'done' });
+    await going;
+    expect(said.told).toEqual(['Deleting…', 'Deleted comment']);
+    said.told.length = 0;
+    going = deleteOnPull();
+    main.answer({ kind: 'done' });
+    await going;
+    takeActs({ id: VIEW, acts: [deleting('sending')] });
+    takeActs({ id: VIEW, acts: [] });
+    expect(said.told).toEqual(['Deleted comment']);
+    expect(acting.get(VIEW).size).toBe(0);
+  });
+
+  test('a delete on the pull request whose answer was lost says it went once a look finds it did', () => {
+    takeActs({ id: VIEW, acts: [deleting('sending')] });
+    takeActs({ id: VIEW, acts: [deleting('checking')] });
+    takeActs({ id: VIEW, acts: [] });
+    expect(said.told).toEqual(['Deleting…', 'Deleted comment']);
+  });
+});

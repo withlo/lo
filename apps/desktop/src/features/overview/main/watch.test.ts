@@ -766,6 +766,50 @@ describe('failing', () => {
     tab.close();
   });
 
+  it('tries at once as the tab is shown or Lo comes back on screen while offline, without putting the retry off', async () => {
+    const github = new FakeGithub();
+    github.answer.set('rozed-dev/e2e/git/matching-refs/lo/pr/5', () => {
+      throw new TypeError('fetch failed', {
+        cause: Object.assign(new Error('x'), { code: 'ENOTFOUND' }),
+      });
+    });
+    const { tab, last } = tabWith(github.client);
+    tab.update(info(), true, true);
+    await settle();
+    const retryAt = Date.now() + 5_000;
+    expect(last()?.problem?.retryAt).toBe(retryAt);
+
+    // Shown again, then back on screen, a second apart: each tries at once, and the retry stays.
+    for (let round = 0; round < 2; round++) {
+      await vi.advanceTimersByTimeAsync(1_000);
+      tab.update(info(), false, true);
+      tab.update(info(), true, true);
+      await settle();
+      await vi.advanceTimersByTimeAsync(1_000);
+      tab.setForeground(false);
+      tab.setForeground(true);
+      await settle();
+    }
+    expect(github.asked).toHaveLength(5);
+    expect(last()?.problem?.retryAt).toBe(retryAt);
+    // The retry goes when it was due, and the one after it waits 10 s, as if none had been tried.
+    await vi.advanceTimersByTimeAsync(retryAt - Date.now() - 1);
+    expect(github.asked).toHaveLength(5);
+    await vi.advanceTimersByTimeAsync(1);
+    await settle();
+    expect(github.asked).toHaveLength(6);
+    expect(last()?.problem?.retryAt).toBe(Date.now() + 10_000);
+
+    // Shown again once the retry was due while it was hidden, the read is that retry, and counts.
+    tab.update(info(), false, true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    tab.update(info(), true, true);
+    await settle();
+    expect(github.asked).toHaveLength(7);
+    expect(last()?.problem?.retryAt).toBe(Date.now() + 20_000);
+    tab.close();
+  });
+
   it.each<[string, Acting]>([
     ['an account', ROZED],
     ['nobody, which reads the ref once', { kind: 'anonymous' }],
