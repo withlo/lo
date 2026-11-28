@@ -544,12 +544,16 @@
 }
 /*
  * A code block's code while the local copy comes: a bar on each line, as long as code runs, in the
- * middle of the line's height, so the lines are as tall as the code's.
+ * middle of the line's height, so the lines are as tall as the code's. The line sets its height and
+ * centres the bar, which the skeleton utility makes a block.
  */
+.lo-codeblock__skeleton .cm-line {
+  display: flex;
+  align-items: center;
+  height: var(--lo-code-line);
+}
 .lo-codeblock__skeleton .skeleton {
-  display: inline-block;
   width: 62%;
-  vertical-align: middle;
 }
 .lo-codeblock__skeleton .cm-line:nth-child(3n + 2) .skeleton {
   width: 78%;
@@ -729,6 +733,84 @@
    itself still there to take focus. */
 .lo-ov.is-drawing > * {
   visibility: hidden;
+}
+
+/*
+ * The overview while it's read (`OverviewSkeleton`), laid out where the overview will be: as
+ * `.lo-ov` lays it out, its outline beside the article, which gives its room to the article in a
+ * narrow view, at the same insets, and its pieces spaced as `.lo-prose` spaces the overview's.
+ * Taller than the view, it's cut off by the box it waits in.
+ */
+.lo-ov-skeleton {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+}
+.lo-ov-skeleton__toc {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 30px 8px 24px 16px;
+}
+@container lo-middle (width < 980px) {
+  .lo-ov-skeleton {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lo-ov-skeleton__toc {
+    display: none;
+  }
+}
+.lo-ov-skeleton__label {
+  padding: 0 8px 8px;
+  font: var(--lo-text-label);
+}
+/* A section's row: its ring, as the outline draws it, and a bar where its title will be. */
+.lo-ov-skeleton__item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 26px;
+  padding: 0 8px;
+}
+.lo-ov-skeleton__item::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.25px var(--lo-fg-dim);
+}
+.lo-ov-skeleton__foot {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--lo-border-subtle);
+}
+.lo-ov-skeleton__article {
+  min-width: 0;
+  max-width: 896px;
+  padding: 26px 40px 120px 20px;
+}
+.lo-ov-skeleton__byline {
+  display: flex;
+  align-items: center;
+  gap: var(--lo-sp-8);
+  min-height: var(--lo-control-h-sm);
+}
+.lo-ov-skeleton__article > * + * {
+  margin-top: 14px;
+}
+.lo-ov-skeleton__article > .lo-ov-skeleton__heading {
+  margin-top: 52px;
+}
+.lo-ov-skeleton__article > .lo-ov-skeleton__heading + * {
+  margin-top: 12px;
+}
+.lo-ov-skeleton__article > .lo-codeblock,
+.lo-ov-skeleton__article > .lo-codeblock + * {
+  margin-top: 22px;
+}
+.lo-ov-skeleton__heading,
+.lo-ov-skeleton__text {
+  max-width: var(--lo-read-measure);
 }
 
 /* A block the block keys put focus on draws its own ring, `is-focused`, at its own radius. */

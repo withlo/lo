@@ -186,6 +186,45 @@ describe('a tab’s placeholder', () => {
     expect(box.querySelector('svg')).toBeNull();
   });
 
+  it('gives a view’s skeleton up for the mark once GitHub is slow to answer, and takes it back once it has', () => {
+    const box = document.createElement('div');
+    document.body.append(box);
+    const root = createRoot(box);
+    const say = (status?: string) =>
+      act(() =>
+        root.render(
+          <Placeholder
+            tab="fd"
+            status={status}
+            skeleton={<span className="skeleton" data-testid="rows" />}
+          />,
+        ),
+      );
+    say();
+    drawn.push(() => {
+      act(() => root.unmount());
+      box.remove();
+    });
+    const rows = () => box.querySelector('[data-testid="rows"]');
+    wait(LOADING_SLOW_MS - 1);
+    expect(rows()).not.toBeNull();
+    expect(box.querySelector('[role="status"]')?.textContent).toBe('Opening pull request…');
+    // Eight seconds and no answer: the mark says so, and offers to give up.
+    wait(1);
+    expect(rows()).toBeNull();
+    expect(box.querySelector('[role="status"] p')?.textContent).toBe('Waiting for GitHub…');
+    expect(cancel(box)?.parentElement?.className).not.toContain('invisible');
+    // GitHub answers: what's left is the view's own read, which waits as its skeleton.
+    show(pullView(null, null, true));
+    expect(rows()).not.toBeNull();
+    expect(cancel(box)).toBeNull();
+    act(() => pullsStore.setState({ views: new Map() }));
+    // A view that reads what came with the pull request waits as its skeleton, however long.
+    say('Reading timeline…');
+    expect(rows()).not.toBeNull();
+    expect(box.querySelector('[role="status"]')?.textContent).toBe('Reading timeline…');
+  });
+
   it('keeps each tab’s wait to itself', () => {
     draw('fd');
     wait(500);
@@ -208,12 +247,27 @@ describe('a tab’s placeholder', () => {
   });
 });
 
-/** What main says of tab `fd`, with `problem`, drawn at `shown` or not yet. */
-const pullView = (problem: PullView['problem'], shown: string | null): PullView => ({
+/** A pull request's header, as GitHub's answer brings it. */
+const HEADER: PullView['header'] = {
+  title: 'Back off between retries',
+  state: 'open',
+  head: { branch: 'feature', fork: null },
+  base: { branch: 'main' },
+};
+
+/**
+ * What main says of tab `fd`, with `problem`, drawn at `shown` or not yet, with its header once
+ * GitHub has `answered`.
+ */
+const pullView = (
+  problem: PullView['problem'],
+  shown: string | null,
+  answered = false,
+): PullView => ({
   id: 'fd',
   loading: false,
   acting: { kind: 'account', login: 'rozed-bot' },
-  header: null,
+  header: answered ? HEADER : null,
   connection: { kind: 'live' },
   problem,
   shown,

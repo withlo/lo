@@ -37,6 +37,7 @@ import {
 import { blockId, blockIn } from './blocks.ts';
 import { standingOf } from './facts.ts';
 import { focusedBlock, type DrawnOverview } from './follow.ts';
+import { stackStandingOf, subjectNow, withLayersShown } from './stack.ts';
 import { checked, states } from './store.ts';
 
 /** The tl;dr, as a heading in the setting is matched: it never collapses, whatever the setting says. */
@@ -176,11 +177,15 @@ export function openGlossary(tab: PullTab, overview: DrawnOverview): boolean {
 /**
  * As {@link openTo}, in the overview main last said tab `tab` has, whether it's drawn yet or not:
  * history and a note's "Show in overview" go there from the diff or the timeline, before the
- * overview has ever been shown. In the tab on screen, where they are. Says whether it expanded one.
+ * overview has ever been shown. In the tab on screen, where they are: in its stack's, with its
+ * Layers, while its Overview shows that. Says whether it expanded one.
  */
 export function openShown(tab: string, block: number): boolean {
   const pull = activeTab();
-  const standing = standingOf(states.get(tab), checked.get(tab));
+  const standing =
+    subjectNow(tab) === 'stack'
+      ? withLayersShown(stackStandingOf(tab))
+      : standingOf(states.get(tab), checked.get(tab));
   return (
     pull?.kind === 'pull' &&
     pull.id === tab &&

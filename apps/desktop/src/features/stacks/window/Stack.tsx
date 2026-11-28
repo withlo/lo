@@ -13,6 +13,7 @@ import {
   Key,
   Offer as OfferLine,
   Problem,
+  STACK_OVERVIEW_KEY,
   StackTree,
   type StackChecks,
   type StackOverview,
@@ -26,14 +27,27 @@ import { useCallback, useEffect, useRef, type MouseEvent } from 'react';
 
 import { currentMenu, openMenu, useNoticeTarget } from '../../../window/commands/menus.tsx';
 import { useKeys } from '../../../window/commands/registry.ts';
-import { useOverviewMark, type OverviewMark } from '../../overview/window/shared.ts';
+import {
+  useOverviewMark,
+  useStackOverviewRow,
+  type OverviewMark,
+} from '../../overview/window/shared.ts';
 import { useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import { useViewedCount } from '../../tree/window/shared.ts';
 import type { Checks, Note, Review, Row } from '../contract.ts';
 import { makeStack } from './actions.ts';
 import { useLayerCount } from './counts.ts';
 import { convertNotice } from './dismiss.ts';
-import { catchUp, choosing, focused, keyboardLayer, runTrouble, stacks } from './layers.ts';
+import {
+  catchUp,
+  choosing,
+  focused,
+  keyboardLayer,
+  OVERVIEW_ROW,
+  OVERVIEW_TARGET,
+  runTrouble,
+  stacks,
+} from './layers.ts';
 import { chainIn, choiceLine, type Choice } from './runs.ts';
 import { runAgain, showTarget, stackTarget, stopChoosing, takeRefocus } from './walk.ts';
 
@@ -242,6 +256,8 @@ export function Stack({ tab }: { tab: PullTab }) {
   const overview = useOverviewMark(tab.id);
   const count = useViewedCount(tab.id);
   const threads = useLayerCount(tab.id);
+  // The stack overview's row, first, while the stack has one.
+  const stackOverview = useStackOverviewRow(tab);
 
   useEffect(() => {
     if (stacks.get(tab.id) === undefined) catchUp(tab.id);
@@ -285,6 +301,7 @@ export function Stack({ tab }: { tab: PullTab }) {
   const runs = bandOf(band);
   const current = tab.run ? undefined : view.rows.find((row) => row.current);
   const on = keyboardLayer(view, keyboard, tab.number);
+  const onRow = keyboard === OVERVIEW_ROW && stackOverview !== undefined;
   const notes = view.notes.map(noteOf);
   if (trouble !== undefined) {
     notes.unshift({
@@ -330,13 +347,16 @@ export function Stack({ tab }: { tab: PullTab }) {
             <StepButton id="stacks.nextLayer" down />
           </>
         }
-        focused={on === undefined ? undefined : String(on)}
+        overview={stackOverview}
+        focused={onRow ? STACK_OVERVIEW_KEY : on === undefined ? undefined : String(on)}
         current={current === undefined ? undefined : String(current.number)}
         choosing={choice !== undefined}
         onShow={(key) => {
-          // A click shows the layer clicked, whatever was being chosen.
+          // A click shows the layer clicked, or the stack overview, whatever was being chosen.
           stopChoosing(tab.id);
-          showTarget({ kind: 'layer', layer: Number(key) });
+          showTarget(
+            key === STACK_OVERVIEW_KEY ? OVERVIEW_TARGET : { kind: 'layer', layer: Number(key) },
+          );
         }}
         onMenu={(key, event: MouseEvent<HTMLElement>) => {
           // The browser's own event for the key that opened a menu, which is open.

@@ -43,6 +43,7 @@ import {
   writtenText,
 } from './says.ts';
 import { checkSkill, skillStore } from './skill.ts';
+import { checkStackAgain, stackStates, type Showing } from './stack.ts';
 import { checkAgain, rereading, states } from './store.ts';
 
 /** The command that asks GitHub for a newer Lo now, and says what it found. */
@@ -160,7 +161,16 @@ export function readAction(problem: ReadProblem, again: ProblemAction): ProblemA
  * counted down. Try now reads it again without waiting, and is busy until main says how that went:
  * a problem with a new time to try again, or the overview.
  */
-export function ReadFailed({ tab, problem }: { tab: PullTab; problem: ReadProblem }) {
+export function ReadFailed({
+  tab,
+  problem,
+  subject = 'pull',
+}: {
+  tab: PullTab;
+  problem: ReadProblem;
+  /** Whose overview it is: the layer's own, or its stack's. */
+  subject?: Showing;
+}) {
   // The try that Try now asked for, by when the problem it was pressed on said to try again.
   const [tried, setTried] = useState<number | undefined>(undefined);
   const { cause, retryAt } = problemReason(problem);
@@ -175,7 +185,7 @@ export function ReadFailed({ tab, problem }: { tab: PullTab; problem: ReadProble
     onClick: () => {
       setTried(problem.retryAt);
       main()
-        .retry({ id: tab.id })
+        .retry({ id: tab.id, stack: subject === 'stack' })
         .catch((error: unknown) => {
           console.error("Lo couldn't read the overview again:", error);
           setTried(undefined);
@@ -185,7 +195,7 @@ export function ReadFailed({ tab, problem }: { tab: PullTab; problem: ReadProble
   return (
     <Problem
       layout="view"
-      title="Can’t show the overview"
+      title={subject === 'stack' ? STACK_TITLE : 'Can’t show the overview'}
       reason={
         <>
           {cause}
@@ -243,29 +253,38 @@ function copyAction(
 }
 
 /** Shows the latest overview, pushed since this one, which may show where this one can't. */
-function latestAction(tab: PullTab): ProblemAction {
-  return { label: 'Show latest', onClick: () => loadNewer(tab.id) };
+function latestAction(tab: PullTab, stack: boolean): ProblemAction {
+  return { label: 'Show latest', onClick: () => loadNewer(tab.id, stack) };
 }
+
+/** What a stack overview Lo can't show is titled, whatever the reason. */
+const STACK_TITLE = 'Can’t show the stack overview';
 
 /** An overview that can't be shown: why, as its check found, and the one thing to do about it. */
 export function CantShow({
   tab,
   standing,
   onScreen,
+  subject = 'pull',
 }: {
   tab: PullTab;
   standing: Extract<Standing, { kind: 'unchecked' | 'invalid' | 'tooLarge' | 'newer' }>;
   /** Whether the view is on screen, so its Copy prompt answers a copy. */
   onScreen: boolean;
+  /** Whose overview it is: the layer's own, or its stack's, which offers no prompt. */
+  subject?: Showing;
 }) {
   useKeys();
   const now = useNow(true, 60_000);
-  const state = useTabState(states, tab.id);
+  const stack = subject === 'stack';
+  const own = useTabState(states, tab.id);
+  const stacked = useTabState(stackStates, tab.id);
+  const state = stack ? stacked : own;
   const [checking, setChecking] = useState(false);
-  const prompt = promptFor(tab, standing);
+  const prompt = stack ? undefined : promptFor(tab, standing);
   const written = writtenText(standing.commit, now);
   // A later overview is the way on from any of these.
-  const latest = state?.newer ? latestAction(tab) : undefined;
+  const latest = state?.newer ? latestAction(tab, stack) : undefined;
   // Copy prompt is the way on from an overview that's wrong or too large.
   const copies =
     latest === undefined &&
@@ -278,7 +297,7 @@ export function CantShow({
         <>
           <Problem
             layout="view"
-            title="Can’t show this overview"
+            title={stack ? STACK_TITLE : 'Can’t show this overview'}
             reason={invalidSummary(standing.findings)}
             action={latest ?? copyAction(tab.id, prompt, copied)}
             details={[
@@ -296,7 +315,7 @@ export function CantShow({
         <>
           <Problem
             layout="view"
-            title="Can’t show this overview"
+            title={stack ? STACK_TITLE : 'Can’t show this overview'}
             reason={tooLargeWords(standing.what, standing.sizes)}
             action={latest ?? copyAction(tab.id, prompt, copied)}
             details={[
@@ -311,7 +330,7 @@ export function CantShow({
       return (
         <Problem
           layout="view"
-          title="Can’t show this overview"
+          title={stack ? STACK_TITLE : 'Can’t show this overview'}
           reason={NEWER_REASON}
           action={
             latest ?? {
@@ -328,7 +347,7 @@ export function CantShow({
       return (
         <Problem
           layout="view"
-          title="Can’t check the overview"
+          title={stack ? STACK_TITLE : 'Can’t check the overview'}
           reason={standing.why === '' ? undefined : standing.why}
           action={
             latest ?? {
@@ -337,7 +356,9 @@ export function CantShow({
               working: 'Checking…',
               onClick: () => {
                 setChecking(true);
-                void checkAgain(tab.id).finally(() => setChecking(false));
+                void (stack ? checkStackAgain(tab.id) : checkAgain(tab.id)).finally(() =>
+                  setChecking(false),
+                );
               },
             }
           }

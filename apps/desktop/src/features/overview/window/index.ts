@@ -22,6 +22,7 @@ import { viewIds } from '../../tab/contract.ts';
 import {
   activeTab,
   middle,
+  onActiveTab,
   runOf,
   showingMiddle,
   status,
@@ -53,7 +54,7 @@ import {
   openShown,
   sectionFor,
 } from './sections.ts';
-import { followOverviews, overviews } from './shared.ts';
+import { followOverviews, overviews, showStackOverview } from './shared.ts';
 import {
   blockAt,
   codeIn,
@@ -79,6 +80,17 @@ import {
 } from './follow.ts';
 import { copyInstallCommand, followSkill, installable, installSkill } from './skill.ts';
 import { keepSinceOnly } from './since.ts';
+import {
+  followStackOf,
+  hasStackOverview,
+  keepStacksOnly,
+  LAYERS_AGAIN_MS,
+  layersSaid,
+  readLayersAgain,
+  takeStackOverviews,
+  takeStackState,
+} from './stack.ts';
+import { askForStack, onStackViews, stackViewOf } from './stacked.ts';
 import { OverviewStatus } from './Status.tsx';
 import {
   catchUp,
@@ -304,6 +316,31 @@ function stateNow() {
   return tab?.kind === 'pull' ? states.get(tab.id) : undefined;
 }
 
+/** Why the stack overview can't be shown in the tab on screen, if it can't. */
+function stackOverviewNow(): true | string {
+  const tab = activeTab();
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
+  return hasStackOverview(tab.id) || 'No stack overview yet';
+}
+
+/**
+ * Follows the overview of the stack the pull request's view on screen is a layer of, as its stack,
+ * its own overview and what its layers' overviews say name it. A run of layers has none.
+ */
+function followOnScreen(): void {
+  const tab = activeTab();
+  if (tab?.kind !== 'pull' || runOf(tab.id) !== undefined) return;
+  askForStack(tab.id);
+  followStackOf(tab.id, stackViewOf(tab.id));
+}
+
+/** Reads the layers' overviews of the pull request's view on screen again, for any pushed since. */
+function readOnScreenAgain(): void {
+  const tab = activeTab();
+  if (tab?.kind !== 'pull' || runOf(tab.id) !== undefined) return;
+  readLayersAgain(tab.id, stackViewOf(tab.id));
+}
+
 /** Whether reading the ref again could find more: its last read failed, or it's read only once. */
 function lookAgain(state: ReturnType<typeof stateNow>): boolean {
   return Boolean(state?.problem) || state?.watching === false;
@@ -312,6 +349,15 @@ function lookAgain(state: ReturnType<typeof stateNow>): boolean {
 export default {
   commands: handlers(keys, {
     show: showingMiddle(OVERVIEW_VIEW),
+    showStack: {
+      run: () => {
+        const tab = activeTab();
+        if (tab?.kind === 'pull') showStackOverview(tab);
+      },
+      enabled: stackOverviewNow,
+      // The palette lists it only where there's one to show.
+      listed: () => stackOverviewNow() === true,
+    },
     nextBlock: moving(1),
     previousBlock: moving(-1),
     nextLink: linking(1),
@@ -488,6 +534,7 @@ export default {
       registry().setOff(COMMANDS, !now);
       if (now === taken) return;
       taken = now;
+      takeStackOverviews(now);
       if (!now) {
         takeOverviews(false, []);
         return;
@@ -500,6 +547,15 @@ export default {
         .catch((error: unknown) => console.error("Lo couldn't list the tabs:", error));
     });
     main().subscribe('state', takeState);
+    main().subscribe('stackState', takeStackState);
+    // The stack's overview the view on screen follows changes with its stack, its own overview and
+    // what its layers' overviews say.
+    onStackViews(followOnScreen);
+    states.subscribe(followOnScreen);
+    checked.subscribe(followOnScreen);
+    layersSaid.subscribe(followOnScreen);
+    onActiveTab(followOnScreen);
+    setInterval(readOnScreenAgain, LAYERS_AGAIN_MS);
     main().subscribe('store', takeStore);
     client(revisionsContract).subscribe('comparison', takeRevisions);
     // Each view of a pull request's tab keeps its overview until the tab closes.
@@ -509,6 +565,7 @@ export default {
       keepPlaces(ids);
       keepSinceOnly(ids);
       keepMarkersOnly(ids);
+      keepStacksOnly(ids);
     });
     openViews()
       .then(catchUp)

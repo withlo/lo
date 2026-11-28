@@ -153,6 +153,7 @@ export default defineFeature(contract, {
         throw new IpcError('notFound', 'There’s no pull request in that tab.');
       return view;
     },
+    layerAt: ({ id, commit }) => finder?.layerAt(id, commit) ?? null,
   },
   start(context) {
     const service = context.use(tabs);

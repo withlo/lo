@@ -134,30 +134,30 @@ describe('installedIn', () => {
     expect(installedIn(target.skills)).toBe(false);
     install([target]);
     expect(installedIn(target.skills)).toBe(true);
-    expectSkill(join(target.skills, 'lo-overview'));
+    expectSkill(join(target.skills, 'lo-explain'));
   });
 
   test('doesn’t count a folder of another skill, or one with no SKILL.md', () => {
-    const folder = join(home, 'skills', 'lo-overview');
+    const folder = join(home, 'skills', 'lo-explain');
     mkdirSync(folder, { recursive: true });
     expect(installedIn(join(home, 'skills'))).toBe(false);
     writeFileSync(join(folder, 'SKILL.md'), '---\nname: review\n---\n');
     expect(installedIn(join(home, 'skills'))).toBe(false);
-    writeFileSync(join(folder, 'SKILL.md'), '---\nname: lo-overview\n---\n');
+    writeFileSync(join(folder, 'SKILL.md'), '---\nname: lo-explain\n---\n');
     expect(installedIn(join(home, 'skills'))).toBe(true);
   });
 
   test('counts a skill read through a link, as the agent reads it', () => {
     const source = join(home, 'source');
     mkdirSync(source);
-    writeFileSync(join(source, 'SKILL.md'), '---\nname: lo-overview\n---\n');
+    writeFileSync(join(source, 'SKILL.md'), '---\nname: lo-explain\n---\n');
     mkdirSync(join(home, 'skills'));
-    symlinkSync(source, join(home, 'skills', 'lo-overview'));
+    symlinkSync(source, join(home, 'skills', 'lo-explain'));
     expect(installedIn(join(home, 'skills'))).toBe(true);
   });
 
   test('is false, not an error, for a SKILL.md that is a folder', () => {
-    mkdirSync(join(home, 'skills', 'lo-overview', 'SKILL.md'), { recursive: true });
+    mkdirSync(join(home, 'skills', 'lo-explain', 'SKILL.md'), { recursive: true });
     expect(installedIn(join(home, 'skills'))).toBe(false);
   });
 });
@@ -187,8 +187,8 @@ describe('install', () => {
     const targets = targetsOf({ agents: [], dir: undefined }, env);
     const done = install(targets);
     expect(done.map(({ agent, folder }) => [agent, folder])).toEqual([
-      ['claude', join(config, 'skills', 'lo-overview')],
-      ['codex', join(home, '.agents', 'skills', 'lo-overview')],
+      ['claude', join(config, 'skills', 'lo-explain')],
+      ['codex', join(home, '.agents', 'skills', 'lo-explain')],
     ]);
     for (const { folder } of done) expectSkill(folder);
     // Claude Code's own default folder is left alone, since its settings moved.
@@ -199,7 +199,7 @@ describe('install', () => {
 describe('a reason', () => {
   test('link, for a link where the skill’s folder, a folder in it or a file of it goes', () => {
     const target = skills();
-    const folder = join(target.skills, 'lo-overview');
+    const folder = join(target.skills, 'lo-explain');
     mkdirSync(target.skills);
     mkdirSync(join(home, 'outside'));
     symlinkSync(join(home, 'outside'), folder);
@@ -214,13 +214,13 @@ describe('a reason', () => {
     writeFileSync(join(home, 'mine.md'), 'Mine.\n');
     symlinkSync(join(home, 'mine.md'), join(folder, 'SKILL.md'));
     expect(reasonOf([target])).toEqual({ kind: 'link', path: join(folder, 'SKILL.md') });
-    expect(listing(home)).toContain(`skills/lo-overview/SKILL.md -> ${join(home, 'mine.md')}`);
+    expect(listing(home)).toContain(`skills/lo-explain/SKILL.md -> ${join(home, 'mine.md')}`);
     expect(listing(join(home, 'outside'))).toEqual([]);
   });
 
   test('notFolder and notFile, for a file or a folder where the other goes', () => {
     const target = skills();
-    const folder = join(target.skills, 'lo-overview');
+    const folder = join(target.skills, 'lo-explain');
     mkdirSync(target.skills);
     writeFileSync(folder, 'A file.\n');
     expect(reasonOf([target])).toEqual({ kind: 'notFolder', path: folder });
@@ -231,7 +231,7 @@ describe('a reason', () => {
 
   test('otherSkill, with its name when it gives one, and otherFiles', () => {
     const target = skills();
-    const folder = join(target.skills, 'lo-overview');
+    const folder = join(target.skills, 'lo-explain');
     mkdirSync(folder, { recursive: true });
     writeFileSync(join(folder, 'SKILL.md'), '---\nname: "review"\n---\n');
     expect(reasonOf([target])).toEqual({ kind: 'otherSkill', path: folder, name: 'review' });
@@ -280,18 +280,18 @@ describe('a reason', () => {
 
   test('keeps its message for the command line, with the reason beside it', () => {
     const target = skills();
-    mkdirSync(join(target.skills, 'lo-overview'), { recursive: true });
-    writeFileSync(join(target.skills, 'lo-overview', 'SKILL.md'), '---\nname: review\n---\n');
+    mkdirSync(join(target.skills, 'lo-explain'), { recursive: true });
+    writeFileSync(join(target.skills, 'lo-explain', 'SKILL.md'), '---\nname: review\n---\n');
     expect(() => install([target])).toThrow(
-      `${join(target.skills, 'lo-overview')} holds another skill, "review", so Lo left it alone. Remove it, or install the skill somewhere else with --dir. Nothing was installed.`,
+      `${join(target.skills, 'lo-explain')} holds another skill, "review", so Lo left it alone. Remove it, or install the skill somewhere else with --dir. Nothing was installed.`,
     );
   });
 
   test('is the first refusal’s, and nothing is written for any target', () => {
     const fine = skills('fine');
     const refused = skills('refused');
-    mkdirSync(join(refused.skills, 'lo-overview'), { recursive: true });
-    writeFileSync(join(refused.skills, 'lo-overview', 'SKILL.md'), '---\nname: review\n---\n');
+    mkdirSync(join(refused.skills, 'lo-explain'), { recursive: true });
+    writeFileSync(join(refused.skills, 'lo-explain', 'SKILL.md'), '---\nname: review\n---\n');
     const before = listing(home);
     expect(reasonOf([fine, refused])).toMatchObject({ kind: 'otherSkill' });
     expect(listing(home)).toEqual(before);
@@ -301,7 +301,7 @@ describe('a reason', () => {
 /** A skills folder holding a pipe named `SKILL.md`, and the pipe. */
 function pipe(): { place: string; file: string } {
   const place = join(home, 'skills');
-  const folder = join(place, 'lo-overview');
+  const folder = join(place, 'lo-explain');
   mkdirSync(folder, { recursive: true });
   const file = join(folder, 'SKILL.md');
   // Opened to read, it waits for a writer that never comes.
@@ -312,7 +312,7 @@ function pipe(): { place: string; file: string } {
 /** A skills folder with the skill part-written, and `name` among its files, as a cut-short install. */
 function cutShort(name: string): { place: string; temporary: string } {
   const place = join(home, 'skills');
-  const folder = join(place, 'lo-overview');
+  const folder = join(place, 'lo-explain');
   mkdirSync(join(folder, 'references'), { recursive: true });
   writeFileSync(join(folder, 'LICENSE'), 'Part.\n');
   const temporary = join(folder, name);
@@ -355,45 +355,41 @@ describe('blockedBy', () => {
     const place = join(home, 'skills');
     mkdirSync(join(home, 'outside'));
     mkdirSync(place);
-    symlinkSync(join(home, 'outside'), join(place, 'lo-overview'));
-    expect(blockedBy(place)).toEqual({ kind: 'link', path: join(place, 'lo-overview') });
+    symlinkSync(join(home, 'outside'), join(place, 'lo-explain'));
+    expect(blockedBy(place)).toEqual({ kind: 'link', path: join(place, 'lo-explain') });
     expect(blockedBy(place)).toEqual(reasonOf([{ agent: undefined, skills: place }]));
   });
 });
 
 describe('an install cut short', () => {
   test('leaves a file it was writing, which the next install ignores and leaves', () => {
-    const { place, temporary } = cutShort('.lo-overview-0123456789abcdef.tmp');
+    const { place, temporary } = cutShort('.lo-explain-0123456789abcdef.tmp');
     expect(blockedBy(place)).toBeUndefined();
     install([{ agent: undefined, skills: place }]);
-    expectSkill(join(place, 'lo-overview'));
+    expectSkill(join(place, 'lo-explain'));
     expect(existsSync(temporary)).toBe(true);
   });
 
   test('also leaves one in a folder of the skill’s', () => {
-    const { place } = cutShort('.lo-overview-0123456789abcdef.tmp');
-    const inner = join(place, 'lo-overview', 'references', '.lo-overview-fedcba9876543210.tmp');
+    const { place } = cutShort('.lo-explain-0123456789abcdef.tmp');
+    const inner = join(place, 'lo-explain', 'references', '.lo-explain-fedcba9876543210.tmp');
     writeFileSync(inner, 'Half.\n');
     expect(blockedBy(place)).toBeUndefined();
   });
 
   test('does not ignore a file that only looks like one', () => {
-    for (const name of [
-      '.lo-overview-0123.tmp',
-      '.lo-overview-0123456789abcdeg.tmp',
-      'notes.tmp',
-    ]) {
+    for (const name of ['.lo-explain-0123.tmp', '.lo-explain-0123456789abcdeg.tmp', 'notes.tmp']) {
       const { place, temporary } = cutShort(name);
       expect({ name, blocked: blockedBy(place) }).toEqual({
         name,
-        blocked: { kind: 'otherFiles', path: join(place, 'lo-overview') },
+        blocked: { kind: 'otherFiles', path: join(place, 'lo-explain') },
       });
       rmSync(temporary);
     }
   });
 
   test('does not ignore a link or a folder named like one', () => {
-    const { place, temporary } = cutShort('.lo-overview-0123456789abcdef.tmp');
+    const { place, temporary } = cutShort('.lo-explain-0123456789abcdef.tmp');
     rmSync(temporary);
     mkdirSync(temporary);
     expect(blockedBy(place)).toMatchObject({ kind: 'otherFiles' });

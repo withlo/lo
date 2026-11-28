@@ -963,17 +963,18 @@ status bar.
 - The `tab.open` setting says which middle view a pull request's tab opens on: the overview, the
   timeline or the diff. A tab that opens on the overview waits for it, up to `HOLD_LIMIT`, and goes
   to the timeline, where the description is first, when there's none or it's late, drawing nothing
-  of the overview on the way: the overview's view draws the tab's placeholder until it's gone from
-  the screen, and the timeline takes that wait over at once. Where it goes there before the wait
-  shows (`LOADING_DELAY_MS` from the wait's start), the header's view switch goes there at once too,
-  as if the tab had opened there (`showInstead(tab, true)`, `wentAtOnce`); later, its thumb slides
-  there, as it does for a view the reader picks. The tab keeps its middle view by id
-  (`Panels.middle`): while that view isn't there, as the overview isn't with `overview.on` off, the
-  timeline stands in, and the tab goes back to it when it returns. The key `tab.open` replaced,
-  `overview.open`, stays declared, file-only: main carries a `diff` saved there over once, while the
-  file has no `tab.open`, then sets it to `null` (`tab/main/carry.ts`). A `tab.open` the file has
-  stays, even `overview`, its default. Until it's carried, the window reads it the same way
-  (`useOpensOn`), for the tab and for Settings' row, so both show where tabs open.
+  of the overview on the way but its wait: the overview's view draws the tab's placeholder, as the
+  overview's skeleton (`OverviewSkeleton`), until it's gone from the screen, and the timeline takes
+  that wait over at once, as its own skeleton or its rows. Where it goes there before the wait shows
+  (`LOADING_DELAY_MS` from the wait's start), the header's view switch goes there at once too, as if
+  the tab had opened there (`showInstead(tab, true)`, `wentAtOnce`); later, its thumb slides there,
+  as it does for a view the reader picks. The tab keeps its middle view by id (`Panels.middle`):
+  while that view isn't there, as the overview isn't with `overview.on` off, the timeline stands in,
+  and the tab goes back to it when it returns. The key `tab.open` replaced, `overview.open`, stays
+  declared, file-only: main carries a `diff` saved there over once, while the file has no
+  `tab.open`, then sets it to `null` (`tab/main/carry.ts`). A `tab.open` the file has stays, even
+  `overview`, its default. Until it's carried, the window reads it the same way (`useOpensOn`), for
+  the tab and for Settings' row, so both show where tabs open.
 - The row's layout is the window's, every pull request's tab alike: each panel open or not, and its
   width, unset while it's the default. Main keeps it in `tab_window` (`tab.layout`,
   `tab.keepLayout`), clamping each width to its limits as it's read, and a layout that won't read is
@@ -1019,10 +1020,12 @@ status bar.
   (`useWaiting`): there's nothing drawn to keep, and the view coming takes the wait over. A middle
   view with nothing to draw yet draws `Loading` or `MiddlePlaceholder`, never nothing, or a switch
   to it shows it empty; one whose shape is known gives `MiddlePlaceholder` its `skeleton`, as the
-  timeline does (`TimelineSkeleton`), which waits the same way with that in place of the mark; and
-  one that draws something else as it leaves draws it under the view coming, so a view that gives
-  the middle up as it opens, as the overview does to the timeline, draws its placeholder until it's
-  gone from the screen.
+  timeline (`TimelineSkeleton`) and the overview (`OverviewSkeleton`) do, which waits the same way
+  with that in place of the mark, until GitHub hasn't answered the tab for eight seconds, when the
+  mark says so and offers Cancel; what the view draws once it's in takes the skeleton's place in one
+  Swap, unless it came before the wait showed (`waitShown`). One that draws something else as it
+  leaves draws it under the view coming, so a view that gives the middle up as it opens, as the
+  overview does to the timeline, draws its placeholder until it's gone from the screen.
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.
@@ -1290,6 +1293,19 @@ and nothing while there's no stack.
   not yet in the GitHub stack below them), so dismissing one leaves the other. "For all stacks"
   turns off its setting, `stacks.offerConvert` or `stacks.offerStart`, whose switch in Settings ›
   Pull requests turns it back on; main sends no offer before it has read the file.
+- While the stack has an overview, its row is first in the tree (`StackTree`'s `overview`), `j` and
+  `k` move onto it, and `⏎` on it is `stacks.show` on a `row` target. The overview feature owns the
+  stack's overview (`features/overview/window/stack.ts`): which one a view shows, following it in
+  main beside the layer's own, Layers and the line on each layer's overview. The stacks feature
+  gives it the stack each view is in, a way to show a layer, and a way to show the whole stack as
+  one diff, as it starts (`setStackParts`, from the overview's `window/shared.ts`), so the
+  overview's window code never imports the stacks'. A stack's `start` is where its bottom layer's
+  changes start, which a stack overview's code diffs from, and its code goes up to the layer whose
+  head the overview describes (`stacks.layerAt`). Main reads the layers' overviews for Layers with
+  one request for every ref, kept a minute, or five while Lo is off screen (`layerOverviews`), and
+  their descriptions' first lines with their ETags (`layerLines`), in the account's queue at
+  background priority; the view on screen reads them again every minute. Only the repository's own
+  overview of a layer names its stack.
 - The merge panel makes the tree's offer too, for a chain it merges only once it's a GitHub stack,
   and only while the stack says it's offered (`offered`: on in Settings, and not dismissed for one
   of its layers, by which offer the tree makes, or `convert` where it makes none). It reads that
@@ -1521,7 +1537,9 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
   goes on screen, what the reader is at keeps its place (`window/place.ts`): the box at the end
   while they write in it or the list is at its end, or else the keyboard's row while it's on screen,
   or else the first row on screen. When the keyboard's row goes, as a comment deleted, the keyboard
-  moves to its neighbour, with nothing scrolled.
+  moves to its neighbour, with nothing scrolled. The list keeps its end (`keepEnd`, as the diff
+  does): what it loses at its end on screen, as the box there shrinks, sends or closes, stays as
+  room that goes as the reader scrolls it off screen, so the scroll is never pulled back.
 - The box at the end comments on the pull request itself, and your comments there have Edit and
   Delete (`i`, `dd`), in the row's menu a post's `shy` `⋯` opens, drawn through the comments
   feature's `PullCommentBox`, `PullCommentEdit` and `PullCommentNote`. `window/yours.ts` says which

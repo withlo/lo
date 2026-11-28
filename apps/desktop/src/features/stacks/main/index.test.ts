@@ -98,6 +98,7 @@ function row(number: number): Row {
 const STACKED: Extract<StackView, { kind: 'stack' }> = {
   kind: 'stack',
   root: 'stack/root',
+  start: null,
   githubStack: false,
   rows: [82, 83, 84, 85].map(row),
   notes: [],

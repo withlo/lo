@@ -12,6 +12,7 @@ import { createElement } from 'react';
 
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
+import { setStackParts } from '../../overview/window/shared.ts';
 import { settingRow } from '../../settings/window/shared.ts';
 import { banners, dialogs, left, over } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
@@ -19,7 +20,7 @@ import { offerConvert, offerStart } from '../settings.ts';
 import { take } from './actions.ts';
 import { ConversionDialog } from './Conversion.tsx';
 import { dismissConvert, dismissStart, offerConvertSwitch, offerStartSwitch } from './dismiss.ts';
-import { takeStack } from './layers.ts';
+import { catchUp, focused, stacks, takeStack } from './layers.ts';
 import { main } from './main.ts';
 import { startSwitch, takeStack as takeOffer } from './offers.ts';
 import { RunOnScreen } from './RunOnScreen.tsx';
@@ -39,6 +40,10 @@ import {
   onLayer,
   openOnGithub,
   pullOnScreen,
+  showable,
+  showName,
+  showLayer,
+  showStackAt,
   showTarget,
   upTo,
   upToNamed,
@@ -60,7 +65,7 @@ export default {
     files: goDown,
     down: { run: () => moveFocus(1), enabled: inPull },
     up: { run: () => moveFocus(-1), enabled: inPull },
-    show: { run: showTarget, enabled: onLayer },
+    show: { run: showTarget, enabled: showable, named: showName },
     choose: { run: choose, enabled: choosable },
     upTo: { run: upTo, enabled: upToReady, named: upToNamed },
     cancel: { run: cancel },
@@ -101,6 +106,20 @@ export default {
     settingRow(offerStart, { order: 110, command: 'stacks.offerStart' }),
   ],
   start() {
+    // The stack overview reads the stack each view is in, shows its layers, and goes to its code
+    // as one diff of the whole stack.
+    setStackParts({
+      viewOf: (id) => stacks.get(id),
+      onViews: (listener) => stacks.subscribe(listener),
+      ask: (id) => {
+        if (stacks.get(id) === undefined) catchUp(id);
+      },
+      showLayer: (tab, number) => {
+        focused.set(tab.id, number);
+        void showLayer(tab, number);
+      },
+      showAt: showStackAt,
+    });
     main().subscribe('stack', (state) => {
       takeStack(state);
       takeOffer(state);

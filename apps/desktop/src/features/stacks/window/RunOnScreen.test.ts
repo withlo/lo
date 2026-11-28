@@ -31,6 +31,7 @@ function row(number: number, below: number[], head = `stack/${number}`): Row {
 const VIEW: StackView = {
   kind: 'stack',
   root: 'stack/root',
+  start: null,
   githubStack: false,
   rows: [row(82, []), row(83, [82]), row(84, [82, 83], 'stack/c‮'), row(85, [82])],
   notes: [],

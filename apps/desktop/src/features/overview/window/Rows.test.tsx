@@ -267,15 +267,15 @@ describe('the welcome screen’s step', () => {
   it('says on the step what stops an install, and that one failed, with a way to try again', async () => {
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     onTestFinished(() => quiet.mockRestore());
-    const why = { kind: 'otherSkill', path: '~/.agents/skills/lo-overview', name: null } as const;
+    const why = { kind: 'otherSkill', path: '~/.agents/skills/lo-explain', name: null } as const;
     main(state({ installed: true }, { blocked: why }));
     render();
     await settle();
-    expect(step()?.textContent).toContain('~/.agents/skills/lo-overview holds another skill.');
+    expect(step()?.textContent).toContain('~/.agents/skills/lo-explain holds another skill.');
     // A path is code.
     expect(
       [...(step()?.querySelectorAll('.code-small') ?? [])].map((each) => each.textContent),
-    ).toContain('~/.agents/skills/lo-overview');
+    ).toContain('~/.agents/skills/lo-explain');
     answers['overview.installSkill'] = () => {
       throw new IpcError('internal', 'overview.installSkill failed.');
     };
@@ -380,7 +380,7 @@ describe('Settings’ row', () => {
     const stuck = state(
       { installed: true },
       {
-        blocked: { kind: 'otherSkill', path: '~/.agents/skills/lo-overview', name: 'review' },
+        blocked: { kind: 'otherSkill', path: '~/.agents/skills/lo-explain', name: 'review' },
       },
     );
     const { leave } = main(
@@ -390,7 +390,7 @@ describe('Settings’ row', () => {
         {
           kind: 'refused',
           agent: 'codex',
-          why: { kind: 'otherSkill', path: '~/.agents/skills/lo-overview', name: 'review' },
+          why: { kind: 'otherSkill', path: '~/.agents/skills/lo-explain', name: 'review' },
         },
       ],
       stuck,
@@ -402,7 +402,7 @@ describe('Settings’ row', () => {
     await settle();
     const said = [
       'Claude Code · installed in ~/.claude/skills',
-      'Codex · not installed ~/.agents/skills/lo-overview holds another skill, “review”.',
+      'Codex · not installed ~/.agents/skills/lo-explain holds another skill, “review”.',
     ];
     expect(lines()).toEqual(said);
     // Said on the row, which asked, and in no note besides.
@@ -424,7 +424,7 @@ describe('Settings’ row', () => {
   it('says a skill reached through a link is installed, and that Lo left it as it was', async () => {
     const link = {
       kind: 'link',
-      path: '~/.claude/skills/lo-overview',
+      path: '~/.claude/skills/lo-explain',
     } as const;
     const asked = main(state({ installed: true, blocked: link }, { installed: true }), [
       { kind: 'refused', agent: 'claude', why: link },
@@ -433,7 +433,7 @@ describe('Settings’ row', () => {
     render();
     await settle();
     expect(lines()[0]).toBe(
-      'Claude Code · installed, can’t update ~/.claude/skills/lo-overview is a link, not a folder.',
+      'Claude Code · installed, can’t update ~/.claude/skills/lo-explain is a link, not a folder.',
     );
     const before = notices();
     click(button(row(), 'Install again'));

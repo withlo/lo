@@ -132,17 +132,21 @@ function openPull(repository: RepoName, number: number): void {
 /**
  * The line under the byline of an overview whose glossary adds or changes terms: what it adds and
  * changes, what it added and changed once merged, or would have, closed, and "Go to glossary". It
- * comes and goes as the repo's definitions make a term new or changed, or none.
+ * comes and goes as the repo's definitions make a term new or changed, or none. A stack's overview,
+ * with `stack`, follows the definitions as they are now, as an open pull request's does.
  */
 export function DefinitionsLine({
   tab,
   definitions,
+  stack = false,
 }: {
   tab: PullTab;
   definitions: Definitions | undefined;
+  stack?: boolean;
 }) {
   // Until GitHub has said what state the pull request is in, it's taken as open.
-  const state = usePull(tab.id)?.header?.state ?? 'open';
+  const pull = usePull(tab.id)?.header?.state ?? 'open';
+  const state = stack ? 'open' : pull;
   const fact = definitions && definitionsLine(definitions.added, definitions.changed, state);
   return (
     <Collapse open={fact !== undefined}>

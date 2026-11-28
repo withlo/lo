@@ -49,6 +49,7 @@ export {
 } from './CodeBlock.tsx';
 export { Held, useNear, useNearness, type Nearness } from './Held.tsx';
 export { OverviewNote, type OverviewNoteProps } from './Note.tsx';
+export { OverviewSkeleton } from './OverviewSkeleton.tsx';
 export { OutOfDate } from './Stale.tsx';
 export { Walkthrough } from './Walkthrough.tsx';
 export { Chevron, type ChevronProps } from './Chevron.tsx';

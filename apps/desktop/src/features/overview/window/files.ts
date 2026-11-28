@@ -91,10 +91,17 @@ async function read(
   path: string,
   quick: boolean,
   signal: AbortSignal,
+  stack: { from: string } | undefined,
 ) {
   let text: BlockText;
   try {
-    text = await main().texts({ id: tab, commit, path, base: true });
+    // The stack's overview's file diffs from where the stack starts: with that unknown, it's
+    // read alone.
+    text = await main().texts(
+      stack
+        ? { id: tab, stack: true, commit, path, base: stack.from !== '', ...fromOf(stack.from) }
+        : { id: tab, commit, path, base: true },
+    );
   } catch (error) {
     if (!signal.aborted) console.error("Lo couldn't read a file an overview shows:", error);
     return { code: UNREAD, size: 0, keep: false };
@@ -149,7 +156,8 @@ export function quickDiff(texts: { old: string | null; new: string | null }) {
  * block that holds it at the same time, or that comes soon after. A small file is diffed here when
  * it's `quick`, as for a block on an overview on screen; one kept behind another view leaves it to
  * the diff's job. `from` is the commit a stack's layer's diff starts from, as the local copy last
- * said, which the code's base side starts from too: another reads it again. Each hold is let go
+ * said, which the code's base side starts from too: another reads it again. With `stack`, it's the
+ * stack's overview's code, whose base side starts where the stack does, `from`. Each hold is let go
  * once.
  */
 export function holdFile(
@@ -158,8 +166,9 @@ export function holdFile(
   path: string,
   quick = true,
   from = '',
+  stack = false,
 ): FileHold {
-  const key = `${tab}\n${commit}\n${path}\n${from}`;
+  const key = `${tab}\n${commit}\n${path}\n${from}\n${stack ? 'stack' : 'pull'}`;
   let entry = entries.get(key);
   if (entry) {
     idle.delete(entry);
@@ -172,14 +181,16 @@ export function holdFile(
       size: 0,
       settled: false,
       keep: false,
-      code: read(tab, commit, path, quick, stop.signal).then((done) => {
-        made.settled = true;
-        made.size = done.size;
-        made.keep = done.keep;
-        // A failure isn't kept: the next block to come near asks again.
-        if (!done.keep && made.users === 0) forget(made);
-        return done.code;
-      }),
+      code: read(tab, commit, path, quick, stop.signal, stack ? { from } : undefined).then(
+        (done) => {
+          made.settled = true;
+          made.size = done.size;
+          made.keep = done.keep;
+          // A failure isn't kept: the next block to come near asks again.
+          if (!done.keep && made.users === 0) forget(made);
+          return done.code;
+        },
+      ),
     };
     entries.set(key, made);
     entry = made;
@@ -219,6 +230,11 @@ function trim(): void {
 function forget(entry: Entry): void {
   idle.delete(entry);
   if (entries.get(entry.key) === entry) entries.delete(entry.key);
+}
+
+/** `from`, a stack's start, as `texts` takes it: none when it isn't known. */
+function fromOf(from: string): { from?: string } {
+  return from === '' ? {} : { from };
 }
 
 /** How many files are held or kept, for tests. */

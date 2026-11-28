@@ -32,6 +32,7 @@ function row(number: number, path: number[], current = false): Row {
 const STACK: StackView = {
   kind: 'stack',
   root: 'stack/root',
+  start: null,
   githubStack: false,
   rows: [
     row(82, []),

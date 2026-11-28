@@ -240,6 +240,7 @@ export {
   type Motion,
 } from './motion.ts';
 export { reveal, scrollPane, type RevealBlock, type RevealOptions } from './reveal.ts';
+export { keepEnd } from './ends.ts';
 export { Steps, type StepItem, type StepsProps, type StepState } from './Steps.tsx';
 export { Mark, type MarkProps } from './Mark.tsx';
 export {
@@ -286,6 +287,7 @@ export {
 } from './FileTree.tsx';
 export { RunBar, type RunBarLayer, type RunBarProps } from './RunBar.tsx';
 export {
+  STACK_OVERVIEW_KEY,
   StackTree,
   type StackChecks,
   type StackOverview,
@@ -293,6 +295,7 @@ export {
   type StackRun,
   type StackTreeLayer,
   type StackTreeNote,
+  type StackTreeOverview,
   type StackTreeProps,
 } from './StackTree.tsx';
 export { Label, labelColor, type LabelProps } from './Label.tsx';

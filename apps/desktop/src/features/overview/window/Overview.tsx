@@ -1,14 +1,16 @@
 // The overview, the first of a pull request's tab's middle views. A tab that opens on it, as
 // Settings says, draws the tab's placeholder until it knows whether the overview shows, for
 // `holdLimit()` at most, then stays, or hands the middle to the timeline, which takes the wait over
-// at once, before the view has drawn anything of the overview. After that it shows the overview, or
-// why there's none to show; one that comes later is offered, never switched to. A tab that opened
-// on another view shows it as it is whenever the reader comes to it. A run of a stack's layers on
-// screen as one diff has none, which it says.
+// at once, before the view has drawn anything of the overview but its wait. After that it shows the
+// overview, or why there's none to show; one that comes later is offered, never switched to. A tab
+// that opened on another view shows it as it is whenever the reader comes to it. A run of a stack's
+// layers on screen as one diff has none, which it says. Every wait here is the overview's skeleton,
+// laid out as the overview will be, which the overview takes the place of in one Swap.
 // While it's on screen the overview's keys act on it (`follow.ts`), and with code beside, the diff
 // follows the block focus lands on to its code. A right-click on a section's heading is on the
 // heading, whose menu folds sections, and one on a term, in the text or its row, is on the term.
 
+import { Swap } from '@lo/ui';
 import { NO_TARGET, setScopeSource } from '@lo/ui/commands';
 import { generationOf } from '@lo/ui/markdown';
 import {
@@ -16,6 +18,7 @@ import {
   blockOf as blockAround,
   cardsOpen,
   closeCards,
+  OverviewSkeleton,
   termAt,
 } from '@lo/ui/overview';
 import {
@@ -50,20 +53,23 @@ import {
   followBlock,
   hereIn,
   holdBlock,
+  IN_STACK,
   loadedNewer,
   placeIn,
   placesFor,
   setDrawn,
+  stackTrees,
   takeReveal,
   targetOf,
   trees,
   type DrawnOverview,
 } from './follow.ts';
-import { useStanding } from './hooks.ts';
+import { useStackStanding, useStanding, useSubject } from './hooks.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import { openingOf, openings } from './opening.ts';
 import { folds, headTarget } from './sections.ts';
 import { Shown } from './Shown.tsx';
+import type { Showing } from './stack.ts';
 import { CantShow, NoneInRun, NoOverview, ReadFailed } from './States.tsx';
 import { termTarget } from './termMenu.ts';
 import { blockPinned } from './threaded.ts';
@@ -72,10 +78,10 @@ import { blockPinned } from './threaded.ts';
  * Whether the view draws the tab's placeholder as tab `tab` opens, where it opened on the overview:
  * until what it stays on is chosen, once, which wakes at the bound, and as it hands the middle to
  * the timeline, until it's gone from the screen, so the timeline takes the wait over and nothing of
- * the overview is seen on the way. Once chosen, the timeline is shown if that's the choice and this
- * view is on screen, as it is when the tab opens, unless the reader picked a view while it waited:
- * where they are wins. A tab that opened on another view, as Settings said, is on the overview at
- * once, with the bound long passed.
+ * the overview but its wait is seen on the way. Once chosen, the timeline is shown if that's the
+ * choice and this view is on screen, as it is when the tab opens, unless the reader picked a view
+ * while it waited: where they are wins. A tab that opened on another view, as Settings said, is on
+ * the overview at once, with the bound long passed.
  */
 export function useOpening(tab: string, known: Known, shown: boolean): boolean {
   const here = openedOn(tab) === OVERVIEW_VIEW;
@@ -126,12 +132,15 @@ export function useOpening(tab: string, known: Known, shown: boolean): boolean {
 /** What the view shows, once the tab has opened, for what the overview is. */
 function Body({
   tab,
+  subject,
   standing,
   scroller,
   onScreen,
   focused,
 }: {
   tab: PullTab;
+  /** Whose overview it is: the layer's own, or its stack's. */
+  subject: Showing;
   standing: Standing;
   scroller: (element: HTMLDivElement | null) => void;
   onScreen: boolean;
@@ -140,22 +149,28 @@ function Body({
 }) {
   switch (standing.kind) {
     case 'reading':
-      return <MiddlePlaceholder tab={tab} status="Fetching overview…" />;
     case 'checking':
-      return <MiddlePlaceholder tab={tab} status="Checking overview…" />;
+      return (
+        <MiddlePlaceholder
+          tab={tab}
+          status={standing.kind === 'reading' ? 'Fetching overview…' : 'Checking overview…'}
+          skeleton={<OverviewSkeleton />}
+        />
+      );
     case 'none':
       return <NoOverview tab={tab} standing={standing} onScreen={onScreen} />;
     case 'failed':
-      return <ReadFailed tab={tab} problem={standing.problem} />;
+      return <ReadFailed tab={tab} problem={standing.problem} subject={subject} />;
     case 'unchecked':
     case 'invalid':
     case 'tooLarge':
     case 'newer':
-      return <CantShow tab={tab} standing={standing} onScreen={onScreen} />;
+      return <CantShow tab={tab} standing={standing} onScreen={onScreen} subject={subject} />;
     case 'shown':
       return (
         <Shown
           tab={tab}
+          subject={subject}
           standing={standing}
           scroller={scroller}
           onScreen={onScreen}
@@ -209,8 +224,13 @@ function InRun({ tab, shown }: { tab: PullTab; shown: boolean }) {
 
 /** A pull request's tab's overview, in its middle. */
 function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
-  const standing = useStanding(tab.id);
-  const known = knownOf(standing);
+  // The stack's overview, in place of the layer's own while it's asked for; how the tab opens goes
+  // by the layer's own.
+  const subject = useSubject(tab.id);
+  const ownStanding = useStanding(tab.id);
+  const stack = useStackStanding(tab.id);
+  const standing = subject === 'stack' ? stack : ownStanding;
+  const known = knownOf(ownStanding);
   const waiting = useOpening(tab.id, known, shown);
   const root = useRef<HTMLDivElement>(null);
   /** The overview's scrolling article, while one shows: what takes focus. */
@@ -265,7 +285,11 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
       // still has a way back.
       here: () => {
         const now = drawnIn(tab.id);
-        return (now && hereIn(now)) ?? { view: 'overview', at: NO_TARGET };
+        const at = now && hereIn(now);
+        if (at) return at;
+        return subject === 'stack'
+          ? { view: 'overview', at: NO_TARGET, within: IN_STACK }
+          : { view: 'overview', at: NO_TARGET };
       },
       // A term's card open closes on `Esc`, and then a code block's threads' popover pinned, with
       // focus in the overview.
@@ -276,14 +300,14 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
         return () => void pinned.closePopover();
       },
     });
-  }, [tab.id, shown, waiting]);
+  }, [tab.id, shown, waiting, subject]);
 
   // While it's on screen and shows an overview, the keys act on it, and a block history asked
   // for meanwhile is shown.
   useLayoutEffect(() => {
     const element = root.current;
     if (!shown || waiting || !tree || generation === undefined || !element) return undefined;
-    trees.set(tab.id, generation);
+    (subject === 'stack' ? stackTrees : trees).set(tab.id, generation);
     // The places in blocks this overview doesn't have are gone from the tab's history.
     registry().history.dropGone(tab.id);
     const drawn: DrawnOverview = {
@@ -292,6 +316,7 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
       generation,
       root: element,
       scroller: () => article.current,
+      stack: subject === 'stack',
     };
     const stop = setDrawn(drawn);
     // A newer overview asked for replaced the blocks, and what had focus with them.
@@ -302,7 +327,7 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
       (article.current ?? element).focus({ preventScroll: true });
     }
     return stop;
-  }, [tab.id, shown, waiting, tree, generation]);
+  }, [tab.id, shown, waiting, tree, generation, subject]);
 
   // What a key acts on: a term with focus, in the text or its row, so the menu key opens the term's
   // menu, and the block it's in for a block's keys; a section's heading with focus on it, its
@@ -402,7 +427,7 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
     // focus from it, as they do on the middle itself, the timeline's as the tab hands it over.
     return (
       <div ref={root} className="h-full outline-none" tabIndex={-1} data-lo-middle>
-        <MiddlePlaceholder tab={tab} />
+        <MiddlePlaceholder tab={tab} skeleton={<OverviewSkeleton />} />
       </div>
     );
   }
@@ -415,7 +440,17 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
       data-lo-overview={standing.kind}
       {...menu}
     >
-      <Body tab={tab} standing={standing} scroller={scroller} onScreen={shown} focused={focused} />
+      {/* The layer's own overview and its stack's swap in place. */}
+      <Swap id={subject} className="h-full">
+        <Body
+          tab={tab}
+          subject={subject}
+          standing={standing}
+          scroller={scroller}
+          onScreen={shown}
+          focused={focused}
+        />
+      </Swap>
     </div>
   );
 }

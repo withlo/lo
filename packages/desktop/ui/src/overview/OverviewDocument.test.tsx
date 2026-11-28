@@ -415,6 +415,37 @@ describe('blocks', () => {
     expect(isStop(tree.blocks[1]!)).toBe(false);
   });
 
+  it('heads its outline with the label it’s given, and draws the blocks it’s given in their place, each a stop', () => {
+    const tree = overview('## How it works\n\nPlain words.\n');
+    const [, , heading, words] = tree.blocks;
+    if (!heading || !words) throw new Error('No blocks.');
+    const page = render(
+      <OverviewDocument
+        tree={tree}
+        label="Stack overview"
+        own={new Map([[words, <ul key="list">Drawn here</ul>]])}
+      />,
+    );
+    expect(page.querySelector('.lo-toc__label')?.textContent).toBe('Stack overview');
+    const drawn = page.querySelector('[data-lo-block="3"]');
+    expect(drawn?.textContent).toBe('Drawn here');
+    expect(drawn?.className).toBe('lo-block lo-block--prose');
+    expect(drawn?.getAttribute('tabindex')).toBe('-1');
+    expect(page.textContent).not.toContain('Plain words.');
+    // Focused, it has its ring, and the chip its hints say.
+    rerender(
+      page,
+      <OverviewDocument
+        tree={tree}
+        own={new Map([[words, <ul key="list">Drawn here</ul>]])}
+        focused={3}
+        hints={() => []}
+      />,
+    );
+    expect(page.querySelector('[data-lo-block="3"]')?.classList.contains('is-focused')).toBe(true);
+    expect(page.querySelector('.lo-toc__label')?.textContent).toBe('Overview');
+  });
+
   it('stops at the glossary, whose rows’ terms Tab goes between', () => {
     const plain = overview(
       'Uses [a cache](term:cache).\n\n## Glossary\n\n- **Cache**: kept in memory.\n',

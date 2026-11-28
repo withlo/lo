@@ -8,7 +8,12 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { buildCss, hasRule } from '../scripts/stylesheet.ts';
 import { cleanUp, click, render, rerender, tipOf } from '../test/dom.ts';
-import { StackTree, type StackTreeLayer, type StackTreeProps } from './StackTree.tsx';
+import {
+  STACK_OVERVIEW_KEY,
+  StackTree,
+  type StackTreeLayer,
+  type StackTreeProps,
+} from './StackTree.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -949,6 +954,71 @@ describe('StackTree', () => {
     });
   });
 
+  describe('the stack overview’s row', () => {
+    it('comes first, above the base branch, only while the stack has one', () => {
+      const host = render(<StackTree {...props({ current: 'b' })} />);
+      expect(rows(host).has(STACK_OVERVIEW_KEY)).toBe(false);
+      rerender(host, <StackTree {...props({ current: 'b', overview: { shown: false } })} />);
+      const items = [...host.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+      expect(items[0]?.dataset['key']).toBe(STACK_OVERVIEW_KEY);
+      expect(said(row(host, STACK_OVERVIEW_KEY))).toBe('Stack overview');
+      const root = host.querySelector('[role="presentation"]');
+      if (!root) throw new Error('no base branch row');
+      expect(
+        row(host, STACK_OVERVIEW_KEY).compareDocumentPosition(root) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      // At rest, the layer on screen is current.
+      expect(row(host, STACK_OVERVIEW_KEY).getAttribute('aria-current')).toBeNull();
+      expect(row(host, 'b').getAttribute('aria-current')).toBe('true');
+    });
+
+    it('is current while it’s on screen, and the layer in the header keeps only its ball', () => {
+      const host = render(<StackTree {...props({ current: 'b', overview: { shown: true } })} />);
+      const own = row(host, STACK_OVERVIEW_KEY);
+      expect(own.getAttribute('aria-current')).toBe('true');
+      expect(own.className).toContain('bg-on-screen');
+      expect(own.querySelector('.text-accent')).not.toBeNull();
+      expect(own.querySelector('.text-ui-strong')?.textContent).toBe('Stack overview');
+      const layer = row(host, 'b');
+      expect(layer.getAttribute('aria-current')).toBeNull();
+      expect(layer.className).not.toContain('bg-on-screen');
+      expect(layer.querySelector('.stack-ball-current')).not.toBeNull();
+    });
+
+    it('is the keyboard’s when focused names it, and a click on it asks to show it', () => {
+      const onShow = vi.fn<(key: string) => void>();
+      const host = render(
+        <StackTree
+          {...props({ current: 'b', focused: STACK_OVERVIEW_KEY, overview: { shown: false } })}
+          onShow={onShow}
+        />,
+      );
+      const own = row(host, STACK_OVERVIEW_KEY);
+      expect(tree(host).getAttribute('aria-activedescendant')).toBe(own.id);
+      expect(own.dataset['focused']).toBe('');
+      click(own);
+      expect(onShow).toHaveBeenCalledWith(STACK_OVERVIEW_KEY);
+    });
+
+    it('cuts its words short in a narrow panel, whole in a tooltip', () => {
+      const host = render(<StackTree {...props({ overview: { shown: false } })} />);
+      const words = row(host, STACK_OVERVIEW_KEY).querySelector('.truncate');
+      if (!words) throw new Error('No words.');
+      expect(tipOf(words, { cut: true })).toBe('Stack overview');
+    });
+
+    it('brings what’s above the first layer into view with it', () => {
+      const { host, scroller } = setup({ overview: { shown: false }, focused: 'c' });
+      scroller.scrollTop = 120;
+      rerender(
+        host,
+        <StackTree {...props({ overview: { shown: false }, focused: STACK_OVERVIEW_KEY })} />,
+      );
+      expect(scroller.scrollTop).toBe(0);
+    });
+  });
+
   it('only uses utilities that Lo’s stylesheet has, so nothing is silently dropped', async () => {
     const everything: StackTreeLayer[] = [
       ...LAYERS.map((layer, at) =>
@@ -978,9 +1048,12 @@ describe('StackTree', () => {
       />,
     );
     const open = render(<StackTree {...props({ current: 'c', focused: 'd' })} />);
+    const stacked = render(
+      <StackTree {...props({ current: 'c', focused: 'overview', overview: { shown: true } })} />,
+    );
     const classes = [
       ...new Set(
-        [host, open].flatMap((each) =>
+        [host, open, stacked].flatMap((each) =>
           [...each.querySelectorAll('[class]')].flatMap(
             (element) => element.getAttribute('class')?.split(/\s+/) ?? [],
           ),

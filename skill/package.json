@@ -7,12 +7,14 @@
   "type": "module",
   "exports": {
     "./SKILL.md": "./SKILL.md",
+    "./explain.md": "./explain.md",
+    "./hook.mjs": "./hook.mjs",
     "./LICENSE": "./LICENSE",
     "./references/*": "./references/*"
   },
   "scripts": {
     "codegen": "node scripts/references.mjs",
-    "lint": "oxlint scripts"
+    "lint": "oxlint scripts hook.mjs"
   },
   "nx": {
     "name": "skill",

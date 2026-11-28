@@ -8,6 +8,15 @@ import { definitionsOf, glossaryOf, type Definitions, type Subject } from './def
 import { standingOf, type Standing } from './facts.ts';
 import { ignoredKeys, ignoring, useIgnoredKeys } from './ignored.ts';
 import { repoOf } from './sections.ts';
+import {
+  stackChecked,
+  stackStandingOf,
+  stackStates,
+  subjectNow,
+  subjects,
+  withLayersShown,
+  type Showing,
+} from './stack.ts';
 import { checked, states } from './store.ts';
 import { terms, type RepoTerms } from './terms.ts';
 
@@ -16,6 +25,23 @@ export function useStanding(tab: string): Standing {
   const state = useTabState(states, tab);
   const result = useTabState(checked, tab);
   return useMemo(() => standingOf(state, result), [state, result]);
+}
+
+/**
+ * What the overview of the stack tab `tab`'s layer is in is now, as {@link useStanding} says, with
+ * its Layers section in its tree once it shows.
+ */
+export function useStackStanding(tab: string): Standing {
+  const state = useTabState(stackStates, tab);
+  const result = useTabState(stackChecked, tab);
+  return useMemo(() => withLayersShown(standingOf(state, result)), [state, result]);
+}
+
+/** What tab `tab`'s Overview shows: its stack's overview only while the stack has one. */
+export function useSubject(tab: string): Showing {
+  const subject = useTabState(subjects, tab);
+  const present = useTabState(stackStates, tab, (state) => (state?.overview ?? null) !== null);
+  return subject === 'stack' && present ? 'stack' : 'pull';
 }
 
 /** Tab `tab`'s repository's definitions, as far as the window knows. */
@@ -28,8 +54,10 @@ export function useTerms(tab: string): RepoTerms {
  * what a changed one replaces, and whether the reader ignores it in the tab's repo. None until the
  * overview shows. Until GitHub has said what state the pull request is in, it's taken as open.
  */
-export function useDefinitions(tab: PullTab): Definitions | undefined {
-  const standing = useStanding(tab.id);
+export function useDefinitions(tab: PullTab, showing: Showing = 'pull'): Definitions | undefined {
+  const own = useStanding(tab.id);
+  const stack = useStackStanding(tab.id);
+  const standing = showing === 'stack' ? stack : own;
   const read = useTerms(tab.id);
   const state = usePull(tab.id)?.header?.state ?? 'open';
   const ignored = useIgnoredKeys(repoOf(tab));
@@ -43,9 +71,15 @@ export function useDefinitions(tab: PullTab): Definitions | undefined {
   }, [blocks, entries, pr, state, read, ignored]);
 }
 
-/** As {@link useDefinitions}, read once: what a command on one of its terms acts on. */
+/**
+ * As {@link useDefinitions}, read once, for the overview tab `tab`'s Overview shows now, its own or
+ * its stack's: what a command on one of its terms acts on.
+ */
 export function definitionsNow(tab: PullTab): Definitions | undefined {
-  const standing = standingOf(states.get(tab.id), checked.get(tab.id));
+  const standing =
+    subjectNow(tab.id) === 'stack'
+      ? withLayersShown(stackStandingOf(tab.id))
+      : standingOf(states.get(tab.id), checked.get(tab.id));
   if (standing.kind !== 'shown') return undefined;
   const state = pullOf(tab.id)?.header?.state ?? 'open';
   const ignored = ignoredKeys(ignoring.shownNow(), repoOf(tab));

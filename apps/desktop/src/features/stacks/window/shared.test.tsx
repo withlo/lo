@@ -28,6 +28,7 @@ const TAB: PullTab = {
 const OFFERED: StackView = {
   kind: 'stack',
   root: 'stack/root',
+  start: null,
   githubStack: false,
   rows: [],
   notes: [],

@@ -12,6 +12,7 @@
 import {
   Countdown,
   EmptyState,
+  keepEnd,
   Label,
   Problem,
   Swap,
@@ -494,6 +495,9 @@ function Rows({
   const edits = useEditsOnPull(tab.id);
   useHolding(tab.id, shown, root, rows);
   useKeptRow(tab.id, rows, landed, list);
+  // What its end loses on screen, as the box there shrinks, sends or closes, stays as room there,
+  // which goes as the reader scrolls it off screen.
+  useLayoutEffect(() => (root.current ? keepEnd(root.current) : undefined), []);
   const { owner, repo, number } = tab;
   const pull = useMemo<PostPull>(() => ({ owner, repo, number }), [owner, repo, number]);
   const drawn = useMemo(() => ({ tab, rows, list: () => list.current }), [tab, rows]);
@@ -552,7 +556,7 @@ function Rows({
   return (
     <div
       ref={root}
-      className="h-full overflow-y-auto gutter-stable"
+      className="relative h-full overflow-y-auto gutter-stable"
       data-lo-scope="timeline"
       {...menu}
     >

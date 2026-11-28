@@ -366,6 +366,17 @@ export type FileSinceText =
   | { kind: 'waiting' }
   | { kind: 'unread'; why: CodeCause };
 
+/** The most layers one `layerOverviews` or `layerLines` asks about: as many as a stack's tree reads. */
+export const LAYERS_LIMIT = 100;
+
+/**
+ * A layer's own overview, as `layerOverviews` replies: `artifact.md` at the commit its ref holds,
+ * whole; none, where the ref holds no commit; or unread, where Lo couldn't read it now, or it's past
+ * what Lo reads of an overview.
+ */
+export type LayerOverview =
+  { kind: 'read'; commit: string; artifact: Uint8Array } | { kind: 'none' } | { kind: 'unread' };
+
 /** A coding agent that Lo installs the overview skill for. */
 export const agent = z.enum(['claude', 'codex']);
 export type Agent = z.output<typeof agent>;
@@ -439,6 +450,12 @@ const bySubject = z.strictObject({ id: tabId, stack: z.boolean().optional() });
 /** The most a stack's id may be: GitHub's numbers for pull requests and stacks fit in 31 bits. */
 export const STACK_LIMIT = 2 ** 31 - 1;
 
+/** Layers of the stack a pull request's tab shows, by their numbers. */
+const byLayers = z.strictObject({
+  id: tabId,
+  layers: z.array(z.number().int().positive().max(STACK_LIMIT)).min(1).max(LAYERS_LIMIT),
+});
+
 export const contract = defineContract('overview', {
   requests: {
     /** What main has of a pull request's tab's overview now, which `state` then keeps up to date. */
@@ -459,11 +476,13 @@ export const contract = defineContract('overview', {
     /**
      * The code an overview names at `commit`, the commit its header names, from the pull
      * request's local copy, read as the overview's checks read it: `files` in the order the
-     * overview first names each, with whether it names its lines. In the order asked.
+     * overview first names each, with whether it names its lines. In the order asked. The stack's
+     * overview's, with `stack`, which is read on its own, beside the pull request's.
      */
     code: {
       input: z.strictObject({
         id: tabId,
+        stack: z.boolean().optional(),
         commit: oid,
         files: z
           .array(z.strictObject({ path: z.string().min(1).max(PATH_LIMIT), lines: z.boolean() }))
@@ -475,11 +494,15 @@ export const contract = defineContract('overview', {
      * The text of the file at `path` at `commit`, the commit the overview's header names, from the
      * pull request's local copy, for a block to show it; and with `base`, the file where the
      * commit branched off the base branch, for its diff. Each is read whole, up to the most of a
-     * file the overview's checks read.
+     * file the overview's checks read. The stack's overview's, with `stack`, whose diff starts
+     * where the commit branched off `from`, where the stack's bottom layer's changes start, which
+     * the local copy fetches when it doesn't have it.
      */
     texts: {
       input: z.strictObject({
         id: tabId,
+        stack: z.boolean().optional(),
+        from: oid.optional(),
         commit: oid,
         path: z.string().min(1).max(PATH_LIMIT),
         base: z.boolean(),
@@ -532,6 +555,17 @@ export const contract = defineContract('overview', {
     },
     /** What main has of the overview of the stack a tab follows now, which `stackState` keeps. */
     currentStack: { input: byId, reply: reply<OverviewState | undefined>() },
+    /**
+     * The overviews of `layers`, layers of the tab's stack, in that order: for the stack's
+     * overview each names and its tl;dr. Read in the tab's repository, whose own pull requests
+     * alone are its stack's layers, behind what the reader waits on.
+     */
+    layerOverviews: { input: byLayers, reply: reply<LayerOverview[]>() },
+    /**
+     * The first line of the descriptions of `layers`, layers of the tab's stack, in that order, as
+     * text on one line: none for one with no words, or one Lo couldn't read now.
+     */
+    layerLines: { input: byLayers, reply: reply<(string | null)[]>() },
     /**
      * What main has of a pull request's tab's repository's definitions now, which `store` then
      * keeps up to date.

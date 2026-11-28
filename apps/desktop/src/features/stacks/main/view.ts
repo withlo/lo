@@ -17,10 +17,12 @@ import {
 import {
   chain,
   layerOf,
+  layerStart,
   planConversion,
   stackOf,
   type Cycle,
   type Layer,
+  type PullRequest,
   type Stack,
   type Stacks,
 } from '@lo/stacks';
@@ -37,6 +39,8 @@ export interface ViewInput {
   readonly repository: string;
   /** Its repository's stacks, or nothing until they're known. */
   readonly forest: Stacks | undefined;
+  /** The pull requests the stacks were found among, for where the stack's changes start. */
+  readonly prs?: readonly PullRequest[] | undefined;
   /** The open pull requests the stacks were found among. */
   readonly list: OpenPullRequestList | undefined;
   /** The layers' state, as last read for the tab, if it was. */
@@ -208,6 +212,7 @@ function drawn(
     view: {
       kind: 'stack',
       root: stack.root,
+      start: startOf(forest, input.prs, bottom),
       githubStack: oneGithubStack(layers),
       rows: placed.map(({ row }) => row),
       notes: [...githubNotes(layers), ...notesOf(input, forest, list, stack)],
@@ -219,6 +224,20 @@ function drawn(
     shown: { rows: placed },
     ids: placed.map(({ id }) => id).filter((id) => id !== ''),
   };
+}
+
+/**
+ * Where the stack whose bottom layer is `bottom` starts: where that layer's own changes do, its base
+ * branch's tip or the commit it carries from below, as a run of layers from it starts. None while
+ * that isn't known.
+ */
+function startOf(
+  forest: Stacks,
+  prs: readonly PullRequest[] | undefined,
+  bottom: number,
+): string | null {
+  const start = prs && layerStart(forest, prs, bottom);
+  return (start?.kind === 'baseBranch' ? start.tip : start?.commit) ?? null;
 }
 
 /** A layer's review, checks and place in the merge queue, from its state as read. */

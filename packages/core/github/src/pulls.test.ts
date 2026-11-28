@@ -4,7 +4,14 @@ import { expect, test } from 'vitest';
 import { GithubClient } from './client.ts';
 import { GithubError } from './errors.ts';
 import { unchecked } from './json.ts';
-import { fetchPublicPull, fetchPullAs, readPullToOpen, type PullToOpen } from './pulls.ts';
+import {
+  fetchPublicPull,
+  fetchPullAs,
+  pullBody,
+  readPullBody,
+  readPullToOpen,
+  type PullToOpen,
+} from './pulls.ts';
 import { PullRef } from './refs.ts';
 import { Token } from './token.ts';
 
@@ -202,4 +209,29 @@ test('refuses a clone url off github', () => {
 test('an unexpected body is an error', async () => {
   const error = await failure(fetchAnonymously(canned(200, '<html>')));
   expect(error.message).toContain("reading GitHub's answer");
+});
+
+test('reads a description, and again with its ETag for free, saying only that it’s unchanged', async () => {
+  expect(readPullBody(JSON.parse(FD_2212))).toBe('');
+  expect(readPullBody({ ...JSON.parse(FD_2212), body: 'Fixes #1822.\n\nMore.' })).toBe(
+    'Fixes #1822.\n\nMore.',
+  );
+  const etag = 'W/"body"';
+  const seen: (string | null)[] = [];
+  const client = new GithubClient({
+    token: new Token('gho_FAKE'),
+    fetch: async (input, init) => {
+      const request = new Request(input, init);
+      seen.push(request.headers.get('if-none-match'));
+      if (request.headers.get('if-none-match') === etag) {
+        return new Response(null, { status: 304, headers: { etag } });
+      }
+      return Response.json({ ...JSON.parse(FD_2212), body: 'Honors it.' }, { headers: { etag } });
+    },
+  });
+  const first = await pullBody(client, PULL, undefined);
+  expect(first).toEqual({ body: 'Honors it.', etag });
+  // Unchanged: none, for the caller to keep what it has.
+  expect(await pullBody(client, PULL, etag)).toBeUndefined();
+  expect(seen).toEqual([null, etag]);
 });

@@ -84,6 +84,7 @@ it('dismisses an offer for the stack or layer on screen, only while it’s offer
   stacks.set(TAB.id, {
     kind: 'stack',
     root: 'main',
+    start: null,
     githubStack: false,
     rows: [],
     notes: [],
@@ -107,6 +108,7 @@ it('lists the offer of a GitHub stack’s dismissal in its menu while it’s off
   const stack: StackView = {
     kind: 'stack',
     root: 'main',
+    start: null,
     githubStack: false,
     rows: [],
     notes: [],
@@ -127,6 +129,7 @@ it('dismisses an offer in the tab its menu was opened in, though another is on s
   stacks.set(TAB.id, {
     kind: 'stack',
     root: 'main',
+    start: null,
     githubStack: false,
     rows: [],
     notes: [],

@@ -176,17 +176,25 @@ export interface OverviewRefNumbers {
  * holds a tag, a tree or a blob holds no overview.
  */
 export function readOverviewRefNumbers(json: unknown): number[] {
+  return [...readOverviewRefCommits(json).keys()].toSorted((a, b) => a - b);
+}
+
+/**
+ * GitHub's list of the refs under `refs/lo/pr/`, read as {@link readOverviewRefNumbers} reads it:
+ * the commit each of those pull requests' overview's ref holds, by its number.
+ */
+export function readOverviewRefCommits(json: unknown): Map<number, string> {
   if (!Array.isArray(json)) throw unexpected("the refs aren't a list");
-  const numbers = new Set<number>();
+  const commits = new Map<number, string>();
   for (const [index, item] of json.entries()) {
     const ref = new Fields(item, `refs[${index}]`);
     const number = overviewNumber(ref.text('ref'));
     if (number === undefined) continue;
     const object = ref.fields('object');
-    objectId(object.text('sha'));
-    if (object.text('type') === 'commit') numbers.add(number);
+    const sha = objectId(object.text('sha'));
+    if (object.text('type') === 'commit') commits.set(number, sha);
   }
-  return [...numbers].toSorted((a, b) => a - b);
+  return commits;
 }
 
 /** The pull request whose overview's ref is `ref`, if it's exactly one's. */
@@ -222,6 +230,40 @@ export async function overviewRefNumbers(
     return structuredClone(known);
   }
   return { numbers: response.json(readOverviewRefNumbers), etag: response.etag };
+}
+
+/** The commit each overview's ref in a repository holds. */
+export interface OverviewRefCommits {
+  /** The commits, by the number of the pull request whose overview each is. */
+  commits: Map<number, string>;
+  /** The answer's ETag, which the next read sends. */
+  etag: string | undefined;
+}
+
+/**
+ * The commit each overview's ref in `repo` holds, from one read of every overview's ref there, as
+ * {@link overviewRefNumbers} reads them, sending the ETag of `known`, the list read before: an
+ * unchanged answer is `known` again, for free.
+ */
+export async function overviewRefCommits(
+  client: GithubClient,
+  repo: RepoRef,
+  known: OverviewRefCommits | undefined,
+): Promise<OverviewRefCommits> {
+  const etag = known?.etag;
+  const response = await client.send('GET', repoOverviewRefsPath(repo), {
+    condition: etag === undefined ? undefined : { ifNoneMatch: etag },
+  });
+  if (response.status === 304) {
+    if (known?.etag === undefined) {
+      throw new GithubError({
+        kind: 'inconsistent',
+        message: `GitHub said ${repo.toString()}'s overviews hadn't changed, but Lo never read them`,
+      });
+    }
+    return { commits: new Map(known.commits), etag: known.etag };
+  }
+  return { commits: response.json(readOverviewRefCommits), etag: response.etag };
 }
 
 /** A commit, as an overview's byline and its files need it. */

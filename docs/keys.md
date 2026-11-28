@@ -36,6 +36,7 @@ menu: Go, Review, Comments, Code, View, Merge, Tabs and App. Each command's ID i
 | Go to view             | `Esc`             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                  | `keys.escape`            |
 | Back                   | `⌃o`              | Anywhere but `box`                                                                                      | `keys.back`              |
 | Forward                | `⌃i`              | Anywhere but `box`                                                                                      | `keys.forward`           |
+| Stack overview         | `g s`             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                  | `overview.showStack`     |
 | Next block             | `] b`             | In `overview`                                                                                           | `overview.nextBlock`     |
 | Previous block         | `[ b`             | In `overview`                                                                                           | `overview.previousBlock` |
 | Go to code             | `⏎`               | In `overview`                                                                                           | `overview.follow`        |
