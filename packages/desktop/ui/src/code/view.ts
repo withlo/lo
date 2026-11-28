@@ -840,9 +840,9 @@ class View implements DiffView {
     // listener tells the view of a key before the view hears the key itself, so it looks after.
     this.dom.addEventListener(KEY_EVENT, this.#keyHidesAdd, { passive: true, capture: true });
     const win = this.dom.ownerDocument.defaultView;
-    win?.addEventListener('keydown', this.#noteLone, { capture: true });
+    win?.addEventListener('keydown', this.#hearKey, { capture: true });
     this.#stops.push(() => {
-      win?.removeEventListener('keydown', this.#noteLone, { capture: true });
+      win?.removeEventListener('keydown', this.#hearKey, { capture: true });
       clearTimeout(this.#keyWait);
     });
     this.#stops.push(tips(this.dom, (control) => this.#tipOf(control)));
@@ -4593,20 +4593,22 @@ class View implements DiffView {
     add.hidden = false;
   }
 
-  /** Whether the key last pressed was a modifier alone, and the wait to see. */
-  #lone = false;
+  /** The key the window last heard pressed, and the wait to see whether it was a modifier alone. */
+  #lastKey = '';
   #keyWait: ReturnType<typeof setTimeout> | undefined;
 
-  readonly #noteLone = (event: KeyboardEvent): void => {
-    if (MODIFIERS.has(event.key)) this.#lone = true;
+  readonly #hearKey = (event: KeyboardEvent): void => {
+    this.#lastKey = event.key;
   };
 
-  /** The reader's key: the `+` goes, unless it was a modifier alone, once that's known. */
+  /**
+   * The reader's key: the `+` goes, unless it was a modifier alone, once the window has heard which
+   * key it was, whichever of the two hears it first.
+   */
   readonly #keyHidesAdd = (): void => {
-    this.#lone = false;
     clearTimeout(this.#keyWait);
     this.#keyWait = setTimeout(() => {
-      if (!this.#lone) this.#hideAdd();
+      if (!MODIFIERS.has(this.#lastKey)) this.#hideAdd();
     }, 0);
   };
 
