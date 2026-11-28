@@ -22,7 +22,16 @@ import { notify, refuse } from '../../../window/commands/notices.tsx';
 import { diffOnScreen, goToThread, writingDiff } from '../../diff/window/shared.ts';
 import { writingBlockAsked } from '../../overview/window/shared.ts';
 import { activeTab, showTabOf, tabState, type PullTab } from '../../tab/window/shared.ts';
-import type { ActRefusal, ActRow, ActsView, DraftPlaceRow, ThreadRow } from '../contract.ts';
+import {
+  type ActOutcome,
+  type ActRefusal,
+  type ActRow,
+  type ActsView,
+  type DraftPlaceRow,
+  refusedAtOnce,
+  type ThreadRow,
+} from '../contract.ts';
+import { Answers, type Asked } from './answers.ts';
 import {
   canWrite,
   claimBriefly,
@@ -182,6 +191,7 @@ export function settleActs(view: string): void {
 
 /** Forgets the changes of every view but those in `kept`, as their tabs close. */
 export function keepActsOf(kept: ReadonlySet<string>): void {
+  for (const view of answers.keys()) if (!kept.has(view)) answers.delete(view);
   for (const [view, waits] of settling) {
     if (kept.has(view)) continue;
     for (const timer of waits.values()) clearTimeout(timer);
@@ -192,10 +202,53 @@ export function keepActsOf(kept: ReadonlySet<string>): void {
 
 /**
  * A change of view `view`'s ended with nothing done, as one GitHub refused: its card goes back at
- * once, with nothing to wait for.
+ * once, with nothing to wait for, however main's acts last said it stood.
  */
 function endAct(view: string, key: string): void {
-  settled(view, key, false);
+  endWait(view, key);
+  forget(view, key);
+  const row = acting.get(view).get(key);
+  if (!row) return;
+  const diff = writingDiff(view);
+  if (diff && row.thread !== null) claimBriefly(diff, row.thread);
+  acting.update(view, (was) => new Map([...was].filter(([each]) => each !== key)));
+}
+
+/**
+ * What main's acts say of each view's changes asked from here, by {@link actKey}, against main's
+ * answers: main says a change is on its way, then that it isn't, before it answers, but what it
+ * says can come after the answer.
+ */
+const answers = new Map<string, Answers>();
+
+/** What main's acts say of view `view`'s changes asked from here. */
+function answersOf(view: string): Answers {
+  let own = answers.get(view);
+  if (!own) {
+    own = new Answers();
+    answers.set(view, own);
+  }
+  return own;
+}
+
+/** Whether `row` says a change is on its way, as main's acts do of one until it answers. */
+function onItsWay(row: ActRow | undefined): boolean {
+  return row?.stands === 'waiting' || row?.stands === 'sending';
+}
+
+/**
+ * Main answered the change asked of view `view`'s thread, or of its comment on the pull request
+ * itself (`onPull`), `key`, as `outcome` says. Refused once on its way, the card goes back at once,
+ * and what main's acts said of it on its way, still to come, changes nothing: it would show the
+ * change at work, then done. So for a delete on the pull request done, which its answer says, and
+ * the timeline shows. A change to a thread GitHub took shows on its card as main's acts go on to
+ * say, until its threads show it, however late they come.
+ */
+function answered(view: string, asked: Asked, outcome: ActOutcome, onPull: boolean): void {
+  const turnedDown = outcome.kind === 'refused' && !refusedAtOnce(outcome.refusal);
+  const done = outcome.kind === 'done' && onPull;
+  answersOf(view).answered(asked, turnedDown || done);
+  if (turnedDown || done) endAct(view, asked.key);
 }
 
 /**
@@ -207,8 +260,17 @@ function endAct(view: string, key: string): void {
 export function takeActs(view: ActsView): void {
   const was = acting.get(view.id);
   const now = new Map(view.acts.map((row) => [actKey(row), row]));
+  // What main sent before its answer to a change asked here, coming after it, changes nothing of
+  // the change, until what main sent with its answer comes.
+  const older = answers.get(view.id)?.take((key) => onItsWay(now.get(key))) ?? new Set();
+  for (const key of older) {
+    const kept = was.get(key);
+    if (kept) now.set(key, kept);
+    else now.delete(key);
+  }
   const waits = settling.get(view.id);
   for (const [key, before] of was) {
+    if (older.has(key)) continue;
     const timer = waits?.get(key);
     if (now.has(key)) {
       // Asked again: it's main's to say how it stands.
@@ -222,7 +284,9 @@ export function takeActs(view: ActsView): void {
     }
     if (!underWay(before)) continue;
     if (shows(view.id, before)) {
-      tell(DID[before.change]);
+      // A delete on the pull request itself that main answered says it went as its answer comes.
+      // One whose answer was lost, that a look found went, says so here.
+      if (before.thread !== null || before.stands === 'checking') tell(DID[before.change]);
       continue;
     }
     now.set(key, before);
@@ -713,14 +777,18 @@ export async function resolveThread(tab: PullTab, row: ThreadRow): Promise<void>
   }
   unfailed(view, row.id);
   const release = writingDiff(view)?.claimThread(row.id) ?? (() => {});
+  const ask = answersOf(view).ask(row.id);
+  let answeredYet = false;
   try {
     const outcome = await main().resolve({ id: view, thread: row.id, resolved });
+    answeredYet = true;
+    answered(view, ask, outcome, false);
     if (outcome.kind === 'refused') {
       release();
-      endAct(view, row.id);
       refused(view, outcome.refusal, doing);
     }
   } catch (error) {
+    if (!answeredYet) answersOf(view).answered(ask, false);
     release();
     endAct(view, row.id);
     failed(view, row.id, NOT_DONE[doing], error, () => {
@@ -928,9 +996,12 @@ export async function confirmDelete(): Promise<void> {
     refuse(away);
     return;
   }
-  unfailed(tab.id, thread ?? comment);
+  const key = thread ?? comment;
+  unfailed(tab.id, key);
   const release =
     thread === null ? () => {} : (writingDiff(tab.id)?.claimThread(thread) ?? (() => {}));
+  const ask = answersOf(tab.id).ask(key);
+  let answeredYet = false;
   try {
     const outcome = await main().remove({
       id: tab.id,
@@ -938,16 +1009,19 @@ export async function confirmDelete(): Promise<void> {
       comment,
       asked: { body, pending, onlyComment },
     });
+    answeredYet = true;
+    answered(tab.id, ask, outcome, thread === null);
     if (outcome.kind === 'refused') {
       release();
-      endAct(tab.id, thread ?? comment);
       refused(tab.id, outcome.refusal, 'delete');
     } else if (outcome.kind === 'done' && thread === null) {
+      tell(DID.delete);
       wrotePull(tab.id, { kind: 'deleted', comment });
     }
   } catch (error) {
+    if (!answeredYet) answersOf(tab.id).answered(ask, false);
     release();
-    endAct(tab.id, thread ?? comment);
+    endAct(tab.id, key);
     // Asked again, it asks first again.
     failed(tab.id, thread ?? comment, NOT_DONE.delete, error, () => {
       if (thread !== null) remove(tab, { kind: 'thread', thread }, comment);
