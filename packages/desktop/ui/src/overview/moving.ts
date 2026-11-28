@@ -1,16 +1,55 @@
 // Moving through an overview's article by its blocks: which of them the block keys stop at, what
 // takes focus for one, the links and controls inside one that `Tab` goes between, and stepping a
 // walkthrough or a set of tabs inside one. The article draws each block that holds something to act
-// on with its number, Lo's own (`data-lo-block`), which is all a block is known by elsewhere.
+// on with its number, Lo's own (`data-lo-block`), which is all a block is known by elsewhere. A
+// section that folds holds its blocks in a body of its own, which they're read through, in order;
+// a collapsed one's heading is a block the keys stop at, and nothing under it is drawn.
 
 /** The attribute that holds a block's number among the article's blocks. */
 export const BLOCK_ATTRIBUTE = 'data-lo-block';
 
+/** The class of a section's heading, which folds it (`SectionHead`). */
+export const SECTION_HEAD_CLASS = 'lo-section-head';
+
+/** The class of what's under a section's heading while it's drawn: the box that opens and closes. */
+export const SECTION_CLASS = 'lo-section';
+
+/** The class of a section's body, inside that box, which holds the section's blocks. */
+export const SECTION_BODY_CLASS = 'lo-section__body';
+
+/**
+ * The article's blocks, as they're read, first to last: its own children, and in place of a
+ * section's box, the blocks in its body. A section that's closing has none: they're leaving.
+ */
+export function articleBlocks(article: Element): Element[] {
+  const found: Element[] = [];
+  for (const child of article.children) {
+    if (!child.classList.contains(SECTION_CLASS)) {
+      found.push(child);
+      continue;
+    }
+    if (child.hasAttribute('data-closed')) continue;
+    const body = child.querySelector(`:scope > * > .${SECTION_BODY_CLASS}`);
+    if (body) found.push(...body.children);
+  }
+  return found;
+}
+
 /** The blocks of `article` the block keys stop at, in the order they're written. */
 export function blockStops(article: Element): HTMLElement[] {
-  return [...article.children].filter(
+  return articleBlocks(article).filter(
     (child): child is HTMLElement =>
       child instanceof HTMLElement && child.hasAttribute(BLOCK_ATTRIBUTE),
+  );
+}
+
+/** Whether `parent`, in `article`, holds blocks: the article itself, or a section's body. */
+function holdsBlocks(article: Element, parent: Element | null): boolean {
+  return (
+    parent === article ||
+    (parent !== null &&
+      parent.classList.contains(SECTION_BODY_CLASS) &&
+      parent.parentElement?.parentElement?.parentElement === article)
   );
 }
 
@@ -18,7 +57,7 @@ export function blockStops(article: Element): HTMLElement[] {
 export function blockOf(article: Element, element: Element | null): HTMLElement | undefined {
   for (let at = element; at && at !== article; at = at.parentElement) {
     if (
-      at.parentElement === article &&
+      holdsBlocks(article, at.parentElement) &&
       at instanceof HTMLElement &&
       at.hasAttribute(BLOCK_ATTRIBUTE)
     ) {
@@ -28,6 +67,15 @@ export function blockOf(article: Element, element: Element | null): HTMLElement 
   return undefined;
 }
 
+/**
+ * The heading of a section that folds, which `element` is or is in, as the article draws it: the
+ * box around its chevron, its words and its `⋯`.
+ */
+export function sectionHeadOf(element: Element | null): HTMLElement | undefined {
+  const head = element?.closest(`.${SECTION_HEAD_CLASS}`);
+  return head instanceof HTMLElement ? head : undefined;
+}
+
 /** A block's number among the article's blocks. */
 export function blockNumber(block: Element): number | undefined {
   const value = block.getAttribute(BLOCK_ATTRIBUTE);
@@ -35,11 +83,19 @@ export function blockNumber(block: Element): number | undefined {
   return Number(value);
 }
 
-/** What takes focus for `block`: a fold's title, which opens and closes it, or the block itself. */
+/**
+ * What takes focus for `block`: a fold's title, which opens and closes it; a collapsed section's
+ * heading, which keeps focus as the section opens and its heading stops being a block; or the block
+ * itself.
+ */
 export function focusTargetOf(block: HTMLElement): HTMLElement {
   if (block.localName === 'details') {
     const title = [...block.children].find((child) => child.localName === 'summary');
     if (title instanceof HTMLElement) return title;
+  }
+  if (block.classList.contains(SECTION_HEAD_CLASS)) {
+    const heading = [...block.children].find((child) => child.localName === 'h2');
+    if (heading instanceof HTMLElement) return heading;
   }
   return block;
 }

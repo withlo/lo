@@ -16,12 +16,13 @@ import type {
   Overview,
   Walkthrough as WalkthroughNode,
 } from '@lo/artifact';
-import { ago, Button, HintButton } from '@lo/ui';
+import { ago, Button, HintButton, swapIn } from '@lo/ui';
 import { Figure, type PartLink } from '@lo/ui/figures';
 import { generationOf, MarkdownBlocks, secureLink, useRendering } from '@lo/ui/markdown';
 import {
   Held,
   OverviewDocument,
+  OverviewSkeleton,
   blockHints,
   useNearness,
   type OverviewTarget,
@@ -40,7 +41,13 @@ import {
 
 import { followLink } from '../../open/window/shared.ts';
 import { afterHold } from '../../revisions/window/shared.ts';
-import { MiddlePlaceholder, usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
+import {
+  MiddlePlaceholder,
+  usePull,
+  useTabState,
+  waitShown,
+  type PullTab,
+} from '../../tab/window/shared.ts';
 import type { OverviewCommit, OverviewFile } from '../contract.ts';
 import { targetsOf } from './targets.ts';
 import { blockId, codeAt } from './blocks.ts';
@@ -52,6 +59,7 @@ import { DefinitionsLine, useOverviewTerms } from './Glossary.tsx';
 import { useDefinitions, useNow } from './hooks.ts';
 import { openings } from './opening.ts';
 import { OutOfDateBanner } from './OutOfDate.tsx';
+import { useFolds } from './sections.ts';
 import { AuthorPicture, WhoWrote } from './Author.tsx';
 import { authorOf, copyLabel, linesOf, shortId } from './says.ts';
 import { labelOf, staleAgainst } from './stale.ts';
@@ -399,7 +407,8 @@ export function Shown({
     [tabId],
   );
   // Seen once the code blocks near the screen have drawn, with the local copy if it's coming, or at
-  // the bound, counted from when the tab opened and never again; until then, the tab's placeholder.
+  // the bound, counted from when the tab opened and never again; until then, the tab's placeholder,
+  // as the overview's skeleton.
   const [drawing, setDrawing] = useState(true);
   const [first] = useState(() => firstDraw(() => setDrawing(false)));
   const copy = useRef<(() => void) | undefined>(undefined);
@@ -430,9 +439,19 @@ export function Shown({
   // seen only once it's shown.
   const [seen, setSeen] = useState(false);
   if (!seen && !drawing && onScreen) setSeen(true);
+  const folds = useFolds(tab, parsed.tree);
+  // Drawn once its wait has shown, it takes the skeleton's place in one Swap. A quick load's comes
+  // at once, with nothing shown before it.
+  const box = useRef<HTMLDivElement>(null);
+  const wasDrawing = useRef(drawing);
+  useLayoutEffect(() => {
+    const came = wasDrawing.current && !drawing;
+    wasDrawing.current = drawing;
+    return came && box.current && waitShown(tab) ? swapIn(box.current) : undefined;
+  }, [drawing, tab]);
   return (
     <FirstDrawContext value={first}>
-      <div className="relative h-full">
+      <div ref={box} className="relative h-full">
         <OverviewDocument
           ref={scroller}
           tree={parsed.tree}
@@ -451,12 +470,14 @@ export function Shown({
           focused={focused}
           outlineFoot={<OutlineFoot drawing={drawing} />}
           hints={hints}
+          folds={folds}
           terms={terms}
           onFollow={follow}
         />
+        {/* Over the overview as it's laid out unseen, and its scrollbar. */}
         {drawing && (
-          <div className="absolute inset-0">
-            <MiddlePlaceholder tab={tab} />
+          <div className="absolute inset-0 bg-bg">
+            <MiddlePlaceholder tab={tab} skeleton={<OverviewSkeleton />} />
           </div>
         )}
       </div>

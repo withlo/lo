@@ -87,7 +87,8 @@ export interface MenuPlace {
   /**
    * It starts a section of its own there, after a separator, though its group is the one before
    * it: a command of another sort than those above it, as "Move comment to file" after the rows
-   * that change a comment's lines.
+   * that change a comment's lines, or what acts on every section of an overview after what acts on
+   * the one clicked.
    */
   readonly apart?: true;
 }
@@ -155,7 +156,8 @@ export interface Declaration {
   /**
    * It's in the right-click menu of targets of this kind, or of each of these kinds, after the
    * commands with a lower `order`. A menu draws a separator wherever the key table's `group`
-   * changes between neighbours, so commands of one group sit together.
+   * changes between neighbours, so commands of one group sit together, and before a place that's
+   * `apart`.
    */
   readonly menu?: MenuPlace | readonly MenuPlace[];
   /** It's in the app menu, there: on macOS the menu bar, on Linux the menu at the strip's end. */

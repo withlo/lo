@@ -1,11 +1,13 @@
 export {
   OverviewDocument,
   type OverviewDocumentProps,
+  type OverviewFolds,
   type OverviewTarget,
   type OverviewViews,
 } from './OverviewDocument.tsx';
 export { blockHints, isStop, type BlockHint } from './blocks.ts';
 export {
+  articleBlocks,
   BLOCK_ATTRIBUTE,
   blockNumber,
   blockOf,
@@ -13,8 +15,16 @@ export {
   focusTargetOf,
   hasSteps,
   linksIn,
+  sectionHeadOf,
   stepIn,
 } from './moving.ts';
+export {
+  headingName,
+  sectionAt,
+  sectionsOf,
+  TLDR_ANCHOR,
+  type OverviewSection,
+} from './sections.ts';
 export { alphabetical, type OverviewTerms, type TermShown } from './terms.ts';
 export { glossaryIn, type GlossaryParts } from './Glossary.tsx';
 export { cardsOpen, closeCards, HOVER_CLOSE_MS, HOVER_OPEN_MS } from './Term.tsx';
@@ -31,6 +41,7 @@ export {
 } from './CodeBlock.tsx';
 export { Held, useNear, useNearness, type Nearness } from './Held.tsx';
 export { OverviewNote, type OverviewNoteProps } from './Note.tsx';
+export { OverviewSkeleton } from './OverviewSkeleton.tsx';
 export { OutOfDate } from './Stale.tsx';
 export { Walkthrough } from './Walkthrough.tsx';
 export { Chevron, type ChevronProps } from './Chevron.tsx';

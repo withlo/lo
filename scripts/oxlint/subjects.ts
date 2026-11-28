@@ -52,7 +52,6 @@ export const LO_SUBJECTS: readonly string[] = [
   "apps/desktop/src/features/merge/main/chains.ts: 'Lo is quitting.'",
   "apps/desktop/src/features/overview/window/mapping.ts: 'Lo couldn’t compare its lines.'",
   "apps/desktop/src/features/overview/window/mapping.ts: 'Lo couldn’t tell how the file changed.'",
-  'apps/desktop/src/features/overview/window/prompts.ts: `Lo can’t read the overview at ${ref}. Use the lo-overview`',
   "apps/desktop/src/features/queue/main/index.ts: 'Lo is quitting.'",
   "apps/desktop/src/features/queue/main/index.ts: 'Lo is still starting.'",
   "apps/desktop/src/features/queue/main/queues.ts: 'Lo is still working out which account this tab uses.'",
