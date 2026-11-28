@@ -172,10 +172,16 @@ function useHeldPlace(tab: string): RefObject<HTMLDivElement | null> {
  * then while `counting`, and at once for a wait that has already.
  */
 function useSlow(since: number, counting: boolean): boolean {
-  const [slow, setSlow] = useState(() => Date.now() - since >= LOADING_SLOW_MS);
+  const after = () => ({ since, slow: Date.now() - since >= LOADING_SLOW_MS });
+  const [wait, setWait] = useState(after);
+  if (wait.since !== since) setWait(after());
+  const { slow } = wait;
   useEffect(() => {
     if (!counting || slow) return undefined;
-    const timer = setTimeout(() => setSlow(true), since + LOADING_SLOW_MS - Date.now());
+    const timer = setTimeout(
+      () => setWait({ since, slow: true }),
+      since + LOADING_SLOW_MS - Date.now(),
+    );
     return () => clearTimeout(timer);
   }, [since, counting, slow]);
   return slow;

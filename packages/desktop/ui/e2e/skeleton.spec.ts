@@ -24,77 +24,15 @@ async function open(): Promise<Page> {
   return page;
 }
 
-/** A box on the page, from its box's top left. */
-interface Place {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+/** Where one side's pieces are, the overview's or the skeleton's. */
+type Side = Awaited<ReturnType<Window['skeleton']['places']>>['overview'];
 
-/**
- * Where the overview's pieces are, and the skeleton's, each from its box's top left, with both boxes
- * `width` wide: the outline's label and first section, the byline, the first two headings, the
- * tl;dr's paragraph and its line's height, the paragraph after the second heading, the first code
- * block and the paragraph after it, and the code block's lines.
- */
+/** A box on the page, from its view's top left. */
+type Place = NonNullable<Side['byline']>;
+
+/** Where the overview's pieces are, and the skeleton's, with both views `width` wide. */
 function places(page: Page, width: number) {
-  return page.evaluate(async (wide) => {
-    for (const box of document.querySelectorAll<HTMLElement>('#overview, #skeleton')) {
-      box.style.width = `${wide}px`;
-      box.style.height = '900px';
-    }
-    for (let frame = 0; frame < 3; frame += 1) {
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-    }
-    const of = (box: HTMLElement, element: Element | null | undefined): Place | undefined => {
-      if (!element || element.getClientRects().length === 0) return undefined;
-      const from = box.getBoundingClientRect();
-      const at = element.getBoundingClientRect();
-      return { x: at.x - from.x, y: at.y - from.y, width: at.width, height: at.height };
-    };
-    const overview = document.querySelector<HTMLElement>('#overview')!;
-    const article = overview.querySelector('.lo-ov__article')!;
-    const headings = article.querySelectorAll('h2');
-    const paragraphs = article.querySelectorAll('p');
-    const code = article.querySelector('.lo-codeblock');
-    const lead = article.querySelector('.lo-lead');
-    const skeleton = document.querySelector<HTMLElement>('#skeleton')!;
-    const bars = skeleton.querySelectorAll('.lo-ov-skeleton__heading');
-    const block = skeleton.querySelector('.lo-ov-skeleton__article > .lo-codeblock');
-    const lines = (box: Element | null) =>
-      [...(box?.querySelectorAll('.lo-codeblock__skeleton .cm-line') ?? [])].map((line) => {
-        const row = line.getBoundingClientRect();
-        const bar = line.querySelector('.skeleton')!.getBoundingClientRect();
-        return { height: row.height, middle: bar.y + bar.height / 2 - row.y };
-      });
-    return {
-      overview: {
-        label: of(overview, overview.querySelector('.lo-toc__label')),
-        section: of(overview, overview.querySelector('.lo-toc__item')),
-        byline: of(overview, article.querySelector('.lo-ov-byline')),
-        headings: [of(overview, headings[0]), of(overview, headings[1])],
-        lead: of(overview, lead),
-        leadLine: lead ? parseFloat(getComputedStyle(lead).lineHeight) : undefined,
-        paragraph: of(overview, paragraphs[1]),
-        code: of(overview, code),
-        after: of(overview, paragraphs[2]),
-        lines: lines(code),
-      },
-      skeleton: {
-        label: of(skeleton, skeleton.querySelector('.lo-ov-skeleton__label')),
-        section: of(skeleton, skeleton.querySelector('.lo-ov-skeleton__item')),
-        byline: of(skeleton, skeleton.querySelector('.lo-ov-skeleton__byline')),
-        headings: [of(skeleton, bars[0]), of(skeleton, bars[1])],
-        lead: of(skeleton, bars[0]?.nextElementSibling),
-        leadLine: of(skeleton, bars[0]?.nextElementSibling?.firstElementChild)?.height,
-        paragraph: of(skeleton, bars[1]?.nextElementSibling),
-        code: of(skeleton, block),
-        after: of(skeleton, block?.nextElementSibling),
-        lines: lines(block),
-      },
-    };
-  }, width);
+  return page.evaluate((wide) => window.skeleton.places(wide), width);
 }
 
 /** The room between `above`'s foot and `below`'s top. */
@@ -110,7 +48,7 @@ const edges = (place: Place | undefined, top = true) =>
   };
 
 /** How far apart each of the pieces is, and each piece's left edge and width. */
-function layout(side: Awaited<ReturnType<typeof places>>['overview']) {
+function layout(side: Side) {
   const [first, second] = side.headings;
   return {
     label: edges(side.label),
