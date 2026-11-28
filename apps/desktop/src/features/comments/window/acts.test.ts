@@ -21,6 +21,7 @@ import {
   resolveThread,
   takeActs,
   threw,
+  type ThreadKeyTarget,
   whyNotOn,
 } from './acts.ts';
 import { held } from './threads.ts';
@@ -559,16 +560,19 @@ describe('a comment’s own menu', () => {
         problem: null,
       },
     });
-    const on = (id?: string) =>
-      id === undefined
-        ? ({ kind: 'thread', thread: 'T1' } as const)
-        : ({ kind: 'thread', thread: 'T1', comment: id } as const);
-    expect(whyNotOn(VIEW, on('C1'), 'edit')).toBeUndefined();
-    expect(whyNotOn(VIEW, on('C1'), 'delete')).toBeUndefined();
-    expect(whyNotOn(VIEW, on('C2'), 'edit')).toMatch(/\byours\b/);
-    expect(whyNotOn(VIEW, on('C2'), 'delete')).toMatch(/\byours\b/);
-    expect(whyNotOn(VIEW, on('C9'), 'delete')).toMatch(/\bdeleted\b/);
+    expect(whyNotOn(VIEW, onT1('C1'), 'edit')).toBeUndefined();
+    expect(whyNotOn(VIEW, onT1('C1'), 'delete')).toBeUndefined();
+    expect(whyNotOn(VIEW, onT1('C2'), 'edit')).toMatch(/\byours\b/);
+    expect(whyNotOn(VIEW, onT1('C2'), 'delete')).toMatch(/\byours\b/);
+    expect(whyNotOn(VIEW, onT1('C9'), 'delete')).toMatch(/\bdeleted\b/);
     // Naming no comment, its key acts on your newest, which it finds as it runs.
-    expect(whyNotOn(VIEW, on(), 'edit')).toBeUndefined();
+    expect(whyNotOn(VIEW, onT1(), 'edit')).toBeUndefined();
   });
 });
+
+/** Thread `T1` as a menu's target, from one of its comments' own, or from the thread's. */
+function onT1(id?: string): ThreadKeyTarget {
+  return id === undefined
+    ? { kind: 'thread', thread: 'T1' }
+    : { kind: 'thread', thread: 'T1', comment: id };
+}

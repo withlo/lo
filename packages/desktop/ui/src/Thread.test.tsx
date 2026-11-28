@@ -247,17 +247,15 @@ describe('Thread', () => {
     const older: ThreadComment = { ...MINE, id: 'm1', when: '3 d ago' };
     const newest: ThreadComment = { ...MINE, id: 'm2' };
     const comments = [older, RAVI, newest];
-    const focused = (host: HTMLElement) =>
-      [...host.querySelectorAll('[data-comment][data-focused]')].map((each) =>
-        each.getAttribute('data-comment'),
-      );
-    expect(focused(render(<Thread {...PROPS} comments={comments} menu />))).toEqual([]);
+    expect(keyboardOn(render(<Thread {...PROPS} comments={comments} menu />))).toEqual([]);
     cleanUp();
-    expect(focused(render(<Thread {...PROPS} comments={comments} menu focused />))).toEqual(['m2']);
+    expect(keyboardOn(render(<Thread {...PROPS} comments={comments} menu focused />))).toEqual([
+      'm2',
+    ]);
     cleanUp();
     // In a popover, the ring says which: it's focus on a comment.
     expect(
-      focused(render(<Thread {...PROPS} comments={comments} menu focused variant="popover" />)),
+      keyboardOn(render(<Thread {...PROPS} comments={comments} menu focused variant="popover" />)),
     ).toEqual([]);
   });
 
@@ -445,3 +443,10 @@ describe('Thread in a popover', () => {
     expect(ringed()).toBe('c1');
   });
 });
+
+/** The comments in `host` the keyboard is on, by their ids. */
+function keyboardOn(host: HTMLElement): (string | null)[] {
+  return [...host.querySelectorAll('[data-comment][data-focused]')].map((each) =>
+    each.getAttribute('data-comment'),
+  );
+}

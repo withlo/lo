@@ -718,11 +718,7 @@ describe('targets', () => {
   test('a right-click on a thread is its menu, and on one of its comments, that comment’s', () => {
     const on = events();
     const shown = open(on);
-    const render: RenderThread = (host) => {
-      host.innerHTML = '<div data-comment="c1"><button>⋯</button></div>';
-      return { update() {}, destroy() {} };
-    };
-    shown.setThreads([thread('right', at('a', 'new', 10))], render);
+    shown.setThreads([thread('right', at('a', 'new', 10))], oneComment);
     const card = parent!.querySelector('[data-thread-id="right"]')!;
     card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
     expect(on.menu).toHaveBeenLastCalledWith(
@@ -4692,4 +4688,10 @@ function leftHeader(): Element {
 /** How many columns ring the first file's header. */
 function rungHeaders(): number {
   return document.querySelectorAll('[data-row="h:0"].is-keyed').length;
+}
+
+/** A thread's card with one comment, `c1`, and its `⋯`. */
+function oneComment(host: HTMLElement): ReturnType<RenderThread> {
+  host.innerHTML = '<div data-comment="c1"><button>⋯</button></div>';
+  return { update() {}, destroy() {} };
 }
