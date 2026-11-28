@@ -26,6 +26,8 @@ export interface PullRequest {
   merged: boolean;
   /** When it merged, as GitHub writes a time: `2026-11-27T10:30:00Z`. */
   mergedAt: string | undefined;
+  /** The login of the account that opened it, if GitHub says. */
+  author: string | undefined;
 }
 
 /** What the workflow asks GitHub. */
@@ -149,13 +151,15 @@ function pullOf(answer: unknown, number: number): PullRequest {
   if (headRecord && headRecord['repo'] !== null && !head) {
     throw new GitHubError(`GitHub's answer doesn't name #${number}'s head repository.`);
   }
+  const user = isRecord(answer['user']) ? answer['user']['login'] : undefined;
+  const author = typeof user === 'string' && LOGIN.test(user) ? user : undefined;
   const merged = answer['merged'] === true;
   const at = answer['merged_at'];
   const mergedAt =
     typeof at === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(at)
       ? at
       : undefined;
-  return { number, base, head, merged, mergedAt };
+  return { number, base, head, merged, mergedAt, author };
 }
 
 function repositoryOf(value: unknown): Repository | undefined {

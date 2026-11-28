@@ -403,7 +403,8 @@ case, with each run of white space as one space. Each term holds:
 - **`aliases`:** other forms that name it, such as `"buckets"`, each as plain as a term. Optional.
 - **`written`:** `"agent"`, from an overview, or `"human"`, edited in Lo.
 - **`by`:** who wrote it: `{ "login": "octocat" }`, a GitHub account, or `{ "name": "A. Writer" }`,
-  the git name of a commit GitHub couldn't map to an account, which isn't verified.
+  a commit's git name, which isn't verified: one GitHub couldn't map to an account, or, from a fork,
+  one it mapped to an account other than the one that opened the pull request.
 - **`from`:** `"#<number>"`, the pull request whose overview it came from, or `"lo"`, edited in Lo.
 - **`at`:** when, in UTC, to the second or finer: `"2026-11-27T10:30:00Z"`.
 - **`locked`:** who locked it and when, as `by` and `at`. Optional. A merged pull request then
@@ -438,11 +439,17 @@ glossary marks:
 
 - **A term the definitions don't have** is added, written by an agent, by the account GitHub maps
   the overview's commit's author to, or that author's git name when GitHub maps it to none, from the
-  pull request, at the time it merged.
+  pull request, at the time it merged. A fork's commit may give anyone's address, so for an overview
+  read from the fork or its copy, the account counts only when it opened the pull request: otherwise
+  the term is by the git name.
 - **A term they have** gets the pull request's definition, and the one it had goes first in its
   `changes`. A locked term gets a suggestion instead, and keeps its definition.
-- **A definition they hold already,** but for runs of spaces, changes nothing, nor does a term the
-  pull request changed already: folding the same pull request again changes nothing.
+- **A definition they hold already,** but for runs of spaces, changes nothing.
+
+A pull request is folded once. When one of the last 1,000 commits of `refs/lo/terms` is the one that
+folded it, "Definitions from pull request #<number>", nothing is folded again, even a term deleted,
+unlocked or with its suggestion dismissed since. Past those, a term the pull request changed already
+is left as it is.
 
 Unmarked terms change nothing. The workflow pushes a new commit, whose parent is the last, without
 forcing it; when `refs/lo/terms` moved meanwhile, it reads it again and adds the terms again. A

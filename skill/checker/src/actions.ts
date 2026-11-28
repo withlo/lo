@@ -1,9 +1,13 @@
 /**
  * Running in GitHub Actions: what the workflow's environment says, and the log its commands write,
- * where a line that needs a maintainer's eye is an annotation. Each line is one line: what it
- * quotes, from a fork or anywhere else, can't start a line of its own, so it can't be read as one
- * of the runner's commands.
+ * where a line that needs a maintainer's eye is an annotation. The runner reads a line as one of
+ * its commands when it starts with `::`, after any spaces, or holds `##[` anywhere, and a line may
+ * quote a fork. So the log stops the runner's commands before its first line, with a token no one
+ * else knows, and starts them again only to write an annotation, whose text is escaped as the
+ * runner reads it. Each line is one line, so nothing quoted starts a line of its own.
  */
+
+import { randomBytes } from 'node:crypto';
 
 import { isRepositoryName } from './github.ts';
 
@@ -78,19 +82,38 @@ export interface Log {
   error(text: string): void;
 }
 
-/** A log writing to `out` as GitHub Actions reads it. */
-export function actionsLog(out: (text: string) => void): Log {
+/** A log of the workflow's, which ends once its command has. */
+export interface ActionsLog extends Log {
+  /** Starts the runner's commands again, after the last line. */
+  end(): void;
+}
+
+/**
+ * A log writing to `out` as GitHub Actions reads it, with the runner's commands stopped but for its
+ * annotations, each stopped again after with a new token from `token`.
+ */
+export function actionsLog(
+  out: (text: string) => void,
+  token: () => string = () => randomBytes(16).toString('hex'),
+): ActionsLog {
+  let stop = token();
+  out(`::stop-commands::${stop}\n`);
+  const annotate = (kind: 'warning' | 'error', text: string) => {
+    out(`::${stop}::\n::${kind}::${escaped(text)}\n`);
+    stop = token();
+    out(`::stop-commands::${stop}\n`);
+  };
   return {
     info: (text) => out(`${oneLine(text)}\n`),
-    warning: (text) => out(`::warning::${escaped(text)}\n`),
-    error: (text) => out(`::error::${escaped(text)}\n`),
+    warning: (text) => annotate('warning', text),
+    error: (text) => annotate('error', text),
+    end: () => out(`::${stop}::\n`),
   };
 }
 
-/** `text` on one line, never starting as one of the runner's commands, `::`. */
+/** `text` on one line. */
 function oneLine(text: string): string {
-  const line = text.replace(/[\r\n\u2028\u2029]+/g, ' ');
-  return line.startsWith('::') ? ` ${line}` : line;
+  return text.replace(/[\r\n\u2028\u2029]+/g, ' ');
 }
 
 /** `text` as an annotation's message, escaped as the runner reads it. */

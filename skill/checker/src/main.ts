@@ -309,6 +309,7 @@ async function workflow(
     throw error;
   } finally {
     workspace?.close();
+    log.end();
   }
 }
 

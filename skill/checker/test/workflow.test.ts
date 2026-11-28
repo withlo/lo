@@ -101,15 +101,18 @@ describe('keep and fold on the command line', () => {
   });
 
   test('say, as the runner shows an error, that they run in the workflow', async () => {
-    expect(await ran(['keep', '--pr', '5'], { GITHUB_TOKEN: 'x' })).toEqual({
-      status: 2,
-      out: '::error::GITHUB_REPOSITORY names no repository. keep and fold run in the repository’s workflow.\n',
-      err: '',
+    const keeping = await ran(['keep', '--pr', '5'], { GITHUB_TOKEN: 'x' });
+    expect(keeping).toMatchObject({ status: 2, err: '' });
+    expect(commandsOf(keeping.out)).toEqual([
+      '::error::GITHUB_REPOSITORY names no repository. keep and fold run in the repository’s workflow.',
+    ]);
+    const folding = await ran(['fold', '--pr', '5'], {
+      GITHUB_REPOSITORY: 'us/repo',
+      PATH: process.env.PATH,
     });
-    expect(
-      (await ran(['fold', '--pr', '5'], { GITHUB_REPOSITORY: 'us/repo', PATH: process.env.PATH }))
-        .out,
-    ).toBe('::error::GITHUB_TOKEN is empty. The workflow passes it the token.\n');
+    expect(commandsOf(folding.out)).toEqual([
+      '::error::GITHUB_TOKEN is empty. The workflow passes it the token.',
+    ]);
   });
 });
 
@@ -172,21 +175,70 @@ describe('the workflow’s environment', () => {
 });
 
 describe('the log', () => {
-  test('writes each line as one line, and never as a command of the runner’s', () => {
+  test('stops the runner’s commands, but for its annotations, each line one line', () => {
     const out: string[] = [];
-    const log = actionsLog((text) => out.push(text));
+    let made = 0;
+    const log = actionsLog(
+      (text) => out.push(text),
+      () => `t${++made}`,
+    );
     log.info('One\nline\r\n::set-env name=X::y');
-    log.info('::add-mask::x');
+    log.info('  ::add-mask::x');
+    log.info('Added "##[add-mask]Added", from #7.');
     log.warning('100% of\n::error::it');
     log.error('No.');
-    expect(out).toEqual([
-      'One line ::set-env name=X::y\n',
-      ' ::add-mask::x\n',
-      '::warning::100%25 of%0A::error::it\n',
-      '::error::No.\n',
+    log.end();
+    expect(out.join('').split('\n')).toEqual([
+      '::stop-commands::t1',
+      'One line ::set-env name=X::y',
+      '  ::add-mask::x',
+      'Added "##[add-mask]Added", from #7.',
+      '::t1::',
+      '::warning::100%25 of%0A::error::it',
+      '::stop-commands::t2',
+      '::t2::',
+      '::error::No.',
+      '::stop-commands::t3',
+      '::t3::',
+      '',
     ]);
   });
+
+  test('stops them with a token of its own each time', () => {
+    const out: string[] = [];
+    const log = actionsLog((text) => out.push(text));
+    log.warning('Look.');
+    log.end();
+    const tokens = out
+      .join('')
+      .split('\n')
+      .flatMap((line) => /^::stop-commands::(.+)$/.exec(line)?.slice(1) ?? []);
+    expect(tokens).toHaveLength(2);
+    expect(new Set(tokens).size).toBe(2);
+    for (const token of tokens) expect(token).toMatch(/^[0-9a-f]{32}$/);
+  });
 });
+
+/**
+ * The commands the runner reads in `out`, what the log writes: each line it writes while commands
+ * aren't stopped, but for the lines that stop and start them, and checks they pair up.
+ */
+function commandsOf(out: string): string[] {
+  const read: string[] = [];
+  let stopped: string | undefined;
+  for (const line of out.split('\n')) {
+    if (line === '') continue;
+    if (stopped !== undefined) {
+      if (line === `::${stopped}::`) stopped = undefined;
+      continue;
+    }
+    const stop = /^::stop-commands::(.+)$/.exec(line);
+    if (stop) stopped = stop[1];
+    else read.push(line);
+  }
+  expect(stopped).toBeUndefined();
+  return read;
+}
 
 /** A fetch that answers each request with what `answer` gives, and keeps what was asked. */
 function fetcher(answer: (url: string) => { status: number; body: unknown }) {
@@ -208,11 +260,12 @@ describe('what GitHub says', () => {
     number: 5,
     merged: true,
     merged_at: '2026-11-28T08:00:00Z',
+    user: { login: 'forker' },
     base: { repo: { id: 1, full_name: 'us/repo' } },
     head: { repo: { id: 2, full_name: 'them/repo' } },
   };
 
-  test('reads a pull request’s repositories and whether it merged, with the token', async () => {
+  test('reads a pull request’s repositories, its author and whether it merged, with the token', async () => {
     const { asked, fetch } = fetcher(() => ({ status: 200, body: PULL }));
     const github = gitHubApi('https://api.github.com/', 'ghs_x', fetch);
     expect(await github.pull('us/repo', 5)).toEqual({
@@ -221,9 +274,19 @@ describe('what GitHub says', () => {
       head: { id: 2, name: 'them/repo' },
       merged: true,
       mergedAt: '2026-11-28T08:00:00Z',
+      author: 'forker',
     });
     expect(asked[0]!.url).toBe('https://api.github.com/repos/us/repo/pulls/5');
     expect(asked[0]!.authorization).toBe('Bearer ghs_x');
+  });
+
+  test('says an author of no login’s shape is none', async () => {
+    for (const user of [null, { login: '-x' }, { login: 'a b' }, { login: 5 }]) {
+      const { fetch } = fetcher(() => ({ status: 200, body: { ...PULL, user } }));
+      expect(
+        (await gitHubApi('https://api.github.com', 't', fetch).pull('us/repo', 5))?.author,
+      ).toBe(undefined);
+    }
   });
 
   test('says a deleted fork is no head, and a missing pull request is none', async () => {

@@ -143,7 +143,7 @@ export function stackText(stack: number, tldr = 'The layers add a limiter.'): st
   return `---\nformat: 1\nstack: ${stack}\ncommit: ${CODE}\n---\n\n## tl;dr\n\n${tldr}\n`;
 }
 
-/** A pull request from the fork, `them/repo`, into the base, `us/repo`. */
+/** A pull request from the fork, `them/repo`, into the base, `us/repo`, opened by `writer`. */
 export function fromFork(number: number, more: Partial<PullRequest> = {}): PullRequest {
   return {
     number,
@@ -151,6 +151,7 @@ export function fromFork(number: number, more: Partial<PullRequest> = {}): PullR
     head: { id: FORK_ID, name: 'them/repo' },
     merged: false,
     mergedAt: undefined,
+    author: 'writer',
     ...more,
   };
 }

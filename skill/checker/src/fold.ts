@@ -4,14 +4,18 @@
  * fork's, else the base repository's copy of the fork's, and checked as Lo checks one. Each term
  * its glossary marks `(new)` or `(changed)` is added, or its definition replaced, the one it had
  * kept in its changes; a locked term gets a suggestion instead. Each is written by an agent, by the
- * account the overview's commit maps to, or the commit's git name when GitHub maps it to none, from
- * the pull request, when it merged. Unmarked entries change nothing. A repository's first merged
- * pull request with a marked term makes the store.
+ * account the overview's commit maps to, from the pull request, when it merged. A fork's commit may
+ * give anyone's address, so for an overview read from the fork or its copy, the account counts only
+ * when it's the one that opened the pull request. Otherwise, as when GitHub maps the commit to no
+ * account, it's by the commit's git name, which isn't verified. Unmarked entries change nothing. A
+ * repository's first merged pull request with a marked term makes the store.
  *
  * The store is pushed fast-forward only. When it moved meanwhile, it's read again and each term
- * folded in again, since each is a change of its own. Folding a pull request twice changes nothing
- * the second time: a term the pull request has changed already, in its definition, its changes or
- * its suggestions, is left as it is.
+ * folded in again, since each is a change of its own. A pull request is folded once: when the
+ * store's last {@link HISTORY} commits hold the one that folded it, nothing is folded again, even
+ * when a term it changed was deleted, unlocked or had its suggestion dismissed since. Past those, a
+ * term the pull request has changed already, in its definition, its changes or its suggestions, is
+ * left as it is.
  */
 
 import {
@@ -39,7 +43,7 @@ import { keptRefOf, refOf } from './commit.ts';
 import { run, type Git } from './git.ts';
 import { plain, type PullRequest } from './github.ts';
 import { judgeOverview } from './judge.ts';
-import { pullOf, WorkflowError, type WorkflowOptions } from './keep.ts';
+import { HISTORY, pullOf, WorkflowError, type WorkflowOptions } from './keep.ts';
 import type { CommitHeader } from './listing.ts';
 import type { Remote } from './remote.ts';
 
@@ -105,7 +109,7 @@ export async function fold(options: FoldOptions): Promise<void> {
     return;
   }
 
-  const by = await authorOf(options, pull, judged.commit);
+  const by = await authorOf(options, pull, judged.commit, source.forked);
   const at = pull.mergedAt ?? timeOf(now());
   const given = { by, from: pr, at };
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
@@ -114,6 +118,13 @@ export async function fold(options: FoldOptions): Promise<void> {
     const parent = listed.has(STORE_REF)
       ? (await workspace.fetch(base.remote, [{ from: STORE_REF, to: 'terms' }])).get(STORE_REF)
       : undefined;
+    const earlier = parent === undefined ? undefined : await foldedIn(workspace.git, parent, pr);
+    if (earlier !== undefined) {
+      log.info(
+        `${STORE_REF} has #${pr}'s definitions already, from ${earlier}, so they aren't added again.`,
+      );
+      return;
+    }
     const store = parent === undefined ? emptyStore() : await storeAt(workspace.git, parent);
     const { next, folded } = foldInto(store, marked, given);
     const changed = folded.filter(({ kind }) => isChange(kind));
@@ -158,17 +169,20 @@ export async function fold(options: FoldOptions): Promise<void> {
   );
 }
 
-/** Where the overview of `pull` is: the base repository's, else its fork's, else the copy. */
+/**
+ * Where the overview of `pull` is: the base repository's, else its fork's, else the copy, and
+ * whether it came from the fork, as the copy did.
+ */
 async function overviewOf(
   { pr, base, fork, log, workspace }: WorkflowOptions,
   pull: PullRequest,
-): Promise<{ name: string; remote: Remote; ref: string } | undefined> {
+): Promise<{ name: string; remote: Remote; ref: string; forked: boolean } | undefined> {
   const own = refOf({ pr });
   const kept = keptRefOf({ pr });
   const listed = await workspace.list(base.remote, [own, kept]);
-  if (listed.has(own)) return { name: base.name, remote: base.remote, ref: own };
+  if (listed.has(own)) return { name: base.name, remote: base.remote, ref: own, forked: false };
   if (pull.head && pull.head.id !== pull.base.id) {
-    const theirs = { name: pull.head.name, remote: fork(pull.head.name), ref: own };
+    const theirs = { name: pull.head.name, remote: fork(pull.head.name), ref: own, forked: true };
     try {
       if ((await workspace.list(theirs.remote, [own])).has(own)) return theirs;
     } catch (error) {
@@ -177,24 +191,60 @@ async function overviewOf(
       );
     }
   }
-  if (listed.has(kept)) return { name: base.name, remote: base.remote, ref: kept };
+  if (listed.has(kept)) return { name: base.name, remote: base.remote, ref: kept, forked: true };
   return undefined;
 }
 
 /**
  * Who wrote the overview's commit: the account GitHub maps its author to, in the base repository
- * or else the fork, or its git name, which isn't verified.
+ * or else the fork, or its git name, which isn't verified. A fork's commit, `forked`, may give
+ * anyone's address, so its account counts only when it's the one that opened the pull request.
  */
 async function authorOf(
-  { base, github }: WorkflowOptions,
+  { pr, base, github, log }: WorkflowOptions,
   pull: PullRequest,
   commit: CommitHeader,
+  forked: boolean,
 ): Promise<Account> {
+  const name = { name: gitName(commit.author.name) };
   let login = await github.commitLogin(base.name, commit.id);
   if (login === undefined && pull.head && pull.head.id !== pull.base.id) {
     login = await github.commitLogin(pull.head.name, commit.id).catch(() => undefined);
   }
-  return login === undefined ? { name: gitName(commit.author.name) } : { login };
+  if (login === undefined) return name;
+  if (forked && login.toLowerCase() !== pull.author?.toLowerCase()) {
+    log.info(
+      `#${pr}'s overview's commit, from its fork, maps to ${login}, who didn't open #${pr}, so its definitions are by the commit's git name, ${named(name.name)}, which isn't verified.`,
+    );
+    return name;
+  }
+  return { login };
+}
+
+/**
+ * The commit, among the last {@link HISTORY} of the store's history from `tip`, that folded #`pr`
+ * in, if one did.
+ */
+async function foldedIn(git: Git, tip: string, pr: number): Promise<string | undefined> {
+  const listed = await run(git, [
+    'log',
+    `--max-count=${HISTORY}`,
+    '--no-show-signature',
+    '--format=%H %s',
+    tip,
+    '--',
+  ]);
+  const subject = foldSubject(pr);
+  for (const line of listed.toString('utf8').split('\n')) {
+    const space = line.indexOf(' ');
+    if (space !== -1 && line.slice(space + 1) === subject) return line.slice(0, space);
+  }
+  return undefined;
+}
+
+/** The subject of the commit that folds #`pr` into the store. */
+function foldSubject(pr: number): string {
+  return `Definitions from pull request #${pr}`;
 }
 
 /** The most bytes of a git name the store holds. */
@@ -371,7 +421,7 @@ async function storeCommit(
     `author ${COMMITTER} ${when}`,
     `committer ${COMMITTER} ${when}`,
     '',
-    `Definitions from pull request #${pr}`,
+    foldSubject(pr),
     '',
   ].join('\n');
   return objectId(git, ['hash-object', '-t', 'commit', '-w', '--stdin'], Buffer.from(commit));

@@ -247,8 +247,47 @@ describe('folding a merged pull request’s terms', () => {
     const overview = repos.commit({ 'artifact.md': withGlossary(BUCKET) });
     repos.push(fork, overview, `refs/lo/pr/${PR}`);
     logins[`them/repo ${overview}`] = 'forker';
-    await run();
+    await run([merged({ author: 'Forker' })]);
     expect(store().terms.get('bucket')!.by).toEqual({ login: 'forker' });
+  });
+});
+
+describe('who a fork’s definitions are by', () => {
+  const AUTHOR = { name: 'A. Forker', email: '1+someone@users.noreply.github.com' };
+
+  test('the commit’s git name, not verified, when its account didn’t open the pull request', async () => {
+    const { fork, logins, run, store } = setUp();
+    const overview = repos.commit({ 'artifact.md': withGlossary(BUCKET) }, [], AUTHOR);
+    repos.push(fork, overview, `refs/lo/pr/${PR}`);
+    logins[`us/repo ${overview}`] = 'someone';
+    expect(await run()).toContain(
+      `info: #7's overview's commit, from its fork, maps to someone, who didn't open #7, so its definitions are by the commit's git name, "A. Forker", which isn't verified.`,
+    );
+    expect(store().terms.get('bucket')!.by).toEqual({ name: 'A. Forker' });
+  });
+
+  test('the same for the copy of a deleted fork’s overview', async () => {
+    const { base, logins, run, store } = setUp();
+    const overview = repos.commit({ 'artifact.md': withGlossary(BUCKET) }, [], AUTHOR);
+    repos.push(base, overview, `refs/lo/kept/pr/${PR}`);
+    logins[`us/repo ${overview}`] = 'someone';
+    await run([merged({ head: undefined })]);
+    expect(store().terms.get('bucket')!.by).toEqual({ name: 'A. Forker' });
+
+    const opened = setUp();
+    repos.push(opened.base, overview, `refs/lo/kept/pr/${PR}`);
+    opened.logins[`us/repo ${overview}`] = 'someone';
+    await opened.run([merged({ head: undefined, author: 'someone' })]);
+    expect(opened.store().terms.get('bucket')!.by).toEqual({ login: 'someone' });
+  });
+
+  test('the account, for an overview in the base repository, which only its writers push', async () => {
+    const { base, logins, run, store } = setUp();
+    const overview = repos.commit({ 'artifact.md': withGlossary(BUCKET) }, [], AUTHOR);
+    repos.push(base, overview, `refs/lo/pr/${PR}`);
+    logins[`us/repo ${overview}`] = 'someone';
+    await run();
+    expect(store().terms.get('bucket')!.by).toEqual({ login: 'someone' });
   });
 });
 
@@ -274,10 +313,39 @@ describe('what folding leaves as it was', () => {
     repos.push(fork, repos.commit({ 'artifact.md': withGlossary(BUCKET) }), `refs/lo/pr/${PR}`);
     await run();
     const once = repos.ref(base, 'refs/lo/terms');
-    expect(await run()).toEqual(
-      expect.arrayContaining([`info: "Bucket" has #7's change already.`]),
+    expect((await run()).at(-1)).toBe(
+      `info: refs/lo/terms has #7's definitions already, from ${once}, so they aren't added again.`,
     );
     expect(repos.ref(base, 'refs/lo/terms')).toBe(once);
+  });
+
+  test('a pull request folded once, whose terms were deleted, unlocked or dismissed since', async () => {
+    const { base, fork, run, setStore } = setUp();
+    const first = setStore(
+      storeJson({
+        token: entry('Token', 'What a request spends.', {
+          locked: { by: { login: 'mona' }, at: '2026-11-21T00:00:00Z' },
+        }),
+      }),
+    );
+    repos.push(
+      fork,
+      repos.commit({ 'artifact.md': withGlossary(BUCKET, TOKEN) }),
+      `refs/lo/pr/${PR}`,
+    );
+    await run();
+    const folded = repos.ref(base, 'refs/lo/terms')!;
+    expect(git(base, 'rev-parse', `${folded}^`)).toBe(first);
+    // Bucket deleted and Token unlocked, its suggestion settled, in Lo, then other changes after.
+    git(repos.maker, 'fetch', '-q', base, 'refs/lo/terms');
+    let tip = setStore(storeJson({ token: entry('Token', 'What a request spends.') }), [folded]);
+    for (let n = 0; n < 3; n++) {
+      tip = setStore(storeJson({ token: entry('Token', `What a request spends, ${n}.`) }), [tip]);
+    }
+    expect((await run()).at(-1)).toBe(
+      `info: refs/lo/terms has #7's definitions already, from ${folded}, so they aren't added again.`,
+    );
+    expect(repos.ref(base, 'refs/lo/terms')).toBe(tip);
   });
 
   test('a term a later pull request changed, when an earlier one is folded again', async () => {
