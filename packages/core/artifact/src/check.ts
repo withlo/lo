@@ -7,6 +7,7 @@
 
 import { checkCode, type CheckedCode } from './code.ts';
 import { article, caseIndex, readCommit, type Sizes } from './commit.ts';
+import { sameDefinition } from './edits.ts';
 import { checkFigures, type CheckedFigure } from './figures.ts';
 import { ARTIFACT, Findings, quote, type Finding, type FindingCode } from './findings.ts';
 import type { Header } from './header.ts';
@@ -271,16 +272,6 @@ function checkMarks(
       );
     }
   }
-}
-
-/** Whether two definitions, as written, are the same, but for the runs of spaces in them. */
-function sameDefinition(a: string, b: string): boolean {
-  return squeezed(a) === squeezed(b);
-}
-
-/** `text` with each run of spaces as one, and none at either end. */
-function squeezed(text: string): string {
-  return text.replace(/[ \t]+/g, ' ').trim();
 }
 
 /** What's wrong with `header` for the ref `options` say the overview is on: a code and a message. */

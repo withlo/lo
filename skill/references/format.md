@@ -429,6 +429,42 @@ whole: Lo then shows each overview's own glossary.
 | A term or an alias   | 1,024 bytes    |
 | A git name           | 256 bytes      |
 
+### At merge
+
+The repository's workflow (`.github/workflows/lo-overview.yml`, which `install --repo` writes) reads
+a merged pull request's overview from the base repository's `refs/lo/pr/<number>`, else its fork's,
+else the base repository's copy of the fork's, and checks it as Lo does. Then, for each term its
+glossary marks:
+
+- **A term the definitions don't have** is added, written by an agent, by the account GitHub maps
+  the overview's commit's author to, or that author's git name when GitHub maps it to none, from the
+  pull request, at the time it merged.
+- **A term they have** gets the pull request's definition, and the one it had goes first in its
+  `changes`. A locked term gets a suggestion instead, and keeps its definition.
+- **A definition they hold already,** but for runs of spaces, changes nothing, nor does a term the
+  pull request changed already: folding the same pull request again changes nothing.
+
+Unmarked terms change nothing. The workflow pushes a new commit, whose parent is the last, without
+forcing it; when `refs/lo/terms` moved meanwhile, it reads it again and adds the terms again. A
+repository's first merged pull request with a marked term makes the store. When every change each
+term keeps would take `terms.json` past 2 MiB, the workflow writes fewer of each term's changes, the
+newest: the rest are in the ref's history.
+
+## Copies of a fork's overview
+
+A fork can be deleted, and its overviews with it. So when a pull request comes from a fork, the
+repository's workflow copies the fork's `refs/lo/pr/<number>`, and the stack overview its header
+names, to `refs/lo/kept/pr/<number>` and `refs/lo/kept/stack/<number>` in the base repository, as
+the same commits. Lo reads a copy when neither the base repository nor the fork has an overview.
+
+- **Only an overview Lo shows is copied,** for that pull request or stack, in a commit holding
+  nothing but `artifact.md` and `figures/`. Every commit under it must hold only what an overview's
+  commit may, with one parent at most, and a copy takes at most 1,000 commits at once.
+- **A copy only moves forward.** When the fork's ref moves to a commit that doesn't descend from the
+  copy, the copy stays as it is.
+- **A stack overview is copied** only when the stack's number is the number of a pull request from
+  the same fork, as a stack of a fork's branches is numbered after its bottom layer.
+
 ## Figures
 
 A figure is an SVG, PNG, JPEG, GIF or WebP file directly in `figures/`, named with one of the

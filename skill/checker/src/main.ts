@@ -1,12 +1,15 @@
 /**
  * The overview checker's command line. `install` puts the overview skill where a coding agent finds
  * it; `check` reads an overview from a folder and checks it as Lo would; `commit` checks it, then
- * writes it as a commit to push to its pull request's or its stack's ref.
+ * writes it as a commit to push to its pull request's or its stack's ref. `keep` and `fold` are the
+ * repository's overview workflow's: they copy a fork's overview, and add a merged pull request's
+ * definitions to the repository's.
  *
  * `check` and `commit` exit 0 when the overview has no errors (warnings are fine), 1 when it has
  * errors, and 2 when it can't be checked: no git, no repository, the commit its header names isn't
  * there, or a file couldn't be read. `install` exits 0 once the skill is installed, and 2 when it
- * isn't.
+ * isn't. `keep` and `fold` exit 0 once they've done what there was to do, which may be nothing, and
+ * 2 when they couldn't.
  */
 
 import { statSync } from 'node:fs';
@@ -14,10 +17,13 @@ import { resolve } from 'node:path';
 
 import { ARTIFACT, type Finding, type OnRef } from '@lo/artifact';
 
+import { actionsContext, actionsLog, ContextError, repositoryUrl } from './actions.ts';
 import { checkFolder, type FolderCheck } from './check.ts';
 import { refOf, writeCommit, type CommitFile, type Owner, type Written } from './commit.ts';
 import { FolderError } from './folder.ts';
+import { fold } from './fold.ts';
 import { GitError, gitIn } from './git.ts';
+import { gitHubApi, GitHubError } from './github.ts';
 import {
   AGENT_NAMES,
   install,
@@ -26,6 +32,8 @@ import {
   type Agent,
   type Installed,
 } from './install.ts';
+import { keep, WorkflowError, type WorkflowOptions } from './keep.ts';
+import { tokenHeader, Workspace } from './remote.ts';
 import { SKILL_NAME } from './skill.ts';
 
 const USAGE = `Installs Lo's overview skill for coding agents, and checks an overview and commits it for
@@ -35,6 +43,8 @@ Usage:
   lo-overview install [--claude] [--codex] [--dir <folder>] [--json]
   lo-overview check [<dir>] [--pr <number> | --stack <number>] [--repo <folder>] [--json]
   lo-overview commit <dir> (--pr <number> | --stack <number>) [--repo <folder>] [--json]
+  lo-overview keep --pr <number>
+  lo-overview fold --pr <number>
 
 Commands:
   install   Install the ${SKILL_NAME} skill, which teaches a coding agent to write an overview,
@@ -49,6 +59,16 @@ Commands:
             whose parent is refs/lo/pr/<number>, or refs/lo/stack/<number> for a stack's, if that
             ref is there. Prints the commit's id and how to push it. No ref, index or working tree
             changes.
+  keep      For the repository's workflow: when pull request <number> comes from a fork, copy
+            the fork's refs/lo/pr/<number>, and the stack overview its header names, to
+            refs/lo/kept/pr/<number> and refs/lo/kept/stack/<id> in the repository, when it's an
+            overview Lo shows and the copy moves forward to it.
+  fold      For the repository's workflow: when pull request <number> has merged, add the terms
+            its overview marks (new) or (changed) to the repository's definitions, refs/lo/terms,
+            or, for a locked term, suggest the change.
+
+            Both run in GitHub Actions, in the repository GITHUB_REPOSITORY names, with the token
+            in GITHUB_TOKEN, and fetch nothing but git data, as data.
 
 Options:
   --claude        Install the skill for Claude Code, in ~/.claude/skills, or in skills in
@@ -64,7 +84,8 @@ Options:
   --help          Print this.
 
 Exit status: check and commit exit 0 when the overview has no errors, 1 when it has errors, and 2
-when it can't be checked. install exits 0 once the skill is installed, and 2 when it isn't.
+when it can't be checked. install exits 0 once the skill is installed, and 2 when it isn't. keep
+and fold exit 0 once they've done what there was to do, and 2 when they couldn't.
 `;
 
 /** What the command line asks for. */
@@ -72,7 +93,8 @@ type Command =
   | { kind: 'help' }
   | { kind: 'install'; agents: Agent[]; dir: string | undefined; json: boolean }
   | { kind: 'check'; dir: string; on: OnRef; repo: string | undefined; json: boolean }
-  | { kind: 'commit'; dir: string; owner: Owner; repo: string | undefined; json: boolean };
+  | { kind: 'commit'; dir: string; owner: Owner; repo: string | undefined; json: boolean }
+  | { kind: 'keep' | 'fold'; pr: number };
 
 /** Where the checker writes. */
 export interface Streams {
@@ -84,7 +106,11 @@ export interface Streams {
  * Runs the command line `args`, writing to `streams`, and returns its exit status. Never rejects
  * unless writing does: whatever goes wrong is said, as JSON with `--json`, and exits 2.
  */
-export async function main(args: readonly string[], streams: Streams): Promise<number> {
+export async function main(
+  args: readonly string[],
+  streams: Streams,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<number> {
   // Read before the rest, so a mistake in the rest is answered as JSON too.
   const end = args.indexOf('--');
   const json = (end === -1 ? args : args.slice(0, end)).includes('--json');
@@ -113,6 +139,9 @@ export async function main(args: readonly string[], streams: Streams): Promise<n
         }
         case 'commit':
           return await commit(command, streams);
+        case 'keep':
+        case 'fold':
+          return await workflow(command, streams, env);
         default:
           command satisfies never;
           throw new Error(`Unknown command ${JSON.stringify(command)}`);
@@ -178,6 +207,15 @@ function parse(args: readonly string[]): Command {
   if (name !== 'install' && installing)
     throw new Error('--claude, --codex and --dir are for install.');
   switch (name) {
+    case 'keep':
+    case 'fold': {
+      if (rest.length > 0 || stack !== undefined || repo !== undefined || json) {
+        throw new Error(`${name} takes only --pr, the pull request's number.`);
+      }
+      const number = numberOf(pr, 'pr');
+      if (number === undefined) throw new Error(`${name} needs --pr, the pull request's number.`);
+      return { kind: name, pr: number };
+    }
     case 'install': {
       if (rest.length > 0) throw new Error('install takes a skills folder with --dir <folder>.');
       if (pr !== undefined || stack !== undefined || repo !== undefined)
@@ -224,6 +262,54 @@ function numberOf(given: string | undefined, option: 'pr' | 'stack'): number | u
     throw new Error(`--${option} takes ${what}, not ${JSON.stringify(given)}.`);
   }
   return Number(given);
+}
+
+/**
+ * Runs `keep` or `fold`, as the repository's workflow does, in a repository of its own that's
+ * removed after, and returns the exit status: 2 for anything that kept it from its work.
+ */
+async function workflow(
+  { kind, pr }: Extract<Command, { kind: 'keep' | 'fold' }>,
+  streams: Streams,
+  env: NodeJS.ProcessEnv,
+): Promise<number> {
+  const log = actionsLog(streams.out);
+  let workspace: Workspace | undefined;
+  try {
+    const context = actionsContext(env);
+    workspace = await Workspace.open(env);
+    const options: WorkflowOptions = {
+      pr,
+      base: {
+        name: context.repository,
+        remote: {
+          url: repositoryUrl(context.server, context.repository),
+          authorization: tokenHeader(context.token),
+        },
+      },
+      // A fork is fetched from without the token, which is for the base repository alone.
+      fork: (name) => ({ url: repositoryUrl(context.server, name) }),
+      github: gitHubApi(context.api, context.token),
+      log,
+      workspace,
+    };
+    if (kind === 'keep') await keep(options);
+    else await fold(options);
+    return 0;
+  } catch (error) {
+    if (
+      error instanceof ContextError ||
+      error instanceof WorkflowError ||
+      error instanceof GitHubError ||
+      error instanceof GitError
+    ) {
+      log.error(error.message);
+      return 2;
+    }
+    throw error;
+  } finally {
+    workspace?.close();
+  }
 }
 
 /** Says where the skill was installed, and returns the exit status. */

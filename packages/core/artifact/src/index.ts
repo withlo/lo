@@ -11,7 +11,7 @@ export type { CheckedCode, CodeState } from './code.ts';
 export type { CheckedFigure, FigureState, FigureType } from './figures.ts';
 export { imageHeader, imageType, type ImageHeader, type ImageType } from './images.ts';
 export { imageOrientation, isTurned, type Orientation } from './orientation.ts';
-export type { SizeKind, Sizes } from './commit.ts';
+export { readCommit, type CommitContents, type SizeKind, type Sizes } from './commit.ts';
 export {
   SIZE_ONLY,
   type CodeReader,
@@ -31,6 +31,7 @@ export {
 export {
   ARTIFACT,
   FINDING_CODES,
+  Findings,
   isFindingCode,
   severityOf,
   type Finding,
@@ -68,3 +69,13 @@ export {
   type Suggestion,
   type Written,
 } from './store.ts';
+export {
+  emptyStore,
+  fittedStoreText,
+  sameDefinition,
+  storeText,
+  withDefinition,
+  withSuggestion,
+  withTerm,
+  type Definition,
+} from './edits.ts';
