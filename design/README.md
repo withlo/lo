@@ -1104,7 +1104,14 @@ them.
   Where the button doesn't fit beside the text, there or in a code block's flag, measured as
   `useGiveUp` measures, never at a width, it's one column: the icon centred on the first line, the
   button `lo-sp-8` under the last line, its left edge on the text's, and no more room held than its
-  lines take.
+  widest lines take. Both name the commits by their short ids until the revisions are read, then as
+  "r1" and "r2", so each is laid out for its short ids (`widest`, drawn out of sight under what it
+  says): beside or one column, and as tall, by its width alone, and nothing under it moves as the
+  names come.
+- **A row whose words change as names come is laid out for its widest.** Where what a row says waits
+  on a read, as a commit's short id waits on its revision's name, give it the words at their widest
+  to hold the room of (`widest` on `OutOfDate` and `CodeFlag`), so what it gives up, and its height,
+  never change as the names come.
 - Figures use the `fig-*` colors only. `figures.md` is the contract for agents that draw them.
 - A term's card shows its definition, who it's by and what can be done to it. It takes no focus: the
   term's keys and menu do what its buttons do. History and suggestions open in the term's row.

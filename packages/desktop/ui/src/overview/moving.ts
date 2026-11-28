@@ -124,11 +124,14 @@ export function linksIn(block: HTMLElement): (HTMLElement | SVGElement)[] {
   );
 }
 
-/** Whether `element` is hidden inside `block`: in a panel not shown, or in a closed fold's body. */
+/**
+ * Whether `element` is hidden inside `block`: in a panel not shown, in a closed fold's body, or out
+ * of reach, as the room a code block's flag holds for its widest button is.
+ */
 function hiddenIn(block: Element, element: Element): boolean {
   let child: Element = element;
   for (let at = element.parentElement; at; at = at.parentElement) {
-    if (at.hasAttribute('hidden')) return true;
+    if (at.hasAttribute('hidden') || at.hasAttribute('inert')) return true;
     if (at.localName === 'details' && !at.hasAttribute('open') && child.localName !== 'summary') {
       return true;
     }

@@ -1,8 +1,9 @@
 // What an overview written for an older push than the head on screen shows above its text: the
 // banner, from the overview's first frame, saying what it was written for and where the pull
 // request is, then how many files changed since as the local copy tells, with Compare; and the
-// Compare button a code block's flag has too. The prompt that brings it up to date is `ya`'s, and
-// on a block's menu.
+// Compare button a code block's flag has too. Both are laid out for the commits' short ids, the
+// widest their labels say, so nothing moves as the revisions are named. The prompt that brings it
+// up to date is `ya`'s, and on a block's menu.
 
 import { Button, Glyphs } from '@lo/ui';
 import { OutOfDate } from '@lo/ui/overview';
@@ -30,22 +31,34 @@ async function compareSince(tab: string, from: string, to: string): Promise<void
 /**
  * "Compare r3 → r5": the overview's commit, `from`, with the head on screen, `to`, in the diff.
  * It's there whether or not it can compare yet, so nothing moves as the revisions come, dimmed
- * with why while it can't.
+ * with why while it can't. With `widest`, it's drawn as it is at its widest, naming the commits by
+ * their short ids, for the room a banner or a flag holds for it.
  */
-export function CompareButton({ tab, from, to }: { tab: string; from: string; to: string }) {
+export function CompareButton({
+  tab,
+  from,
+  to,
+  widest = false,
+}: {
+  tab: string;
+  from: string;
+  to: string;
+  widest?: boolean;
+}) {
   const known = useTabState(revisions, tab);
   const state = compareState(known, from, to);
+  const named = widest ? undefined : known;
   return (
     <Button
       size="sm"
       disabled={!state.ok}
-      hint={state.ok ? undefined : state.why}
+      hint={state.ok || widest ? undefined : state.why}
       onClick={() => {
         if (state.ok) void compareSince(tab, from, to);
       }}
     >
       <span>
-        <Glyphs text={`Compare ${labelOf(known, from)} → ${labelOf(known, to)}`} />
+        <Glyphs text={`Compare ${labelOf(named, from)} → ${labelOf(named, to)}`} />
       </span>
     </Button>
   );
@@ -104,11 +117,18 @@ export function OutOfDateBanner({
     now: labelOf(known, head),
     files,
   });
+  // Laid out for the commits' short ids, the widest its labels say, so it moves nothing as the
+  // revisions are named.
+  const widest = staleWords({ written: labelOf(undefined, commit), now: labelOf(undefined, head) });
   return (
     <OutOfDate
       title={title}
       detail={detail}
       actions={<CompareButton tab={tab.id} from={commit} to={head} />}
+      widest={{
+        title: widest.title,
+        actions: <CompareButton tab={tab.id} from={commit} to={head} widest />,
+      }}
     />
   );
 }
