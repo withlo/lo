@@ -76,16 +76,19 @@ interface Props {
   readonly want: readonly string[];
   /** The views that have nothing to draw yet. */
   readonly loading?: readonly string[];
+  /** The views that draw only the tab's placeholder. */
+  readonly waiting?: readonly string[];
   readonly holds?: boolean;
 }
 
 /** A tab's middle views, each as the hold draws it, the one coming swapped in over the one left. */
-function Middle({ want, loading = [], holds = true }: Props) {
+function Middle({ want, loading = [], waiting = [], holds = true }: Props) {
   const row = useRef<HTMLDivElement>(null);
   const viewOf = (id: string) => row.current?.querySelector(`[data-view="${id}"]`) ?? null;
   const drawnOf = useHold(want, {
     holds,
     element: viewOf,
+    waiting: (id) => waiting.includes(id),
     swap: (came) =>
       came.flatMap((id) => {
         const element = viewOf(id);
@@ -98,7 +101,7 @@ function Middle({ want, loading = [], holds = true }: Props) {
     <div ref={row}>
       {ALL.map((id) => (
         <div key={id} data-view={id} data-drawn={drawnOf(id)}>
-          {loading.includes(id) ? <Loading status="Reading…" /> : id}
+          {loading.includes(id) || waiting.includes(id) ? <Loading status="Reading…" /> : id}
         </div>
       ))}
     </div>
@@ -285,6 +288,19 @@ describe('a switch of the middle view', () => {
     expect(frames.size).toBe(1);
     middle.unmount();
     expect(frames.size).toBe(0);
+  });
+
+  it('shows the view at once in place of one that only waits, which it takes the wait over from', () => {
+    const middle = render({ want: ['overview'], waiting: ['overview'] });
+    middle.show({ want: ['timeline'], loading: ['timeline'], waiting: ['overview'] });
+    expect(middle.drawn('timeline')).toBe('seen');
+    expect(middle.drawn('overview')).toBe('hidden');
+    expect(middle.view('timeline').classList.contains('move-swap')).toBe(false);
+    expect(frames.size).toBe(0);
+    // One that has drawn something holds as before.
+    middle.show({ want: ['diff'], loading: ['diff'] });
+    expect(middle.drawn('timeline')).toBe('under');
+    expect(middle.drawn('diff')).toBe('coming');
   });
 
   it('holds nothing while the views aren’t drawn', () => {

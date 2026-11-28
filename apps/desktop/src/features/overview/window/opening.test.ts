@@ -30,7 +30,7 @@ describe('what a tab that opened on the overview stays on', () => {
 
 /** A tab that went to the timeline for want of an overview, as `change` has it otherwise. */
 function opened(change: Partial<Opened> = {}): Opened {
-  return { since: 0, on: 'timeline', seen: false, chose: false, ...change };
+  return { since: 0, on: 'timeline', seen: false, chose: false, handing: false, ...change };
 }
 
 describe('a late overview', () => {
@@ -48,7 +48,7 @@ describe('a late overview', () => {
 });
 
 describe('history’s place at the overview itself', () => {
-  const choosing: Opened = { since: 0, on: undefined, seen: false, chose: true };
+  const choosing: Opened = { since: 0, on: undefined, seen: false, chose: true, handing: false };
 
   it('is the overview while the tab chooses, and once it stayed on the overview', () => {
     expect(overviewPlace(choosing)).toBe('overview');

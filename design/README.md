@@ -398,9 +398,11 @@ changes in the same frame.
   It fills the view it's in. A wait that several views draw in turn, as a tab's opening is, looks
   like one `Loading`: each takes the wait's `since`, so the mark goes on turning, and the line it
   showed last (`before`), which its own line swaps in over. `onLine` says each line as it shows, for
-  the next view's `before`. `Loading` centers its mark in its box; where the box moves under the
-  wait, as a view's bar or a banner comes above it, the caller holds the mark where it came on
-  screen (a tab's placeholder does).
+  the next view's `before`. So a switch from a view that only waits holds nothing: the next view
+  takes the wait over at once, and the one that gave it up draws only its wait until it's gone.
+  `Loading` centers its mark in its box; where the box moves under the wait, as a view's bar or a
+  banner comes above it, the caller holds the mark where it came on screen (a tab's placeholder
+  does).
 - `Skeleton` is the `skeleton` utility on a block. Give each the size of what it stands for.
 - A view that shows `Loading` or skeletons sets `aria-busy` on its own box until its content is in,
   so a screen reader waits for the content rather than reading the wait.
