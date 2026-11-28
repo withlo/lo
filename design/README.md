@@ -293,10 +293,11 @@ where the action's target is.
   right-click opens the menu, at the end of its row (before a chevron that opens or closes the row,
   as on a thread's card), and opens that same menu under itself (`openMenuUnder`), so the two can
   never list different things. It's named "More actions", or "More actions for retry.ts" (`label`)
-  where a row has several. On a card or row a list repeats, as a post in the timeline or a comment
-  in a thread, it's `shy`: it keeps its room, and shows only on the one under the pointer, the one
-  the keyboard is on (`data-shy-scope`, with `data-focused` as for a chip) or has focus in, and
-  while its menu is open, coming and going in a Tint. `Tab` still stops at it, and shows it.
+  where a row has several. On a card or row a list repeats, as a post or an event in the timeline,
+  or a comment in a thread, it's `shy`: it keeps its room, and shows only on the one under the
+  pointer, the one the keyboard is on (`data-shy-scope`, with `data-focused` as for a chip) or has
+  focus in, and while its menu is open, coming and going in a Tint. `Tab` still stops at it, and
+  shows it.
 - **A card or row a list repeats shows only what most readers come to it for.** Its other actions,
   as a comment's Edit and Delete, are in its menu, each with its key, and not buttons or hints on
   every one of them: a thread's card keeps Reply and Resolve, and a review comment in the timeline
