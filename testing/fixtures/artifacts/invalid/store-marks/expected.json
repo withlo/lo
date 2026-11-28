@@ -1,0 +1,27 @@
+{
+  "outcome": "shown",
+  "findings": [
+    {
+      "code": "term-not-stored",
+      "line": 14
+    },
+    {
+      "code": "term-stored",
+      "line": 15
+    },
+    {
+      "code": "term-unchanged",
+      "line": 16
+    },
+    {
+      "code": "term-differs",
+      "line": 17
+    },
+    {
+      "code": "mark-definition",
+      "line": 18
+    }
+  ],
+  "code": [],
+  "figures": []
+}

@@ -50,9 +50,11 @@ export {
 export { FIGURE_TYPES, readCode, readFigure, readPath, readTerm, termKey } from './targets.ts';
 export {
   parseStore,
+  readStore,
   STORE_FILE,
   STORE_FORMAT,
   STORE_LIMITS,
+  STORE_READ,
   STORE_REF,
   type Account,
   type Change,
