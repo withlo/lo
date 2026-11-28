@@ -13,6 +13,7 @@ import {
   connectionOf,
   detailsState,
   headerFromOpened,
+  isForked,
   isUnreached,
   problemOf,
   rateLimitedUntil,
@@ -70,6 +71,12 @@ describe('reading a pull request to open it', () => {
       },
     };
     expect(headerFromOpened(fork).head).toEqual({ branch: 'app/feature', fork: 'someone/e2e' });
+    expect(isForked(fork)).toBe(true);
+    expect(isForked(opened)).toBe(false);
+    // GitHub leaves out a fork it no longer has: the head is still in one.
+    const gone = { ...opened, toOpen: { ...opened.toOpen, head: { sha: opened.toOpen.head.sha } } };
+    expect(headerFromOpened(gone).head.fork).toBeNull();
+    expect(isForked(gone)).toBe(true);
   });
 
   it("fails as GitHub's not found for a pull request it doesn't have", async () => {

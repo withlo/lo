@@ -8,7 +8,7 @@ import { GithubClient } from '../src/client.ts';
 import { GithubError } from '../src/errors.ts';
 import { RepoRef } from '../src/refs.ts';
 import { Token } from '../src/token.ts';
-import { readRepoTree, repoTree, treePath } from '../src/trees.ts';
+import { readRepoTree, repoTree, rootTree, rootTreePath, treePath } from '../src/trees.ts';
 import { E2E_HEAD } from './scenarios/trees.ts';
 
 const signedIn = (fetch: typeof globalThis.fetch) =>
@@ -71,4 +71,23 @@ test('an entry of a kind Lo doesn’t know is a decode error', () => {
   expect(readTag).toThrow(GithubError);
   expect(readTag).toThrow(/type is "tag"/);
   expect(() => readRepoTree({ sha: 'a', tree: {} })).toThrow(/aren't a list/);
+});
+
+test("the top of a commit's tree is asked for without what's in its folders", async () => {
+  const repo = new RepoRef('rozed-dev', 'e2e');
+  expect(rootTreePath(repo, E2E_HEAD)).toBe(`/repos/rozed-dev/e2e/git/trees/${E2E_HEAD}`);
+  const seen: string[] = [];
+  const client = signedIn(async (input, init) => {
+    seen.push(new Request(input, init).url);
+    return Response.json({
+      sha: E2E_HEAD,
+      tree: [{ path: 'terms.json', type: 'blob', mode: '100644', sha: 'a'.repeat(40), size: 9 }],
+      truncated: false,
+    });
+  });
+  const tree = await rootTree(client, repo, E2E_HEAD);
+  expect(tree.items).toEqual([
+    { path: 'terms.json', type: 'blob', mode: '100644', sha: 'a'.repeat(40), size: 9 },
+  ]);
+  expect(seen).toEqual([`https://api.github.com/repos/rozed-dev/e2e/git/trees/${E2E_HEAD}`]);
 });

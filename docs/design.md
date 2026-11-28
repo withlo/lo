@@ -249,6 +249,13 @@ and the whole-file view.
   knows which account it acts as. As a tab opens, these reads go ahead of polls, in one turn of the
   account's queue: the ref, the tree, the text, the first figures it names and the commit. The code
   an overview shows comes from the local copy.
+- **The repo's definitions come the same way.** Lo watches `refs/lo/terms` in the base repo with
+  ETags, and for a commit it hasn't read, reads the top of its tree and `terms.json` by its ID,
+  never one larger than the store may be. It reads them only for a tab with an overview to show, in
+  a turn after the overview's read, so the overview never waits for them: as the tab is shown, if
+  they weren't read in the last 30 s, and every 5 minutes while it's on screen. One read serves
+  every tab of the repo that acts as the same account. What's read is kept for 30 days after its
+  last read, up to 16 MiB of files in all.
 - **Sign-in.** Git signs in with the account's token, and your git config is never touched.
 - **Checkouts.** Trusted repos get a checkout at the PR head for language servers. The old side is
   read straight from git.
@@ -502,8 +509,12 @@ writes is called an artifact.
   holds `artifact.md` and a `figures/` folder.
 - **One per PR.** Each rewrite is a new commit on the ref and replaces the last for everyone. Lo
   shows the latest.
-- **Forks.** Lo looks in the base repo, then the PR's fork, and labels an overview that came from
-  the fork.
+- **Forks.** Lo looks in the base repo, then the PR's fork, then, for a PR from a fork, the base
+  repo's copy of the fork's overview (`refs/lo/kept/pr/<n>`), which outlives the fork, and labels an
+  overview that came from the fork or the copy.
+- **Closed PRs.** Lo's cache never drops a closed PR's overview to make room, and doesn't count its
+  files toward its cap. Once GitHub has none anywhere, Lo shows the one it kept, labelled a saved
+  copy.
 - **Stacks.** Each layer has its own.
 
 ### The format
@@ -799,10 +810,13 @@ trust.
 ### Comments
 
 - **Where.** `c` comments on the current line, and `v` then `c` on a range of lines, on either side
-  of the diff. `c` on a file's header, or on its row in the file tree, leaves a file-level comment,
-  its box under the header, in the header's popover beside lines. GitHub takes line comments only on
-  lines in the PR's diff, so on any other line Lo says so, and `⏎` then comments on the file
-  instead. Comments can also be written on an overview's code blocks (section 8).
+  of the diff. By the mouse, a click on the `+` beside a line comments on it, a drag from the `+` on
+  the lines it crosses, Shift with the click on the lines from the cursor's, and a right-click
+  inside lines selected on those lines. `c` on a file's header, or on its row in the file tree,
+  leaves a file-level comment, its box under the header, in the header's popover beside lines.
+  GitHub takes line comments only on lines in the PR's diff, so on any other line Lo says so, and
+  `⏎` then comments on the file instead. Comments can also be written on an overview's code blocks
+  (section 8).
 - **In the diff.** A thread is its mark beside the code, and opens over the code in a popover under
   its last line: the pointer resting on the mark previews it, and a click, `⏎` on its line or `]t`
   pins it. A reply's, an edit's and a new comment's box open in the popover too, so no line moves

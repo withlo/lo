@@ -7,7 +7,8 @@
     "ReviewThreads": "2026-11-13T19:10:00Z",
     "PendingReview": "2026-11-13T19:10:01Z",
     "MergeSnapshot": "2026-11-16T22:10:06Z",
-    "GET https://api.github.com/repos/rozed-dev/e2e/rules/branches/app/base?per_page=100": "2026-11-16T22:10:46Z"
+    "GET https://api.github.com/repos/rozed-dev/e2e/rules/branches/app/base?per_page=100": "2026-11-16T22:10:46Z",
+    "GET https://api.github.com/repos/rozed-dev/e2e/git/matching-refs/lo/terms": "2026-11-28T06:53:50Z"
   },
   "rerecorded": {
     "ReviewThreads": "2026-11-27T05:15:19Z"

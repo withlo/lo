@@ -7,6 +7,7 @@
 
 import { CommentableLines, Line, lineRefText, type Lines, type Screen } from '@lo/review';
 import { clock } from '@lo/ui';
+import type { HeaderTarget, LineTarget } from '@lo/ui/commands';
 import type { OnFile, Place, Span } from '@lo/ui/code';
 
 import type { DrawnDiff, ThreadedFile } from '../../diff/window/shared.ts';
@@ -199,6 +200,27 @@ export function whereText(place: DraftPlaceRow): string {
   if (place.kind === 'reply') return 'Reply';
   if (place.kind === 'edit') return 'Edit';
   return lineRefText({ lines: place.lines });
+}
+
+/**
+ * What the commands that comment act on, from `target`: the lines selected that a right-click was
+ * inside, where it gives them, else what it's on.
+ */
+export function commentedOn(target: LineTarget | HeaderTarget): LineTarget | HeaderTarget {
+  return target.kind === 'line' && target.selected ? { kind: 'line', at: target.selected } : target;
+}
+
+/**
+ * What Comment's row in the right-click menu of lines selected says: "Comment on lines 35–38", in
+ * `where`, the words a box on them would say, or where GitHub takes no comment on them, or main
+ * hasn't said, the lines as they're selected.
+ */
+export function commentOnText(span: Span, where: string | undefined): string {
+  const side = githubSide(span.side);
+  const lines =
+    where ??
+    lineRefText({ lines: { start: Line.of(side, span.from), end: Line.of(side, span.to) } });
+  return `Comment on ${lines.charAt(0).toLowerCase()}${lines.slice(1)}`;
 }
 
 /** What a box's note offers to do about what it says. */

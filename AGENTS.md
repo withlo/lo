@@ -1627,14 +1627,18 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   and its mark comes back with the block; a send on its way then says how it went in a toast.
 - `comments.send` plans each write with `@lo/review`'s `YourReview` and sends it with the poller's
   `sendReview`, one write to a pull request at a time, each planned from your pending review as read
-  after the last one's answer. The box's text is held, read-only, while it's sent. A refusal keeps
-  the draft and says why in the box. From the send until GitHub's answer, the draft is marked sent,
-  with when, in the database. When the answer is lost, the mark stays, a restart included, and the
-  draft can't be sent again until main's own read of the threads, made 10 s or more after it was
-  sent, settles it, even after a restart: found among your comments made since, by GitHub's clock,
-  the box closes; not found, or not read, the box says so. While the read can't be made, as offline,
-  it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
-  is sent again by itself, and nothing is sent while GitHub can't be reached.
+  after the last one's answer. The box's text is held, read-only, while it's sent, drawn as its card
+  will be (`SentPost`) from a tree made of it first (`drawWritten`, which the send waits up to 150
+  ms for), the same tree its card from GitHub then starts from. The box is held from the send, its
+  typing saved, so neither "Discard draft" nor its notes take it during that wait, and a box gone by
+  its end, as with its tab, sends nothing. A refusal keeps the draft and says why in the box. From
+  the send until GitHub's answer, the draft is marked sent, with when, in the database. When the
+  answer is lost, the mark stays, a restart included, and the draft can't be sent again until main's
+  own read of the threads, made 10 s or more after it was sent, settles it, even after a restart:
+  found among your comments made since, by GitHub's clock, the box closes; not found, or not read,
+  the box says so. While the read can't be made, as offline, it stays checking and main tries again.
+  Text changed since it was sent stays as the draft. Nothing is sent again by itself, and nothing is
+  sent while GitHub can't be reached.
 - A comment sent to post at once (`⌥⏎`) while you have a pending review joins it, since GitHub posts
   nothing else from you until it's submitted, and the notice says so ("Added to your pending
   review"). Main says it did when it planned the comment into your review, and for a reply when
@@ -1730,6 +1734,23 @@ your comment there edit and delete it (`window/conversation.ts`, `window/Timelin
   and a delete, read the comment afresh from a full read of the timeline (`readPullComment`); one
   the read may have left out among older events settles nothing. A delete's question is the diff's
   dialog, and only the comment's text has to be as it showed.
+- What the box sends, and an edit there, the timeline shows from the moment it's sent until it shows
+  GitHub's copy (`window/onpull.ts`; the timeline's `window/sent.ts`). A comment is the last row,
+  drawn as its card from the text sent, with "Sending…" where its time will be until GitHub takes
+  it, and its time after. The box stays as it was, empty and inert (`Away`), until GitHub answers,
+  so nothing under the row moves. GitHub's copy is the comment GitHub's answer named, by its node ID
+  (`SendOutcome.comment`); before the answer, one more of your account's comments with its text than
+  the timeline on screen held as it was sent, as a claim's is (`holding.ts`); and only when the
+  answer was lost, with no timeline on screen as it was sent, one of yours made since it was sent by
+  GitHub's clock, give or take 5 s: main says when in the draft's row (`sentAt`), from how far
+  GitHub's clock is from this computer's as the account's client last heard it, never by this
+  computer's clock. It takes the row's place in the same frame, the keyboard on it going with it,
+  and once shown it never comes back. An edit shows its text in its comment's card, saying
+  "Saving…", until the timeline has it, or GitHub's copy was edited when GitHub answered the edit or
+  after, by GitHub's clock (`ActOutcome.editedAt`; its answer lost, since it was sent), as
+  elsewhere. One GitHub took that the timeline doesn't show within five minutes is let go. A send
+  that fails takes the row away, the text back in the box, and focus the list took as it went with
+  it, unless the reader has moved on since, as with `j`.
 
 ### Submitting a review
 

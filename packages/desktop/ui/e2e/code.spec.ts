@@ -1543,3 +1543,274 @@ test('a box on a side narrower than a box may be takes both sides, and one on a 
   const [kept] = await boxesOn(page);
   expect(kept!.width).toBeLessThan(700);
 });
+
+// Picking lines with the `+` ---------------------------------------------------------------------
+
+/** The page with two files to pick lines in, as `harness.openPicking` draws them. */
+async function openPicking(layout: DiffLayout, unknown = false): Promise<Page> {
+  app = await launch(await harness());
+  const page = await app.firstWindow();
+  await page.waitForFunction(() => 'harness' in window);
+  await page.evaluate(([shown, later]) => window.harness.openPicking(shown, later), [
+    layout,
+    unknown,
+  ] as const);
+  await frames(page);
+  return page;
+}
+
+/** The middle of the row `text` is drawn on in `editor` ("Before", "After" or "Changes"). */
+async function rowOf(page: Page, editor: string, text: string): Promise<{ x: number; y: number }> {
+  const row = await page.evaluate(
+    ([label, words]) => {
+      const content = document.querySelector(`.cm-content[aria-label="${label}"]`)!;
+      const line = [...content.querySelectorAll('.cm-line')].find(
+        (each) => each.textContent === words,
+      );
+      if (!line) return undefined;
+      const { left, top, height } = line.getBoundingClientRect();
+      return { x: left + 40, y: top + height / 2 };
+    },
+    [editor, text] as const,
+  );
+  if (!row) throw new Error(`No row says ${text} in ${editor}`);
+  return row;
+}
+
+/** Brings the `+` to the row `text` is drawn on in `editor`: the middle of the `+`. */
+async function plusAt(page: Page, editor: string, text: string): Promise<{ x: number; y: number }> {
+  const row = await rowOf(page, editor, text);
+  await page.mouse.move(row.x, row.y);
+  await frames(page);
+  const add = page.locator('.lo-gutteradd');
+  await expect(add).toBeVisible();
+  const box = (await add.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+/** Moves a pointer held down to the row `text` is drawn on in `editor`, a frame drawn after it. */
+async function dragTo(page: Page, editor: string, text: string): Promise<void> {
+  const row = await rowOf(page, editor, text);
+  await page.mouse.move(row.x, row.y, { steps: 6 });
+  await frames(page);
+}
+
+/** What's picked in each editor, what the tip by the pointer says, and what was commented on. */
+function picking(page: Page) {
+  return page.evaluate(() => ({
+    picked: window.harness.picked(),
+    tip: document.querySelector('.lo-picktip:not([hidden])')?.textContent ?? undefined,
+    commented: window.harness.commented(),
+  }));
+}
+
+for (const [editor, side, opposite, last] of [
+  ['After', 'new', 'Before', 'a 50, changed'],
+  ['Before', 'old', 'After', 'a 50'],
+] as const) {
+  test(`side by side, a drag from the \`+\` in the ${side} column over a fold picks that column’s lines, says them by the pointer, holds at the last line that takes a comment, and comments on them let go`, async () => {
+    const page = await openPicking('split');
+    await plusAt(page, editor, 'a 5');
+    await page.mouse.down();
+    await dragTo(page, editor, last);
+    const removed = side === 'old' ? ', removed' : '';
+    const changed = side === 'new' ? 'a 6, changed' : 'a 6';
+    const crossed = ['a 5', changed, 'a 7', 'a 8', 'a 9', 'a 47', 'a 48', 'a 49', last];
+    let now = await picking(page);
+    // The fold's lines are its own, and the other column has none.
+    expect(now.picked[editor]).toEqual(crossed);
+    expect(now.picked[opposite]).toEqual([]);
+    expect(now.tip).toBe(`Lines 5–50${removed}`);
+    expect(now.commented).toEqual([]);
+
+    // Into the next file, the end holds at this one's last line that takes one.
+    await dragTo(page, editor, 'b 2');
+    now = await picking(page);
+    expect(now.picked[editor]).toEqual([...crossed, 'a 51', 'a 52', 'a 53']);
+    expect(now.tip).toBe(`Lines 5–53${removed}`);
+
+    // Back on the fold between the hunks, it holds at the line before it, nearer the start.
+    const fold = await page.evaluate((label) => {
+      const content = document.querySelector(`.cm-content[aria-label="${label}"]`)!;
+      const between = content.querySelectorAll('.lo-collapsed')[1]!;
+      const { top, height } = between.getBoundingClientRect();
+      return top + height / 2;
+    }, editor);
+    await page.mouse.move((await rowOf(page, editor, 'a 9')).x, fold, { steps: 4 });
+    await frames(page);
+    now = await picking(page);
+    expect(now.picked[editor]).toEqual(crossed.slice(0, 5));
+    expect(now.tip).toBe(`Lines 5–9${removed}`);
+
+    await page.mouse.up();
+    await frames(page);
+    now = await picking(page);
+    expect(now.commented).toEqual([{ kind: 'line', at: { file: 'a', side, from: 5, to: 9 } }]);
+    expect(now.tip).toBeUndefined();
+    expect(now.picked[editor]).toEqual([]);
+  });
+}
+
+test('`Esc` drops a drag from the `+`, which then comments on nothing; a click comments on its line, and Shift with it on the lines from the cursor’s', async () => {
+  const page = await openPicking('split');
+  await plusAt(page, 'After', 'a 5');
+  await page.mouse.down();
+  await dragTo(page, 'After', 'a 8');
+  expect((await picking(page)).picked.After).toEqual(['a 5', 'a 6, changed', 'a 7', 'a 8']);
+  await page.keyboard.press('Escape');
+  await frames(page);
+  let now = await picking(page);
+  expect(now.picked.After).toEqual([]);
+  expect(now.tip).toBeUndefined();
+  await page.mouse.up();
+  await frames(page);
+  expect((await picking(page)).commented).toEqual([]);
+
+  const at = await plusAt(page, 'After', 'a 8');
+  await page.mouse.click(at.x, at.y);
+  now = await picking(page);
+  expect(now.commented).toEqual([{ kind: 'line', at: { file: 'a', side: 'new', line: 8 } }]);
+
+  // The cursor on line 7, Shift and a click on line 49's `+` comment on lines 7–49.
+  await page.mouse.click(
+    (await rowOf(page, 'After', 'a 7')).x,
+    (await rowOf(page, 'After', 'a 7')).y,
+  );
+  const far = await plusAt(page, 'After', 'a 49');
+  await page.keyboard.down('Shift');
+  await page.mouse.click(far.x, far.y);
+  await page.keyboard.up('Shift');
+  expect((await picking(page)).commented.at(-1)).toEqual({
+    kind: 'line',
+    at: { file: 'a', side: 'new', from: 7, to: 49 },
+  });
+});
+
+test('inline, a drag from the `+` keeps to its first line’s side, the other side’s lines left out', async () => {
+  const page = await openPicking('inline');
+  await plusAt(page, 'Changes', 'a 6');
+  await page.mouse.down();
+  await dragTo(page, 'Changes', 'a 50, changed');
+  let now = await picking(page);
+  // From a removed line, the end rests on the removed line before the added one it's on.
+  expect(now.picked.Changes).toEqual(['a 6', 'a 7', 'a 8', 'a 9', 'a 47', 'a 48', 'a 49', 'a 50']);
+  expect(now.tip).toBe('Lines 6–50, removed');
+  await page.mouse.up();
+  await frames(page);
+
+  await plusAt(page, 'Changes', 'a 6, changed');
+  await page.mouse.down();
+  await dragTo(page, 'Changes', 'a 4');
+  now = await picking(page);
+  expect(now.picked.Changes).toEqual(['a 4', 'a 5', 'a 6, changed']);
+  expect(now.tip).toBe('Lines 4–6');
+  await page.mouse.up();
+  expect((await picking(page)).commented).toEqual([
+    { kind: 'line', at: { file: 'a', side: 'old', from: 6, to: 50 } },
+    { kind: 'line', at: { file: 'a', side: 'new', from: 4, to: 6 } },
+  ]);
+});
+
+test('a drag from the `+` held near the foot of the pane scrolls it under a still pointer, the end following to the last line that takes a comment, with no tip until the lines that do are known, and then one', async () => {
+  const page = await openPicking('split', true);
+  await page.evaluate(() => window.harness.setHeight(300));
+  await frames(page);
+  await plusAt(page, 'After', 'a 5');
+  await page.mouse.down();
+  const foot = await page.evaluate(
+    () => document.querySelector('.lo-diffview')!.getBoundingClientRect().bottom,
+  );
+  await page.mouse.move((await rowOf(page, 'After', 'a 5')).x, foot - 8, { steps: 6 });
+  // Not known yet, the end holds on any line the column draws, and no tip says them.
+  await expect
+    .poll(async () => (await picking(page)).picked.After?.at(-1), { timeout: 5000 })
+    .toBe('a 53');
+  expect((await picking(page)).tip).toBeUndefined();
+  const scrolled = await page.evaluate(() => document.querySelector('.lo-diffview')!.scrollTop);
+  expect(scrolled).toBeGreaterThan(0);
+  // Once they're known, the tip says them under the pointer held still, the end where a comment
+  // can go.
+  await page.evaluate(() => window.harness.know());
+  await frames(page);
+  expect((await picking(page)).tip).toBe('Lines 5–53');
+  await page.mouse.up();
+  expect((await picking(page)).commented).toEqual([
+    { kind: 'line', at: { file: 'a', side: 'new', from: 5, to: 53 } },
+  ]);
+});
+
+test('a right-click inside lines selected gives the menu the line and column clicked, and the lines selected for the commands that comment', async () => {
+  const page = await openPicking('split');
+  const seven = await rowOf(page, 'After', 'a 7');
+  // The cursor at line 7's start, then selected to line 9's: lines 7 and 8.
+  await page.mouse.click(seven.x - 39, seven.y);
+  for (const key of ['Shift+ArrowDown', 'Shift+ArrowDown']) await page.keyboard.press(key);
+  await page.mouse.click(seven.x - 30, seven.y, { button: 'right' });
+  const [menu] = await page.evaluate(() => window.harness.menus());
+  expect(menu).toMatchObject({
+    kind: 'line',
+    at: { file: 'a', side: 'new', line: 7 },
+    selected: { file: 'a', side: 'new', from: 7, to: 8 },
+  });
+  // What acts on a word, as Show definition, has the one clicked.
+  expect(menu && 'at' in menu && 'column' in menu.at).toBe(true);
+});
+
+test('Shift alone leaves the `+` where it is, and a key a command takes after it takes the `+` away', async () => {
+  const page = await openPicking('split');
+  const seven = await rowOf(page, 'After', 'a 7');
+  await page.mouse.click(seven.x, seven.y);
+  await plusAt(page, 'After', 'a 8');
+  const add = page.locator('.lo-gutteradd');
+  await page.keyboard.press('Shift');
+  await frames(page);
+  await expect(add).toBeVisible();
+  // `c`, which the key listener takes for Comment before the view hears it.
+  await page.keyboard.press('c');
+  await frames(page);
+  expect((await picking(page)).commented).toHaveLength(1);
+  await expect(add).toBeHidden();
+});
+
+test('inline, Shift with a click on the `+` of a line no range from the cursor’s line can end on comments on that line alone', async () => {
+  const page = await openPicking('inline');
+  // The cursor on removed line 6; the `+` beside the line added for it, under it.
+  const removed = await rowOf(page, 'Changes', 'a 6');
+  await page.mouse.click(removed.x, removed.y);
+  const at = await plusAt(page, 'Changes', 'a 6, changed');
+  await page.keyboard.down('Shift');
+  await page.mouse.click(at.x, at.y);
+  await page.keyboard.up('Shift');
+  expect((await picking(page)).commented).toEqual([
+    { kind: 'line', at: { file: 'a', side: 'new', line: 6 } },
+  ]);
+});
+
+test('a drag from the `+` whose column stops being drawn, let go before the pointer moves again, comments on nothing', async () => {
+  const page = await openPicking('split');
+  await page.evaluate(() =>
+    document.addEventListener(
+      'pointerdown',
+      (event) => document.body.setAttribute('data-pointer', String(event.pointerId)),
+      { capture: true },
+    ),
+  );
+  await plusAt(page, 'After', 'a 5');
+  await page.mouse.down();
+  await dragTo(page, 'After', 'a 8');
+  expect((await picking(page)).picked.After).toHaveLength(4);
+  // Drawn inline, and let go in the same task, before a frame follows the pointer.
+  await page.evaluate(() => {
+    window.harness.layout('inline');
+    const pointerId = Number(document.body.getAttribute('data-pointer'));
+    document
+      .querySelector('.lo-gutteradd')!
+      .dispatchEvent(new PointerEvent('pointerup', { pointerId, bubbles: true, clientY: 300 }));
+  });
+  await page.mouse.up();
+  await frames(page);
+  const now = await picking(page);
+  expect(now.commented).toEqual([]);
+  expect(now.tip).toBeUndefined();
+});

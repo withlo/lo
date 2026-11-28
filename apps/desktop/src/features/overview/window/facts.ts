@@ -46,6 +46,30 @@ export type Standing =
       result: Checked;
     };
 
+/**
+ * What the overview on screen is a copy of, for its byline: the fork's own overview (`fork`), the
+ * copy the pull request's repository keeps of the fork's (`kept`), or what Lo kept of it once
+ * GitHub has none (`saved`). None for the pull request's own, as GitHub has it.
+ */
+export type Copy = 'fork' | 'kept' | 'saved';
+
+export function copyOf(state: OverviewState | undefined): Copy | undefined {
+  const commit = state?.overview;
+  if (!commit) return undefined;
+  if (state.found === 'none' || state.found === 'notCommit') return 'saved';
+  switch (commit.source) {
+    case 'base':
+      return undefined;
+    case 'fork':
+    case 'kept':
+      return commit.source;
+    default:
+      // From main: an overview read from somewhere Lo doesn't know is no copy it can name.
+      commit.source satisfies never;
+      return undefined;
+  }
+}
+
 /** What a tab's overview is, from what main last said of it and what the window's check found. */
 export function standingOf(
   state: OverviewState | undefined,

@@ -21,7 +21,14 @@ import {
   type RenderThread,
   type ThreadsMode,
 } from '../../src/code/index.ts';
-import { listen, Registry } from '../../src/commands/index.ts';
+import {
+  commandsOf,
+  defineCommands,
+  holdRegistry,
+  listen,
+  Registry,
+  type Target,
+} from '../../src/commands/index.ts';
 import { setVim } from '../../src/vim.ts';
 
 /** What the next key does first, before Lo's key listener, or anything else, hears of it. */
@@ -36,8 +43,9 @@ window.addEventListener(
   { capture: true },
 );
 
-// No command of Lo's: every key is the editor's, and the reader's input as it comes.
-listen(window, new Registry({ system: 'linux', commands: [] }));
+// No command of Lo's: every key is the editor's, and the reader's input as it comes. The scene
+// that picks lines listens with its comment command instead.
+let unlisten = listen(window, new Registry({ system: 'linux', commands: [] }));
 
 let old: string[] = [];
 let changed: string[] = [];
@@ -147,6 +155,30 @@ const narrows: boolean[] = [];
 
 let shown: DiffView | undefined;
 let whole: FileView | undefined;
+
+/** The comment command the `+` runs, in the scene that picks lines, and what it ran on. */
+const commenting = defineCommands('comments', {
+  comment: {
+    label: 'Comment',
+    control: 'the + beside a line',
+    group: 'Comments',
+    keys: ['c'],
+    targets: ['line'],
+    when: { scope: 'diff' },
+  },
+});
+const comments: Target[] = [];
+/** What each right-click menu was opened on, in the scene that picks lines. */
+const menus: Target[] = [];
+
+/**
+ * The lines of the scene that picks lines that take a comment: on each side, those of its file's
+ * hunks, named as a box names them. Where `known` is false, the caller can't tell yet.
+ */
+let hunks: Record<string, { old: [number, number][]; new: [number, number][] }> = {};
+let known = true;
+const takes = (id: string, side: 'old' | 'new', line: number): boolean =>
+  (hunks[id]?.[side] ?? []).some(([first, last]) => line >= first && line <= last);
 
 function view(): DiffView {
   if (!shown) throw new Error('The page has no view yet.');
@@ -271,6 +303,97 @@ const harness = {
       const before = lines.old.length === 0 ? undefined : textOf(lines.old);
       shown.setDiff(id, diffText(before, textOf(lines.new)));
     }
+  },
+  /**
+   * Draws two files in `layout` for picking lines with the `+`: `src/a.ts`, 80 lines, line 6 and
+   * line 50 changed, the unchanged lines between their hunks in a fold, and `src/b.ts` after it,
+   * with a line added. The `+` runs a comment command, whose runs `commented` gives, and only the
+   * lines of a hunk take a comment, unless `unknown`: the caller can't tell yet.
+   */
+  openPicking(layout: DiffLayout, unknown = false): void {
+    const registry = new Registry({
+      system: 'linux',
+      commands: commandsOf(commenting).map((command) => ({
+        ...command,
+        handler: { run: (target: Target) => void comments.push(target) },
+      })),
+    });
+    holdRegistry(registry);
+    // `c` comments, as in Lo, the key listener taking it before the view hears it.
+    unlisten();
+    unlisten = listen(window, registry);
+    known = !unknown;
+    const a = Array.from({ length: 80 }, (_, index) => `a ${index + 1}`);
+    const changedA = a.map((text, index) =>
+      index === 5 || index === 49 ? `${text}, changed` : text,
+    );
+    const b = ['b 1', 'b 2', 'b 3'];
+    const changedB = ['b 1', 'b 2', 'b 2.5', 'b 3'];
+    const files = [
+      { id: 'a', path: 'src/a.ts', change: 'modified' as const, lines: { old: a, new: changedA } },
+      { id: 'b', path: 'src/b.ts', change: 'modified' as const, lines: { old: b, new: changedB } },
+    ];
+    const diffs = files.map(({ lines }) => diffText(textOf(lines.old), textOf(lines.new)));
+    hunks = Object.fromEntries(
+      files.map(({ id }, index) => [
+        id,
+        {
+          old: diffs[index]!.hunks.map((hunk) => [hunk.old.start, hunk.old.end - 1]),
+          new: diffs[index]!.hunks.map((hunk) => [hunk.new.start, hunk.new.end - 1]),
+        },
+      ]),
+    );
+    shown = createDiffView(
+      root(),
+      {
+        files: files.map((each) => ({ ...each, header: { additions: 1, deletions: 1 } })),
+        layout,
+        vimKeys: [],
+        nonce: 'harness',
+      },
+      {
+        cursor: ignore,
+        mode: ignore,
+        file: ignore,
+        jumped: ignore,
+        load: ignore,
+        menu: (target) => void menus.push(target),
+        commentLines: (id) =>
+          known
+            ? {
+                on: ({ side, from, to }) =>
+                  takes(id, side, from) && takes(id, side, to)
+                    ? `${from === to ? `Line ${to}` : `Lines ${from}–${to}`}${side === 'old' ? ', removed' : ''}`
+                    : undefined,
+              }
+            : undefined,
+      },
+    );
+    files.forEach(({ id }, index) => shown!.setDiff(id, diffs[index]!));
+  },
+  /** What the `+` ran the comment command on, in the scene that picks lines, in order. */
+  commented(): Target[] {
+    return comments;
+  },
+  /** What each right-click menu was opened on, in the scene that picks lines, in order. */
+  menus(): Target[] {
+    return menus;
+  },
+  /** Which lines the caller says take a comment, in the scene that picks lines, from now on. */
+  know(): void {
+    known = true;
+  },
+  /** The lines picked in each editor, by their text. */
+  picked(): Record<string, string[]> {
+    const found: Record<string, string[]> = {};
+    for (const editor of document.querySelectorAll<HTMLElement>('.cm-editor')) {
+      if (editor.getClientRects().length === 0) continue;
+      const name = editor.querySelector('.cm-content')?.getAttribute('aria-label') ?? '';
+      found[name] = [...editor.querySelectorAll('.cm-line.lo-picked')].map(
+        (line) => line.textContent ?? '',
+      );
+    }
+    return found;
   },
   /** Each spacer on the old side, by the file it's in or at the end of, with its look. */
   spacers(): { path: string; look: 'hatched' | 'under' | 'flat'; height: number }[] {

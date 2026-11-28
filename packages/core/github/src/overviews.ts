@@ -2,7 +2,9 @@
  * A pull request's overview, as GitHub's REST API serves it: the ref `refs/lo/pr/<n>` it's pushed
  * to, watched with an ETag; the commit the ref holds, with who wrote it and when; and that commit's
  * files, as they are, by their IDs. The commit's tree is {@link repoTree}'s. With them, which pull
- * requests in a repository have an overview, as a stack's tree marks its layers.
+ * requests in a repository have an overview, as a stack's tree marks its layers; the refs a base
+ * repository keeps copies of forks' overviews on; a stack's overview's refs; and any other ref Lo
+ * reads the same way, such as the repository's definitions'.
  */
 
 import type { Conditional, GithubClient } from './client.ts';
@@ -16,19 +18,55 @@ export function overviewRef(number: number): string {
 }
 
 /**
- * The REST path of the refs in `repo` that start with pull request `number`'s overview's ref,
- * which holds it if there's one. GitHub answers a ref that isn't there with a list, empty or of the
- * refs it starts, and an ETag, so a poll that finds nothing changed costs nothing; asking for the
- * ref alone answers a missing one with a `404`, which has no ETag.
+ * The ref a base repository keeps its copy of the overview of pull request `number` on, when the
+ * pull request is from a fork: the overview workflow copies the fork's there.
  */
-export function overviewRefsPath(repo: RepoRef, number: number): string {
+export function keptOverviewRef(number: number): string {
   checkNumber(number);
-  return `/repos/${repo.owner}/${repo.name}/git/matching-refs/lo/pr/${number}`;
+  return `refs/lo/kept/pr/${number}`;
 }
 
 /**
- * What pull request `number`'s overview's ref holds: nothing, as when there's no overview; a
- * commit, the overview; or another kind of object (a tag, a tree or a blob), which is no overview.
+ * The ref stack `id`'s overview is pushed to: GitHub's number for the stack, or for a stack of
+ * branches, its bottom layer's number when its overview was first written.
+ */
+export function stackOverviewRef(id: number): string {
+  checkNumber(id);
+  return `refs/lo/stack/${id}`;
+}
+
+/** The ref a base repository keeps its copy of a fork's overview of stack `id` on. */
+export function keptStackOverviewRef(id: number): string {
+  checkNumber(id);
+  return `refs/lo/kept/stack/${id}`;
+}
+
+/**
+ * The REST path of the refs in `repo` that start with `ref`, a ref's full name such as
+ * `refs/lo/terms`, which holds it if it's there. GitHub answers a ref that isn't there with a list,
+ * empty or of the refs it starts, and an ETag, so a poll that finds nothing changed costs nothing;
+ * asking for the ref alone answers a missing one with a `404`, which has no ETag.
+ */
+export function matchingRefsPath(repo: RepoRef, ref: string): string {
+  if (!/^refs\/lo(?:\/[a-z0-9]+)+$/.test(ref)) {
+    throw new RangeError(`${JSON.stringify(ref)} isn't a ref Lo reads`);
+  }
+  return `/repos/${repo.owner}/${repo.name}/git/matching-refs/${ref.slice('refs/'.length)}`;
+}
+
+/**
+ * The REST path of the refs in `repo` that start with pull request `number`'s overview's ref, as
+ * {@link matchingRefsPath} reads it.
+ */
+export function overviewRefsPath(repo: RepoRef, number: number): string {
+  checkNumber(number);
+  return matchingRefsPath(repo, overviewRef(number));
+}
+
+/**
+ * What a ref Lo reads holds, such as pull request `number`'s overview's: nothing, as when there's
+ * no overview; a commit, the overview; or another kind of object (a tag, a tree or a blob), which
+ * is no overview.
  */
 export type OverviewRef =
   { kind: 'none' } | { kind: 'commit'; sha: string } | { kind: 'other'; type: string; sha: string };
@@ -38,7 +76,14 @@ export type OverviewRef =
  * the ref itself counts. `refs/lo/pr/8` starts `refs/lo/pr/80`, which is another pull request's.
  */
 export function readOverviewRef(number: number): (json: unknown) => OverviewRef {
-  const wanted = overviewRef(number);
+  return readRef(overviewRef(number));
+}
+
+/**
+ * GitHub's list of the refs that start with `wanted`, a ref's full name, read: only the ref itself
+ * counts. `refs/lo/terms` starts `refs/lo/terms2`, which is another.
+ */
+export function readRef(wanted: string): (json: unknown) => OverviewRef {
   return (json) => {
     if (!Array.isArray(json)) throw unexpected("the refs aren't a list");
     for (const [index, item] of json.entries()) {
@@ -80,14 +125,28 @@ export function watchOverviewRef(
   number: number,
   etag: string | undefined,
 ): Promise<OverviewRefAnswer> {
-  const path = overviewRefsPath(repo, number);
+  checkNumber(number);
+  return watchRef(client, repo, overviewRef(number), etag);
+}
+
+/**
+ * Reads what `ref`, a ref's full name under `refs/lo/`, holds in `repo`, sending `etag`, the ETag
+ * of the last answer, if there's one: GitHub answers `notModified`, free, when nothing changed.
+ */
+export function watchRef(
+  client: GithubClient,
+  repo: RepoRef,
+  ref: string,
+  etag: string | undefined,
+): Promise<OverviewRefAnswer> {
+  const path = matchingRefsPath(repo, ref);
   const condition = etag === undefined ? undefined : { ifNoneMatch: etag };
   return client.send('GET', path, { condition }).then((response) => {
     const asked = pollInterval(response.header('x-poll-interval'));
     if (response.status === 304) return { notModified: true, pollInterval: asked };
     return {
       notModified: false,
-      value: response.json(readOverviewRef(number)),
+      value: response.json(readRef(ref)),
       etag: response.etag,
       pollInterval: asked,
     };
@@ -241,7 +300,7 @@ function objectId(sha: string): string {
 
 function checkNumber(number: number): void {
   if (!Number.isSafeInteger(number) || number < 1) {
-    throw new RangeError(`${number} isn't a pull request's number`);
+    throw new RangeError(`${number} isn't a pull request's or a stack's number`);
   }
 }
 

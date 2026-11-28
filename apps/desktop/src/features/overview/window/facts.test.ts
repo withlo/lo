@@ -9,6 +9,7 @@ import type { PullView } from '../../tab/contract.ts';
 import type { OverviewCommit, OverviewState } from '../contract.ts';
 import type { CheckedOverview } from './checking.ts';
 import {
+  copyOf,
   knownOf,
   markOf,
   markWords,
@@ -177,6 +178,24 @@ function revision(head: string, number: number | null) {
     available: true,
   };
 }
+
+describe('what an overview is a copy of', () => {
+  it("is the fork's, the repository's copy of the fork's, or Lo's once GitHub has none", () => {
+    const fork = { ...commitOf(), source: 'fork' as const };
+    const kept = { ...commitOf(), source: 'kept' as const };
+    expect(copyOf(stateOf({ found: 'commit', overview: commitOf() }))).toBeUndefined();
+    expect(copyOf(stateOf({ found: 'commit', overview: fork }))).toBe('fork');
+    expect(copyOf(stateOf({ found: 'commit', overview: kept }))).toBe('kept');
+    // Kept from before, and not yet read again, it's the pull request's as far as Lo knows.
+    expect(copyOf(stateOf({ found: 'unknown', overview: fork, saved: true }))).toBe('fork');
+    for (const found of ['none', 'notCommit'] as const) {
+      expect(copyOf(stateOf({ found, overview: commitOf() }))).toBe('saved');
+      expect(copyOf(stateOf({ found, overview: kept }))).toBe('saved');
+    }
+    expect(copyOf(stateOf({ found: 'none' }))).toBeUndefined();
+    expect(copyOf(undefined)).toBeUndefined();
+  });
+});
 
 describe('the view switch’s mark', () => {
   const commit = commitOf();

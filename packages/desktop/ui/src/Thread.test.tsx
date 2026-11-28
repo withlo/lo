@@ -157,6 +157,7 @@ describe('Thread', () => {
     expect(sent?.textContent).toContain('Sending…');
     expect(sent?.textContent).toContain('On its way');
     expect(render(<SentPost label="Saving…" body="x" />).textContent).toContain('Saving…');
+    expect(render(<SentPost byAuthor author="ravi-k" body="x" />).textContent).toContain('Author');
   });
 
   it('draws a new thread’s sent comment under the head row its thread will have', () => {
@@ -169,6 +170,26 @@ describe('Thread', () => {
     expect(headRow(sent)?.textContent).toBe('Pending1 comment');
     expect(headRow(thread)?.textContent).toContain('Pending1 comment');
     expect(sent.querySelector('[data-sent]')?.previousElementSibling).toBe(headRow(sent));
+  });
+
+  it('draws a sent reply over the row its card will have that offers a reply, which takes nothing', () => {
+    const sent = render(<SentPost reply author="tess-okafor" body={<p>On its way</p>} />);
+    const thread = render(<Thread {...PROPS} canReply onReply={() => {}} />);
+    const row = sent.querySelector('[data-sent]')?.nextElementSibling;
+    const [reply] = buttons(thread, 'Reply');
+    // The same row, by the same classes: nothing moves as the card takes the comment's place.
+    expect(row?.className).toBe(reply?.parentElement?.className);
+    expect(row?.textContent).toBe('Reply');
+    expect(row?.firstElementChild?.hasAttribute('inert')).toBe(true);
+    expect(buttons(sent, 'Reply')).toHaveLength(0);
+  });
+
+  it('draws a sent edit as its text alone, for a card whose head says it’s being saved', () => {
+    const host = render(
+      <SentPost bare label="Saving…" author="tess-okafor" body={<p>New text</p>} />,
+    );
+    expect(host.querySelector('[data-sent]')?.textContent).toBe('New text');
+    expect(host.textContent).not.toContain('Saving…');
   });
 
   it('draws a thread in your pending review by its Pending tag alone', () => {

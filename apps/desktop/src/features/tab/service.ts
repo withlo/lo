@@ -6,6 +6,7 @@ import type {
   FrontView,
   LocalState,
   Opening,
+  PullState,
   QueueOpening,
   Stack,
   Tabs,
@@ -25,10 +26,17 @@ export interface PullTabInfo {
   readonly acting: Acting | undefined;
   /**
    * Where the pull request's head is, once GitHub has said: `fork` names the fork it's in, or is
-   * `null` when it's in the pull request's own repository, or in a fork GitHub no longer has.
+   * `null` when it's in the pull request's own repository, or in a fork GitHub no longer has;
+   * `forked` says whether it's in a fork, one GitHub no longer has included.
    */
   readonly head:
-    { readonly fork: { readonly owner: string; readonly name: string } | null } | undefined;
+    | {
+        readonly fork: { readonly owner: string; readonly name: string } | null;
+        readonly forked: boolean;
+      }
+    | undefined;
+  /** Whether the pull request is open, a draft, merged or closed, once GitHub has said. */
+  readonly state: PullState | undefined;
   /**
    * The head on screen, once the tab has been shown and GitHub has said: the head it opened at,
    * until the newer push is loaded.

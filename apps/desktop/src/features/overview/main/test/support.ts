@@ -95,6 +95,13 @@ export interface Asked {
   accept: string | null;
 }
 
+/** A ref under `refs/lo/`: a pull request's overview's, by its number, or any, by its full name. */
+export type RefName = number | string;
+
+function refName(ref: RefName): string {
+  return typeof ref === 'number' ? `refs/lo/pr/${ref}` : ref;
+}
+
 /**
  * A GitHub that answers for the overviews put in it: each repository's refs, by `owner/name`,
  * with an ETag of what they hold, and the commits, trees and files of the overviews it holds.
@@ -102,7 +109,7 @@ export interface Asked {
  */
 export class FakeGithub {
   /** What each repository's refs hold, by `owner/name`: a commit's ID, or another object. */
-  readonly refs = new Map<string, { number: number; sha: string; type: string }[]>();
+  readonly refs = new Map<string, { ref: string; sha: string; type: string }[]>();
   readonly commits = new Map<
     string,
     { tree: string; login: string | null; name: string; date: string }
@@ -123,14 +130,17 @@ export class FakeGithub {
     });
   }
 
-  /** Puts `made` on pull request `number`'s ref in `repository`, with its commit and files. */
+  /**
+   * Puts `made` on pull request `ref`'s overview's ref in `repository`, or on the ref `ref` names,
+   * with its commit and files.
+   */
   push(
     repository: string,
-    number: number,
+    ref: RefName,
     made: MadeOverview,
     options: { login?: string | null; name?: string; date?: string; truncated?: boolean } = {},
   ): void {
-    this.point(repository, number, made.commit, 'commit');
+    this.point(repository, ref, made.commit, 'commit');
     this.commits.set(made.commit, {
       tree: made.tree,
       login: options.login === undefined ? 'rozed-bot' : options.login,
@@ -141,17 +151,19 @@ export class FakeGithub {
     for (const [sha, bytes] of made.files) this.blobs.set(sha, bytes);
   }
 
-  /** Points pull request `number`'s ref in `repository` at `sha`, an object of `type`. */
-  point(repository: string, number: number, sha: string, type: string): void {
-    const refs = (this.refs.get(repository) ?? []).filter((ref) => ref.number !== number);
-    this.refs.set(repository, [...refs, { number, sha, type }]);
+  /** Points `ref` in `repository` at `sha`, an object of `type`. */
+  point(repository: string, ref: RefName, sha: string, type: string): void {
+    const name = refName(ref);
+    const refs = (this.refs.get(repository) ?? []).filter((each) => each.ref !== name);
+    this.refs.set(repository, [...refs, { ref: name, sha, type }]);
   }
 
-  /** Takes pull request `number`'s ref away in `repository`. */
-  remove(repository: string, number: number): void {
+  /** Takes `ref` away in `repository`. */
+  remove(repository: string, ref: RefName): void {
+    const name = refName(ref);
     this.refs.set(
       repository,
-      (this.refs.get(repository) ?? []).filter((ref) => ref.number !== number),
+      (this.refs.get(repository) ?? []).filter((each) => each.ref !== name),
     );
   }
 
@@ -167,12 +179,12 @@ export class FakeGithub {
     this.asked.push({ path, etag, accept: request.headers.get('accept') });
     const standIn = this.answer.get(path);
     if (standIn) return standIn();
-    let match = /^([^/]+\/[^/]+)\/git\/matching-refs\/lo\/pr\/(\d+)$/.exec(path);
+    let match = /^([^/]+\/[^/]+)\/git\/matching-refs\/(lo\/[a-z0-9/]+)$/.exec(path);
     if (match) {
       const [, repository = '', prefix = ''] = match;
       const listed = (this.refs.get(repository) ?? [])
-        .filter(({ number }) => `refs/lo/pr/${number}`.startsWith(`refs/lo/pr/${prefix}`))
-        .map(({ number, sha, type }) => ({ ref: `refs/lo/pr/${number}`, object: { sha, type } }));
+        .filter(({ ref }) => ref.startsWith(`refs/${prefix}`))
+        .map(({ ref, sha, type }) => ({ ref, object: { sha, type } }));
       const tag = `"${createHash('sha256').update(JSON.stringify(listed)).digest('hex')}"`;
       if (etag === tag) return new Response(null, { status: 304, headers: { etag: tag } });
       const headers: Record<string, string> = { etag: tag };
@@ -194,13 +206,15 @@ export class FakeGithub {
         },
       });
     }
-    match = /^[^/]+\/[^/]+\/git\/trees\/([0-9a-f]+)\?recursive=1$/.exec(path);
+    match = /^[^/]+\/[^/]+\/git\/trees\/([0-9a-f]+)(\?recursive=1)?$/.exec(path);
     if (match) {
       // A commit's ID names its tree too, and GitHub names the answer by what was asked for.
       const sha = match[1] ?? '';
       const tree = this.trees.get(this.commits.get(sha)?.tree ?? sha);
       if (!tree) return notFound();
-      return Response.json({ sha, tree: tree.items, truncated: tree.truncated });
+      // Without `recursive`, the top of the tree alone.
+      const items = match[2] ? tree.items : tree.items.filter((item) => !item.path.includes('/'));
+      return Response.json({ sha, tree: items, truncated: tree.truncated });
     }
     match = /^[^/]+\/[^/]+\/git\/blobs\/([0-9a-f]+)$/.exec(path);
     if (match) {

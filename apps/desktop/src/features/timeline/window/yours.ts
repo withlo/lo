@@ -12,6 +12,9 @@ export function loginOf(view: string): string | undefined {
   return acting?.kind === 'account' ? acting.login : undefined;
 }
 
+/** Why a comment just sent can't be changed yet: GitHub's copy isn't in the timeline. */
+export const SENT = 'This comment isn’t in the timeline yet';
+
 /**
  * The comment on the pull request `row` is, to edit or delete, or why it isn't one Lo changes.
  * `hidden` says it's a hidden comment the reader hasn't shown, which they see first.
@@ -31,6 +34,8 @@ export function commentIn(row: Row, hidden: boolean): PullComment | string {
       return 'Edit the description on GitHub';
     case 'review':
       return 'Edit a review on GitHub';
+    case 'sent':
+      return SENT;
     case 'push':
     case 'forcePush':
     case 'checks':

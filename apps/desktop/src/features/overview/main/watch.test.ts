@@ -5,13 +5,13 @@
 // shown at once the next time, offline too.
 
 import { ARTIFACT_READ, LIMITS, SIZE_ONLY } from '@lo/artifact';
-import { GithubClient, RequestQueue, Token } from '@lo/github';
+import { GithubClient, RequestQueue, Token, type ReadPriority } from '@lo/github';
 import { cassette, Replay, replayFetch } from '@lo/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Acting } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { OverviewState } from '../contract.ts';
+import type { OverviewState, Problem } from '../contract.ts';
 import { Blobs } from './blobs.ts';
 import { SavedRefs } from './saved.ts';
 import {
@@ -24,7 +24,7 @@ import {
   overview,
   type Item,
 } from './test/support.ts';
-import { BACKGROUND_EVERY, FOREGROUND_EVERY, OverviewTab } from './watch.ts';
+import { BACKGROUND_EVERY, FOREGROUND_EVERY, OverviewTab, type OverviewSubject } from './watch.ts';
 
 const ROZED: Acting = { kind: 'account', login: 'rozed-bot' };
 
@@ -42,7 +42,8 @@ function info(overrides: Partial<PullTabInfo> = {}): PullTabInfo {
     repository: { owner: 'rozed-dev', name: 'e2e' },
     number: 5,
     acting: ROZED,
-    head: { fork: null },
+    head: { fork: null, forked: false },
+    state: 'open',
     shown: fakeId('head'),
     latest: fakeId('head'),
     provisional: false,
@@ -54,19 +55,28 @@ function info(overrides: Partial<PullTabInfo> = {}): PullTabInfo {
   };
 }
 
-/** A tab's overview reading with `client`, keeping what it reads in `db`, with what it sends. */
-function tabWith(client: GithubClient, db = database()) {
+/**
+ * A tab's overview reading with `client`, keeping what it reads in `db`, with what it sends, of
+ * `subject`, and each read it says it made.
+ */
+function tabWith(client: GithubClient, db = database(), subject?: OverviewSubject) {
   const sent: OverviewState[] = [];
   const lines: string[] = [];
+  const reads: { priority: ReadPriority; shown: boolean }[] = [];
+  const failures: Problem[] = [];
   const blobs = new Blobs(db);
-  const saved = new SavedRefs(db);
+  const saved = new SavedRefs(db, { of: subject?.kind ?? 'pull' });
   const tab = new OverviewTab({
     id: 't1',
+    subject,
     reads: { github: (_acting, request) => request(client), blobs, saved },
     publish: (state) => sent.push(state),
     log: (line) => lines.push(line),
+    onRead: (priority, shown) =>
+      reads.push({ priority: typeof priority === 'function' ? priority() : priority, shown }),
+    onFailed: (problem) => failures.push(problem),
   });
-  return { tab, sent, lines, blobs, saved, db, last: () => sent.at(-1) };
+  return { tab, sent, lines, reads, failures, blobs, saved, db, last: () => sent.at(-1) };
 }
 
 /** Lets what the tab started run: its reads, and the timers due by now. */
@@ -309,7 +319,7 @@ describe('watching', () => {
     expect(fork.paths()).toEqual(['rozed-dev/e2e/git/matching-refs/lo/pr/6']);
     expect(other.last()?.found).toBe('unknown');
     other.tab.update(
-      info({ number: 6, head: { fork: { owner: 'contributor', name: 'e2e' } } }),
+      info({ number: 6, head: { fork: { owner: 'contributor', name: 'e2e' }, forked: true } }),
       true,
       true,
     );
@@ -517,7 +527,7 @@ describe('watching', () => {
     const fromFork = overview('fork', { 'artifact.md': artifactText(5) });
     github.push('contributor/e2e', 5, fromFork);
     const { tab, last } = tabWith(github.client);
-    const forked = info({ head: { fork: { owner: 'contributor', name: 'e2e' } } });
+    const forked = info({ head: { fork: { owner: 'contributor', name: 'e2e' }, forked: true } });
     tab.update(forked, true, true);
     await settle();
     expect(last()?.overview).toMatchObject({
@@ -553,7 +563,7 @@ describe('watching', () => {
     const gone = tabWith(github.client);
     github.answer.set('gone/e2e/git/matching-refs/lo/pr/6', notFound);
     gone.tab.update(
-      info({ number: 6, head: { fork: { owner: 'gone', name: 'e2e' } } }),
+      info({ number: 6, head: { fork: { owner: 'gone', name: 'e2e' }, forked: true } }),
       true,
       true,
     );
@@ -610,17 +620,43 @@ describe('watching', () => {
     tab.close();
   });
 
-  it('keeps the overview on screen when the ref holds none any more, and forgets it for next time', async () => {
+  it('keeps the overview on screen when the ref holds none any more, a saved copy, for next time too', async () => {
     const github = new FakeGithub();
     const made = overview('kept', { 'artifact.md': artifactText(5) });
     github.push('rozed-dev/e2e', 5, made);
-    const { tab, last, saved } = tabWith(github.client);
+    const { tab, last, saved, db } = tabWith(github.client);
     tab.update(info(), true, true);
     await settle();
     github.remove('rozed-dev/e2e', 5);
     await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY);
     await settle();
     expect(last()).toMatchObject({ found: 'none', overview: { id: made.commit }, newer: null });
+    expect(saved.get({ repository: 'rozed-dev/e2e', number: 5 })).toMatchObject({
+      id: made.commit,
+    });
+    tab.close();
+
+    // Opened again, it shows at once, and stays once GitHub says there's none.
+    const again = tabWith(github.client, db);
+    again.tab.update(info(), true, true);
+    expect(again.last()).toMatchObject({ found: 'unknown', overview: { id: made.commit } });
+    await settle();
+    expect(again.last()).toMatchObject({ found: 'none', overview: { id: made.commit } });
+    again.tab.close();
+  });
+
+  it('forgets a saved copy whose text is no longer kept, which leaves nothing to show', async () => {
+    const github = new FakeGithub();
+    const made = overview('gone', { 'artifact.md': artifactText(5) });
+    github.push('rozed-dev/e2e', 5, made);
+    const { tab, last, saved, db } = tabWith(github.client);
+    tab.update(info(), true, true);
+    await settle();
+    github.remove('rozed-dev/e2e', 5);
+    db.prepare('DELETE FROM overview_blobs').run();
+    await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY);
+    await settle();
+    expect(last()).toMatchObject({ found: 'none', overview: null });
     expect(saved.get({ repository: 'rozed-dev/e2e', number: 5 })).toBeUndefined();
     tab.close();
   });
@@ -632,7 +668,11 @@ describe('watching', () => {
       // Were it asked, the fork would have one.
       github.push('contributor/e2e', 5, overview('fork', { 'artifact.md': artifactText(5) }));
       const { tab, last } = tabWith(github.client);
-      tab.update(info({ head: { fork: { owner: 'contributor', name: 'e2e' } } }), true, true);
+      tab.update(
+        info({ head: { fork: { owner: 'contributor', name: 'e2e' }, forked: true } }),
+        true,
+        true,
+      );
       await settle();
       expect(last()).toMatchObject({ found: 'notCommit', overview: null, problem: null });
       expect(github.paths()).toEqual(['rozed-dev/e2e/git/matching-refs/lo/pr/5']);
@@ -1215,5 +1255,228 @@ describe('the code', () => {
     expect(() => tab.readCode('a', () => Promise.resolve({ kind: 'waiting' }))).toThrow(
       'There’s no pull request’s tab with that id.',
     );
+  });
+});
+
+describe('copies', () => {
+  const FORKED = { fork: { owner: 'contributor', name: 'e2e' }, forked: true };
+
+  it("reads the repository's copy of a fork's overview once neither has one, as a copy", async () => {
+    const github = new FakeGithub();
+    const copy = overview('copy', { 'artifact.md': artifactText(5) });
+    github.push('rozed-dev/e2e', 'refs/lo/kept/pr/5', copy);
+    const { tab, last } = tabWith(github.client);
+    tab.update(info({ head: FORKED }), true, true);
+    await settle();
+    expect(last()).toMatchObject({
+      found: 'commit',
+      overview: {
+        id: copy.commit,
+        source: 'kept',
+        repository: { owner: 'rozed-dev', name: 'e2e' },
+      },
+    });
+    expect(github.paths()).toEqual([
+      'rozed-dev/e2e/git/matching-refs/lo/pr/5',
+      'contributor/e2e/git/matching-refs/lo/pr/5',
+      'rozed-dev/e2e/git/matching-refs/lo/kept/pr/5',
+      `rozed-dev/e2e/git/trees/${copy.commit}?recursive=1`,
+      `rozed-dev/e2e/git/blobs/${idOf(artifactText(5))}`,
+      `rozed-dev/e2e/commits/${copy.commit}`,
+    ]);
+    // Asked again, each with its own ETag.
+    const before = github.asked.length;
+    await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY);
+    await settle();
+    expect(github.asked.slice(before).map(({ etag }) => etag !== null)).toEqual([true, true, true]);
+    tab.close();
+  });
+
+  it("reads the copy of a fork GitHub no longer has, and never a copy for a repository's own", async () => {
+    const github = new FakeGithub();
+    const copy = overview('copy', { 'artifact.md': artifactText(5) });
+    github.push('rozed-dev/e2e', 'refs/lo/kept/pr/5', copy);
+    const gone = tabWith(github.client);
+    gone.tab.update(info({ head: { fork: null, forked: true } }), true, true);
+    await settle();
+    expect(gone.last()?.overview).toMatchObject({ id: copy.commit, source: 'kept' });
+    expect(github.paths().slice(0, 2)).toEqual([
+      'rozed-dev/e2e/git/matching-refs/lo/pr/5',
+      'rozed-dev/e2e/git/matching-refs/lo/kept/pr/5',
+    ]);
+    gone.tab.close();
+
+    const own = new FakeGithub();
+    own.push('rozed-dev/e2e', 'refs/lo/kept/pr/5', copy);
+    const tab = tabWith(own.client);
+    tab.tab.update(info(), true, true);
+    await settle();
+    expect(tab.last()).toMatchObject({ found: 'none', overview: null });
+    expect(own.paths()).toEqual(['rozed-dev/e2e/git/matching-refs/lo/pr/5']);
+    tab.tab.close();
+  });
+
+  it("takes the fork's overview, once found in the copy, as the same one, offering nothing", async () => {
+    const github = new FakeGithub();
+    const made = overview('same', { 'artifact.md': artifactText(5) });
+    github.push('contributor/e2e', 5, made);
+    const { tab, last, saved } = tabWith(github.client);
+    tab.update(info({ head: FORKED }), true, true);
+    await settle();
+    expect(last()?.overview).toMatchObject({ source: 'fork' });
+    // The fork goes, and the workflow had copied the same commit.
+    github.remove('contributor/e2e', 5);
+    github.push('rozed-dev/e2e', 'refs/lo/kept/pr/5', made);
+    const before = github.asked.length;
+    await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY);
+    await settle();
+    expect(last()).toMatchObject({
+      overview: { id: made.commit, source: 'kept', repository: { owner: 'rozed-dev' } },
+      newer: null,
+    });
+    // Nothing of it is read again.
+    expect(github.paths().slice(before)).toEqual([
+      'rozed-dev/e2e/git/matching-refs/lo/pr/5',
+      'contributor/e2e/git/matching-refs/lo/pr/5',
+      'rozed-dev/e2e/git/matching-refs/lo/kept/pr/5',
+    ]);
+    expect(saved.get({ repository: 'rozed-dev/e2e', number: 5 })?.source).toBe('kept');
+    tab.close();
+  });
+
+  it("keeps a closed pull request's overview's files when the cache needs room", async () => {
+    const github = new FakeGithub();
+    const text = artifactText(5, '## tl;dr\n\n:::figure figures/a.svg\nA figure.\n:::\n');
+    const figure = svg(4);
+    const made = overview('closed', { 'artifact.md': text, 'figures/a.svg': figure });
+    github.push('rozed-dev/e2e', 5, made);
+    const db = database();
+    const { tab, saved } = tabWith(github.client, db);
+    tab.update(info({ state: 'merged' }), true, true);
+    await settle();
+    await tab.files(made.commit, ['figures/a.svg']);
+    const key = { repository: 'rozed-dev/e2e', number: 5 };
+    expect(saved.get(key)).toBeDefined();
+
+    // A cache with room for nothing more forgets what isn't held.
+    const tight = new Blobs(db, { cap: 1 });
+    const other = new TextEncoder().encode('another overview');
+    expect(tight.put(idOf(other), other)).toBe(true);
+    const more = new TextEncoder().encode('and another');
+    tight.put(idOf(more), more);
+    expect(tight.has(idOf(other))).toBe(false);
+    expect(tight.has(idOf(text))).toBe(true);
+    expect(tight.has(idOf(figure))).toBe(true);
+
+    // Open again, its files go as any others do.
+    tab.update(info({ state: 'open' }), true, true);
+    tight.put(idOf(other), other);
+    expect(tight.has(idOf(text))).toBe(false);
+    expect(tight.has(idOf(figure))).toBe(false);
+    tab.close();
+  });
+
+  it("counts a closed pull request's overview's files toward no cap, so they crowd out nothing", async () => {
+    const github = new FakeGithub();
+    const text = artifactText(5, '## tl;dr\n\nLong enough to be past the cap alone.\n');
+    const made = overview('closed', { 'artifact.md': text });
+    github.push('rozed-dev/e2e', 5, made);
+    const db = database();
+    const { tab } = tabWith(github.client, db);
+    tab.update(info({ state: 'closed' }), true, true);
+    await settle();
+
+    // Room for these two, and not for the closed one's text besides.
+    const other = new TextEncoder().encode('another overview');
+    const more = new TextEncoder().encode('and another');
+    const tight = new Blobs(db, { cap: other.length + more.length });
+    expect(text.length).toBeGreaterThan(other.length + more.length);
+    tight.put(idOf(other), other);
+    // Used later than the other.
+    vi.setSystemTime(Date.now() + 1000);
+    tight.put(idOf(more), more);
+    expect([tight.has(idOf(text)), tight.has(idOf(other)), tight.has(idOf(more))]).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(tight.counted()).toBe(other.length + more.length);
+    // Past the cap, the least used of the rest goes.
+    const third = new TextEncoder().encode('a third');
+    tight.put(idOf(third), third);
+    expect([tight.has(idOf(other)), tight.has(idOf(more)), tight.has(idOf(third))]).toEqual([
+      false,
+      true,
+      true,
+    ]);
+    tab.close();
+  });
+
+  it('says each read it made, and whether the tab was just shown', async () => {
+    const github = new FakeGithub();
+    github.push('rozed-dev/e2e', 5, overview('reads', { 'artifact.md': artifactText(5) }));
+    const { tab, reads } = tabWith(github.client);
+    tab.update(info(), true, true);
+    await settle();
+    expect(reads).toEqual([{ priority: 'foreground', shown: true }]);
+    await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY);
+    await settle();
+    expect(reads.at(-1)).toEqual({ priority: 'background', shown: false });
+    tab.close();
+  });
+
+  it('says none while there’s no overview to show, or GitHub is out of reach, which it says', async () => {
+    const github = new FakeGithub();
+    const { tab, reads, failures } = tabWith(github.client);
+    tab.update(info(), true, true);
+    await settle();
+    expect(reads).toEqual([]);
+    github.push('rozed-dev/e2e', 5, overview('later', { 'artifact.md': artifactText(5) }));
+    github.answer.set(
+      'rozed-dev/e2e/git/matching-refs/lo/pr/5',
+      () => new Response('{"message":"Server Error"}', { status: 500 }),
+    );
+    await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY);
+    await settle();
+    expect(reads).toEqual([]);
+    expect(failures).toEqual([expect.objectContaining({ kind: 'failed' })]);
+    github.answer.delete('rozed-dev/e2e/git/matching-refs/lo/pr/5');
+    await tab.retry();
+    await settle();
+    expect(reads).toEqual([{ priority: 'foreground', shown: true }]);
+    tab.close();
+  });
+});
+
+describe("a stack's overview", () => {
+  it('is read as a pull request’s is, from its own refs, and kept by its id', async () => {
+    const github = new FakeGithub();
+    const made = overview('stack', { 'artifact.md': artifactText(5) });
+    github.push('rozed-dev/e2e', 'refs/lo/kept/stack/12', made);
+    const db = database();
+    const stack: OverviewSubject = { kind: 'stack', id: 12 };
+    const { tab, last, saved } = tabWith(github.client, db, stack);
+    tab.update(
+      info({ head: { fork: { owner: 'contributor', name: 'e2e' }, forked: true } }),
+      true,
+      true,
+    );
+    await settle();
+    expect(last()).toMatchObject({
+      ref: 'refs/lo/stack/12',
+      found: 'commit',
+      overview: { id: made.commit, source: 'kept' },
+    });
+    expect(github.paths().slice(0, 3)).toEqual([
+      'rozed-dev/e2e/git/matching-refs/lo/stack/12',
+      'contributor/e2e/git/matching-refs/lo/stack/12',
+      'rozed-dev/e2e/git/matching-refs/lo/kept/stack/12',
+    ]);
+    expect(saved.get({ repository: 'rozed-dev/e2e', number: 12 })?.id).toBe(made.commit);
+    // The pull request's own, #5, is kept apart.
+    expect(new SavedRefs(db).get({ repository: 'rozed-dev/e2e', number: 12 })).toBeUndefined();
+    expect(new SavedRefs(db).get({ repository: 'rozed-dev/e2e', number: 5 })).toBeUndefined();
+    expect(tab.holds(made.commit)).toBe(true);
+    tab.close();
   });
 });
