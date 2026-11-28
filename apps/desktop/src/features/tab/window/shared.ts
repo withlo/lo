@@ -174,15 +174,18 @@ export const middle = defineSlot<{ tab: PullTab; shown: boolean }, MiddleSwitch>
  * What the middle says while there's nothing to show yet: that the pull request is opening, or
  * `status`, what the view reads once it's there. A middle view that waits before it has anything
  * to draw draws this meanwhile, so the tab looks as it does with no view at all, and waits once.
+ * A view whose shape is known gives its `skeleton`, which shows in place of the mark.
  */
 export function MiddlePlaceholder({
   tab,
   status,
+  skeleton,
 }: {
   tab: PullTab;
   status?: string | undefined;
+  skeleton?: ReactNode;
 }): ReactNode {
-  return createElement(Placeholder, { tab: tab.id, status });
+  return createElement(Placeholder, { tab: tab.id, status, skeleton });
 }
 
 /**

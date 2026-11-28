@@ -112,8 +112,17 @@ export interface Definition {
   name: string;
   /** What `term:` links name it by: see {@link TermTarget}. */
   key: string;
+  /** What the pull request does to the repository's definition of it, if anything. */
+  mark?: Mark;
   children: Block<Overview>[];
 }
+
+/**
+ * A glossary entry's mark: `new`, a term the repository's definitions don't have, which the pull
+ * request adds; `changed`, one whose definition it changes. Unmarked, the entry is the repository's
+ * definition, copied.
+ */
+export type Mark = 'new' | 'changed';
 
 /** An overview's tree. A `:::fold` is `@lo/markdown`'s `details` block, closed. */
 export type OverviewTree = Tree<Overview>;

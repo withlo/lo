@@ -51,11 +51,23 @@ import { Checking, type CheckedOverview } from './window/checking.ts';
 
 const GROUPS = ['valid', 'invalid', 'hostile'] as const;
 
+/**
+ * Each fixture on a pull request's ref. The app checks the overview on a pull request's ref, so one
+ * on a stack's is left to `@lo/artifact`'s and the checker's tests.
+ */
 const fixtures = GROUPS.flatMap((group) =>
   readdirSync(join(FIXTURES, group))
     .toSorted()
-    .map((name) => ({ group, name, dir: join(FIXTURES, group, name) })),
+    .map((name) => ({ group, name, dir: join(FIXTURES, group, name) }))
+    .filter(({ dir }) => inputOf(dir).stack === undefined),
 );
+
+/** What the fixture in `dir` says in its `fixture.json`. */
+function inputOf(dir: string): FixtureInput {
+  return existsSync(join(dir, 'fixture.json'))
+    ? JSON.parse(readFileSync(join(dir, 'fixture.json'), 'utf8'))
+    : {};
+}
 
 let server: RepoServer;
 let gitDir: string;
@@ -149,9 +161,7 @@ async function checkInApp(
 
 describe.each(fixtures)('$group/$name', ({ dir }) => {
   test('checks the same in the app as through the fixtures’ readers', async () => {
-    const input: FixtureInput = existsSync(join(dir, 'fixture.json'))
-      ? JSON.parse(readFileSync(join(dir, 'fixture.json'), 'utf8'))
-      : {};
+    const input = inputOf(dir);
     const expected: Expected = JSON.parse(readFileSync(join(dir, 'expected.json'), 'utf8'));
     const pr = input.ref ?? PR;
     const entries = fixtureEntries(dir, input);
