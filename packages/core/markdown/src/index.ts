@@ -18,6 +18,8 @@ export {
   type ImageSource,
 } from './images.ts';
 export {
+  ANY_REFERENCE,
+  inlineTokens,
   markdownTree,
   type BlockHandler,
   type HandlerContext,

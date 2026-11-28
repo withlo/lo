@@ -26,6 +26,7 @@ const SEVERITIES = {
   'format-newer': 'error',
   'pr-missing': 'error',
   'pr-invalid': 'error',
+  'stack-invalid': 'error',
   'commit-missing': 'error',
   'commit-invalid': 'error',
   // Sections and headings.
@@ -37,6 +38,8 @@ const SEVERITIES = {
   'glossary-twice': 'error',
   'glossary-content': 'error',
   'glossary-item': 'error',
+  'glossary-mark': 'error',
+  'mark-definition': 'error',
   // Blocks.
   'block-unknown': 'error',
   'block-unclosed': 'error',
@@ -71,6 +74,7 @@ const SEVERITIES = {
   'artifact-missing': 'error',
   'artifact-not-file': 'error',
   'pr-mismatch': 'error',
+  'stack-mismatch': 'error',
   'tree-extra': 'error',
   'tree-count': 'error',
   'tree-size': 'error',

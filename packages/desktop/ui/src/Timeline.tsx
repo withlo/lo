@@ -16,7 +16,7 @@ import type { IconName } from './icons.ts';
 import { Key } from './Key.tsx';
 import { Label } from './Label.tsx';
 import { LinkButton } from './LinkButton.tsx';
-import { Spinner } from './Spinner.tsx';
+import { Skeleton, Spinner } from './Spinner.tsx';
 import { STATE_ICONS } from './StatePill.tsx';
 import { Tag } from './Tag.tsx';
 import { Tooltip } from './Tooltip.tsx';
@@ -800,5 +800,67 @@ export function TimelineOlder({ count, reading, onSee, focused, ...row }: Timeli
         )}
       </div>
     </TimelineRow>
+  );
+}
+
+/** A row's place while the timeline is read: its marker's disc, empty, and what's beside it. */
+function RowSkeleton({ children }: { children: ReactNode }) {
+  return (
+    <li className="tl-row flex tl-marked rounded-md py-8">
+      <span className={disc({ tone: 'neutral' })} />
+      <div className="min-w-0 flex-1">{children}</div>
+    </li>
+  );
+}
+
+/** A one-line event's place: its line, at its height. */
+function EventSkeleton({ width }: { width: string }) {
+  return (
+    <RowSkeleton>
+      <div className="flex min-h-32 items-center">
+        <Skeleton className={width} />
+      </div>
+    </RowSkeleton>
+  );
+}
+
+/** A post's place: its card, with its head row and a bar for each line of its text. */
+function CardSkeleton({ lines }: { lines: readonly string[] }) {
+  return (
+    <RowSkeleton>
+      <div className={card}>
+        <div className={cardHead({ edge: 'below' })}>
+          <Skeleton className="w-1/4" />
+        </div>
+        <div className="px-12 py-12 read-comment">
+          {lines.map((width, line) => (
+            <div key={line} className="flex h-1lh items-center">
+              <Skeleton className={width} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </RowSkeleton>
+  );
+}
+
+/**
+ * The timeline as it lays out while it's read: the description's card, events and a comment's card,
+ * each a row on the rail at its usual height, with bars where the words will be. Its rows take its
+ * place in one Swap. Put it in `Skeletons`, which says what's read.
+ */
+export function TimelineSkeleton() {
+  return (
+    <div className="@container py-24">
+      <div className="timeline-inset">
+        <ol className="mx-auto flex max-w-timeline-w list-none flex-col">
+          <CardSkeleton lines={['w-full', 'w-full', 'w-3/5']} />
+          <EventSkeleton width="w-1/3" />
+          <EventSkeleton width="w-2/5" />
+          <CardSkeleton lines={['w-full', 'w-1/2']} />
+          <EventSkeleton width="w-1/4" />
+        </ol>
+      </div>
+    </div>
   );
 }

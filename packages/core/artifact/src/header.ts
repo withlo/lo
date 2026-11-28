@@ -1,23 +1,43 @@
 /**
  * The header: the first lines of `artifact.md`, from a line of `---` to the next, holding
- * `format`, `pr` and `commit`, each once, and nothing else. It's read by hand, not as YAML, so
- * there are no aliases, tags or types to guard against for three plain values.
+ * `format`, `pr`, `stack` and `commit`, each at most once, and nothing else. A pull request's
+ * overview has `pr`, and `stack` when the pull request is a layer of a stack; a stack's overview
+ * has `stack` in place of `pr`. It's read by hand, not as YAML, so there are no aliases, tags or
+ * types to guard against for a few plain values.
  */
 
 import { quote, type FindingCode, type Findings } from './findings.ts';
 import { FORMAT } from './limits.ts';
 
-export interface Header {
+/** A pull request's overview's header. */
+export interface PullHeader {
   /** The format the overview is written in. */
   format: number;
   /** The pull request it describes. */
   pr: number;
+  /**
+   * The stack the pull request is a layer of, by its number, which names the stack's overview:
+   * `refs/lo/stack/<stack>`. Left out when it's in none.
+   */
+  stack?: number;
   /** The full id of the commit it describes: 40 hexadecimal digits, or 64 in a SHA-256 repository. */
   commit: string;
 }
 
+/** A stack's overview's header: `stack` in place of `pr`. */
+export interface StackHeader {
+  format: number;
+  pr?: never;
+  /** The stack it describes: GitHub's number for it, or its bottom layer's for a branch stack. */
+  stack: number;
+  /** The full id of the commit it describes: the top layer's head when it was written. */
+  commit: string;
+}
+
+export type Header = PullHeader | StackHeader;
+
 export interface HeaderRead {
-  /** The header, when it holds its three keys, each valid. */
+  /** The header, when each key it holds is valid, and it names a pull request, a stack or both. */
   header?: Header;
   /** The format it names, when that's a whole number. */
   format?: number;
@@ -28,10 +48,10 @@ export interface HeaderRead {
   lines: number | undefined;
 }
 
-const KEYS = ['format', 'pr', 'commit'] as const;
+const KEYS = ['format', 'pr', 'stack', 'commit'] as const;
 type Key = (typeof KEYS)[number];
 
-/** The largest number GitHub gives a pull request. */
+/** The largest number GitHub gives a pull request, or a stack, which shares their numbers. */
 const MAX_PR = 2 ** 31 - 1;
 
 /**
@@ -45,7 +65,7 @@ export function readHeader(start: string, findings: Findings): HeaderRead {
     findings.add(
       'header-missing',
       1,
-      'artifact.md starts with its header: a line of ---, then format, pr and commit, each on its own line, then ---.',
+      "artifact.md starts with its header: a line of ---, then format, pr and commit, each on its own line, then ---. A stack's overview has stack in place of pr.",
     );
     return { lines: 0 };
   }
@@ -74,7 +94,7 @@ export function readHeader(start: string, findings: Findings): HeaderRead {
       found.push([
         'header-key',
         line,
-        `The header can't hold ${quote(pair.key)}. It holds format, pr and commit.`,
+        `The header can't hold ${quote(pair.key)}. It holds format, pr, stack and commit.`,
       ]);
       continue;
     }
@@ -105,15 +125,20 @@ export function readHeader(start: string, findings: Findings): HeaderRead {
   }
 
   const pr = values.get('pr');
-  const number = pr && /^[1-9][0-9]{0,9}$/.test(pr.value) ? Number(pr.value) : undefined;
-  if (!pr) {
+  const number = numberOf(pr?.value);
+  const stack = values.get('stack');
+  const stackNumber = numberOf(stack?.value);
+  if (!pr && !stack) {
     found.push([
       'pr-missing',
       1,
-      "The header has no pr: the pull request's number, such as pr: 4797.",
+      "The header has no pr: the pull request's number, such as pr: 4797. A stack's overview has stack: the stack's number in its place.",
     ]);
-  } else if (number === undefined || number > MAX_PR) {
+  } else if (pr && number === undefined) {
     found.push(['pr-invalid', pr.line, "pr is the pull request's number, such as 4797."]);
+  }
+  if (stack && stackNumber === undefined) {
+    found.push(['stack-invalid', stack.line, "stack is the stack's number, such as 4790."]);
   }
 
   const commit = values.get('commit');
@@ -134,13 +159,35 @@ export function readHeader(start: string, findings: Findings): HeaderRead {
   }
 
   for (const [code, line, message] of found) findings.add(code, line, message);
-  const valid =
-    found.length === 0 && version !== undefined && number !== undefined && id !== undefined;
+  const header =
+    found.length > 0 || version === undefined || id === undefined
+      ? undefined
+      : headerOf(version, number, stackNumber, id);
   return {
-    ...(valid ? { header: { format: version, pr: number, commit: id } } : {}),
+    ...(header ? { header } : {}),
     ...(version === undefined ? {} : { format: version }),
     lines: taken,
   };
+}
+
+/** The header of these values: a pull request's overview when there's a pull request. */
+function headerOf(
+  format: number,
+  pr: number | undefined,
+  stack: number | undefined,
+  commit: string,
+): Header | undefined {
+  if (pr !== undefined) {
+    return stack === undefined ? { format, pr, commit } : { format, pr, stack, commit };
+  }
+  return stack === undefined ? undefined : { format, stack, commit };
+}
+
+/** `value` as a pull request's or a stack's number: plain digits, no larger than GitHub gives. */
+function numberOf(value: string | undefined): number | undefined {
+  if (value === undefined || !/^[1-9][0-9]{0,9}$/.test(value)) return undefined;
+  const number = Number(value);
+  return number > MAX_PR ? undefined : number;
 }
 
 /** The formats this version reads, in words. */

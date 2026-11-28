@@ -11,12 +11,20 @@ import { Findings, type Finding } from './findings.ts';
 import { readHeader, type Header } from './header.ts';
 import { FORMAT, LIMITS } from './limits.ts';
 import { settle, syntax, type Building } from './map.ts';
-import { Reading, type CodeReference, type FigureReference } from './reading.ts';
+import {
+  Reading,
+  type CodeReference,
+  type FigureReference,
+  type GlossaryEntry,
+} from './reading.ts';
 import { readSource } from './source.ts';
 import type { OverviewTree } from './tree.ts';
 
 export interface ParsedArtifact {
-  /** The header, when it holds its three keys, each valid, for a format this version reads. */
+  /**
+   * The header, when each key it holds is valid and it names a pull request, a stack or both, for a
+   * format this version reads.
+   */
   header?: Header;
   /**
    * The format the header names, when it names one. Past {@link FORMAT}, nothing after the header
@@ -34,6 +42,8 @@ export interface ParsedArtifact {
   references: CodeReference[];
   /** Every figure it shows, in order. */
   figures: FigureReference[];
+  /** The glossary's entries, in order. */
+  glossary: GlossaryEntry[];
   /** What's wrong with it: any error makes it invalid. At most {@link LIMITS.findings}. */
   findings: Finding[];
 }
@@ -96,6 +106,7 @@ function read(source: Uint8Array | string): ParsedArtifact {
     tree: settle(built),
     references: reading.references.toSorted((a, b) => a.line - b.line),
     figures: reading.figures,
+    glossary: reading.entries,
     findings: findings.list(),
   };
 }
@@ -109,8 +120,13 @@ export function tooLong(findings: Findings): void {
   );
 }
 
-function nothing(): Pick<ParsedArtifact, 'tree' | 'references' | 'figures'> {
-  return { tree: { blocks: [], notes: [], diagnostics: [] }, references: [], figures: [] };
+function nothing(): Pick<ParsedArtifact, 'tree' | 'references' | 'figures' | 'glossary'> {
+  return {
+    tree: { blocks: [], notes: [], diagnostics: [] },
+    references: [],
+    figures: [],
+    glossary: [],
+  };
 }
 
 /** `text` with its first `lines` lines, the header's, left empty, so the rest keep their numbers. */
