@@ -232,8 +232,8 @@ export interface PopHost<At extends PopAt> {
   focusLine(at: At): void;
   /** Scrolls the pane of `at`'s lines by `by`, down or up, as the view's own scroll. */
   scrollBy(by: number, at: At): void;
-  /** Whether `target` is on `at`'s mark. */
-  onMark(target: Element, at: At): boolean;
+  /** Whether the press `event` is on `at`'s mark. */
+  onMark(event: { readonly target: EventTarget | null; readonly clientX: number }, at: At): boolean;
   /**
    * Whether what it shows at `at` holds a comment box being written: only the box closing closes
    * it then, so a press outside leaves it be.
@@ -713,7 +713,8 @@ export class ThreadPop<At extends PopAt> implements Popover<At> {
     if (this.#state === 'closed' || !this.#at) return;
     const { target } = event;
     if (!(target instanceof Element) || this.dom.contains(target)) return;
-    if (this.#host.onMark(target, this.#at) || this.#host.holds(this.#at)) return;
+    const x = event instanceof MouseEvent ? event.clientX : 0;
+    if (this.#host.onMark({ target, clientX: x }, this.#at) || this.#host.holds(this.#at)) return;
     // What it opened over everything, as its thread's menu, is its own.
     if (target.closest(OVER) !== null) return;
     this.close(false);

@@ -127,7 +127,8 @@ function hostOf() {
     shown: (at) => shown.push(at?.key),
     focusLine: (at) => focused.push(at.key),
     scrollBy: () => {},
-    onMark: (target, at) => marks.get(at.key)?.contains(target) ?? false,
+    onMark: ({ target }, at) =>
+      (target instanceof Node && marks.get(at.key)?.contains(target)) ?? false,
     holds: (at) => boxed.has(at.key),
     release: (at) => {
       if (boxed.delete(at.key)) released.push(at.key);

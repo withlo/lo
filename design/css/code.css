@@ -249,9 +249,9 @@
 .lo-movedlabel a:hover { color: var(--lo-fg); text-decoration-color: currentColor; }
 .lo-movedlabel .lo-muted { font-weight: 400; }
 
-/* Overview markers: a ball on the first line the overview explains, a rail
-   down the rest. Opening one shows the explanation under the range. */
-.lo-ovgutter { position: relative; user-select: none; }
+/* Overview markers: a ball on the last line the overview explains, at the foot
+   of a stem up its range, which the code view's lanes draw. Opening one shows
+   the explanation under the range. */
 .lo-ov-marker {
   position: absolute; left: 50%; top: calc(var(--lo-code-line) / 2);
   width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
@@ -260,13 +260,6 @@
   box-shadow: 0 0 0 3px var(--lo-current-strong);
 }
 .lo-ov-marker.is-open { box-shadow: 0 0 0 3px var(--lo-current-strong), 0 0 10px var(--lo-focus-glow); }
-.lo-ov-range::before {
-  content: ""; position: absolute; left: 50%; top: 0; bottom: 0;
-  width: 2px; margin-left: -1px; border-radius: 1px;
-  background: var(--lo-accent-line);
-}
-.lo-ov-range.is-first::before { top: calc(var(--lo-code-line) / 2); }
-.lo-ov-range.is-last::before { bottom: calc(var(--lo-code-line) / 2); }
 .lo-ovnote {
   margin: 4px 14px 10px 12px;
   max-width: 760px;

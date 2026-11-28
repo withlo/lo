@@ -42,7 +42,7 @@
   --lo-accent-press: #8fb3dc; /* Main button while pressed. */
   --lo-on-accent: #15161d; /* Text and icons on lo-accent fills. */
   --lo-accent-soft: #a5c5e91f; /* Tint behind accent text: pressed chips, hovered terms, figure parts. */
-  --lo-accent-line: #a5c5e980; /* Accent hairlines: term underlines, overview marker rails, pressed chip outlines. */
+  --lo-accent-line: #a5c5e980; /* Accent hairlines: term underlines, overview notes' stems, pressed chip outlines. */
   --lo-focus: #a5c5e9; /* The focus ring edge. Never used for anything but focus. */
   --lo-focus-glow: #a5c5e94d; /* The soft halo outside the focus ring (Lo Glow). */
   --lo-link: #a5c5e9; /* Links in prose and comments. */

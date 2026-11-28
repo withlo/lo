@@ -1,13 +1,13 @@
 /**
- * Writing a checked overview as a commit for its pull request's ref, `refs/lo/pr/<n>`: exactly the
- * bytes that were checked, in a tree of `artifact.md` and `figures/`, with the local ref's commit,
- * if there is one, as its parent. Only objects are written: no ref, index or working tree changes,
- * and pushing is left to whoever runs it.
+ * Writing a checked overview as a commit for its ref, its pull request's `refs/lo/pr/<n>` or its
+ * stack's `refs/lo/stack/<n>`: exactly the bytes that were checked, in a tree of `artifact.md` and
+ * `figures/`, with the local ref's commit, if there is one, as its parent. Only objects are
+ * written: no ref, index or working tree changes, and pushing is left to whoever runs it.
  */
 
 import { ARTIFACT } from '@lo/artifact';
 
-import { GitError, isId, run, type Git } from './git.ts';
+import { GitError, isId, refTarget, run, type Git } from './git.ts';
 
 /** A file the commit holds: its path, `artifact.md` or one in `figures/`, and its bytes. */
 export interface CommitFile {
@@ -21,15 +21,18 @@ export interface Written {
   parent: string | undefined;
 }
 
-/** The ref a pull request's overview is pushed to. */
-export function refOf(pr: number): string {
-  return `refs/lo/pr/${pr}`;
+/** Whose overview it is: a pull request's or a stack's. */
+export type Owner = { pr: number; stack?: undefined } | { stack: number; pr?: undefined };
+
+/** The ref the overview of `owner` is pushed to. */
+export function refOf(owner: Owner): string {
+  return owner.stack === undefined ? `refs/lo/pr/${owner.pr}` : `refs/lo/stack/${owner.stack}`;
 }
 
-/** Writes `files` as the overview for pull request `pr`, in the repository `git` runs in. */
+/** Writes `files` as the overview of `owner`, in the repository `git` runs in. */
 export async function writeCommit(
   git: Git,
-  pr: number,
+  owner: Owner,
   files: readonly CommitFile[],
 ): Promise<Written> {
   const figures: Buffer[] = [];
@@ -49,7 +52,7 @@ export async function writeCommit(
     top.push(treeEntry('040000 tree', tree, 'figures'));
   }
   const tree = await objectId(git, ['mktree', '-z'], Buffer.concat(top));
-  const parent = await parentOf(git, pr);
+  const parent = await parentOf(git, refOf(owner));
   const author = await ident(git, 'GIT_AUTHOR_IDENT');
   const committer = await ident(git, 'GIT_COMMITTER_IDENT');
   const commit = Buffer.concat([
@@ -57,7 +60,11 @@ export async function writeCommit(
     author,
     Buffer.from('\ncommitter '),
     committer,
-    Buffer.from(`\n\nOverview of pull request #${pr}\n`),
+    Buffer.from(
+      owner.stack === undefined
+        ? `\n\nOverview of pull request #${owner.pr}\n`
+        : `\n\nOverview of stack ${owner.stack}\n`,
+    ),
   ]);
   const id = await objectId(git, ['hash-object', '-t', 'commit', '-w', '--stdin'], commit);
   return { id, parent };
@@ -76,25 +83,16 @@ async function objectId(git: Git, args: readonly string[], input: Uint8Array): P
 }
 
 /**
- * The commit the local `refs/lo/pr/<pr>` points at, if there is one: that ref exactly, never one
- * git would guess it means.
+ * The commit the local `ref` points at, if there is one: that ref exactly, never one git would
+ * guess it means.
  */
-async function parentOf(git: Git, pr: number): Promise<string | undefined> {
-  const ref = refOf(pr);
-  const listed = await run(git, [
-    'for-each-ref',
-    '--format=%(objectname) %(objecttype) %(refname)',
-    ref,
-  ]);
-  for (const line of listed.toString('utf8').split('\n')) {
-    const [id = '', type = '', name] = line.split(' ');
-    if (name !== ref) continue;
-    if (type !== 'commit' || !isId(id)) {
-      throw new GitError(`${ref} isn't a commit, so it can't be the new commit's parent.`);
-    }
-    return id;
+async function parentOf(git: Git, ref: string): Promise<string | undefined> {
+  const target = await refTarget(git, ref);
+  if (target === undefined) return undefined;
+  if (target.type !== 'commit') {
+    throw new GitError(`${ref} isn't a commit, so it can't be the new commit's parent.`);
   }
-  return undefined;
+  return target.id;
 }
 
 /** The author's or committer's name, address and time, as the user's git config gives them. */

@@ -602,7 +602,8 @@ that floats.
   `ThreadTarget`'s `collapsed`). A focused overview block's chip names its buttons the same way:
   "Open link" for `⏎` on prose that links to a page, "Next tab" for `→` on tabs. A menu that can
   list more than the window holds, such as the tabs that don't fit, takes `long`: it grows to a
-  palette's list at most, and scrolls.
+  palette's list at most, and scrolls. A switch of Lo's in a menu shows a check: "Ignore in this
+  repo".
 - **Keyboard shortcuts** lists a run of commands that differ only by number, such as Tab 1 to Tab 8,
   as one row, "Tab 1–8" with `⌘1`–`⌘8`: each declares the same `series`. The palette still lists
   each.
@@ -851,6 +852,8 @@ A preference is a setting with a row. The menu bar and the palette may toggle it
   in a box under them, each item a `SettingsListItem` with its own lead, label, line and buttons.
   Accounts, trusted repos and toolchains share it. An empty list is an `EmptyState` `list` in the
   box, with what to do about it.
+- **A list kept per repo is a `ScopedList`:** "Every repo", then each repo with a list of its own,
+  which replaces every repo's there.
 - **A row's button for a command is `SettingsCommand`,** which takes the command's label, key and
   reason as any control does. A row that stands for one thing, such as a pull request's language
   servers, gives it the `target` the command runs on.
@@ -868,18 +871,18 @@ A preference is a setting with a row. The menu bar and the palette may toggle it
 Lo's components are React components in `packages/desktop/ui`, styled with Tailwind CSS on these
 tokens. Their code is the source for how each one looks.
 
-| Group            | Components                                                                                      |
-| ---------------- | ----------------------------------------------------------------------------------------------- |
-| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner, Offer, DismissButton, Panes, Splitter      |
-| Panels           | StackTree, FileTree                                                                             |
-| Controls         | Button, CommandButton, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input |
-| Marks            | Icon, Glyphs, StatePill, Tag, Avatar, Marks                                                     |
-| Floating         | Dialog, Popover, ThreadPopover, ContextMenu, Palette, Tooltip, ToastStack                       |
-| Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem, EmptyState                     |
-| Review           | Thread, Diff, CodeView, CommentBox                                                              |
-| Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary                        |
-| Flows            | Choice, Checklist, Composer, Peek, Timeline, SetupList, SetupItem, SetupDone                    |
-| Settings         | SettingsPage, SettingsGroup, Setting, SettingsList, SettingsListItem, SettingsCommand           |
+| Group            | Components                                                                                                                          |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner, Offer, DismissButton, Panes, Splitter                                          |
+| Panels           | StackTree, FileTree                                                                                                                 |
+| Controls         | Button, CommandButton, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input                                     |
+| Marks            | Icon, Glyphs, StatePill, Tag, Avatar, Marks                                                                                         |
+| Floating         | Dialog, Popover, ThreadPopover, ContextMenu, Palette, Tooltip, ToastStack                                                           |
+| Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem, EmptyState                                                         |
+| Review           | Thread, Diff, CodeView, CommentBox                                                                                                  |
+| Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary, TermCard, TermRow, SectionHead, OverviewLine, StackLayers |
+| Flows            | Choice, Checklist, Composer, Peek, Timeline, SetupList, SetupItem, SetupDone                                                        |
+| Settings         | SettingsPage, SettingsGroup, Setting, SettingsList, SettingsListItem, SettingsCommand, ScopedList                                   |
 
 Build new screens from these. If something new is needed, make it from the same tokens and keep it
 to one job.
@@ -902,9 +905,16 @@ each picture it has drawn by its address: the empty disc, then the Swap, once.
   lines, on one side leaves space (`lo-spacer`) on the other.
 - **A marker sits against the code it's about.** Line numbers, then the thread lane, then the
   overview lane on a side that shows new lines, then the code. A lane is as wide empty as full.
-- **A thread is a bubble, the overview is a ball.** A thread's mark is a `message-square` icon with
-  a bracket up its range, amber while unresolved or pending, grey once resolved or out of date. The
-  overview's is the Powder ball and rail. Neither borrows from the other.
+- **A range is a bracket with its mark at the foot.** A thread and an overview note draw the same
+  way, from the same code (`ui/code/ranges.ts`): the mark on the range's last line, a stem up its
+  lane to a tick on its first, and its lines on `lo-selected` while it's lit, which is under the
+  pointer, open, or where a key landed. A thread's mark is the `message-square` bubble in the thread
+  lane, amber while unresolved or pending, grey once resolved or out of date. An overview note's is
+  the Powder ball in the overview lane. Only the mark, its colour and its lane tell them apart.
+- **Ranges that overlap nest.** In a lane each range keeps a stem of its own, in the first free of
+  three slots 4 px apart, the earliest start outermost, and a stem skips the row of another's mark.
+  Ranges that end on one line share its mark and open together. One range is lit at a time, so no
+  line carries two grounds.
 - **A thread opens over the code, not in it.** With Threads in code at "Beside lines", the default,
   a thread, a reply and a new comment's box open in `ThreadPopover` under the last line they're
   about, and no line of code moves. It never covers its own lines unless they fill the pane.
@@ -1069,6 +1079,14 @@ them.
   button `lo-sp-8` under the last line, its left edge on the text's, and no more room held than its
   lines take.
 - Figures use the `fig-*` colors only. `figures.md` is the contract for agents that draw them.
+- A term's card shows its definition, who it's by and what can be done to it. It takes no focus: the
+  term's keys and menu do what its buttons do. History and suggestions open in the term's row.
+- A term is drawn by `TermRow` wherever it's listed, with one menu. A term the reader ignores is
+  plain text, and waits in the "Ignored" group at the list's end.
+- A section's heading folds it. Nothing is hidden: a collapsed section keeps its heading, and the
+  tl;dr never collapses. What goes into a collapsed section expands it first.
+- The stack overview is a subject of the Overview view, not a layer. Its list of layers is Lo's,
+  drawn live from the stack.
 
 ## Writing
 

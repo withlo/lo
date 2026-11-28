@@ -9,9 +9,11 @@
  * proportion to its size, and it's refused whole at the first thing wrong, never read in part.
  */
 
+import { article } from './commit.ts';
 import { isPlainTerm, notDefinitionText } from './definitions.ts';
 import { quote, UNSAFE } from './findings.ts';
 import { LIMITS } from './limits.ts';
+import { answered, type OverviewFiles } from './readers.ts';
 import { utf8Length } from './source.ts';
 import { readTerm, termKey } from './targets.ts';
 
@@ -40,6 +42,12 @@ export const STORE_LIMITS = Object.freeze({
   /** The most bytes of UTF-8 in a git name, for a writer GitHub couldn't name. */
   name: 256,
 });
+
+/**
+ * The most bytes of `terms.json` to read to parse it: its limit, and a byte-order mark. A larger
+ * one is too large, and isn't read at all.
+ */
+export const STORE_READ: number = STORE_LIMITS.size + 3;
 
 /** The store, read. */
 export interface Store {
@@ -118,11 +126,13 @@ export interface Change {
 export type StoreRead = { ok: true; store: Store } | { ok: false; problem: StoreProblem };
 
 /**
- * Why the store can't be used. Past one of its limits: `too-large`, `too-many` and `too-long`.
- * Unread: `encoding`, `syntax`, `format`, `format-newer` and `unreadable`. Not what it may hold:
- * `shape`, `key`, `key-twice` and `name-twice`.
+ * Why the store can't be used. Its ref's commit has no file `terms.json`: `commit`. Past one of its
+ * limits: `too-large`, `too-many` and `too-long`. Unread: `encoding`, `syntax`, `format`,
+ * `format-newer` and `unreadable`. Not what it may hold: `shape`, `key`, `key-twice` and
+ * `name-twice`.
  */
 export type StoreProblemCode =
+  | 'commit'
   | 'unreadable'
   | 'too-large'
   | 'too-many'
@@ -162,6 +172,48 @@ export function parseStore(source: Uint8Array | string): StoreRead {
       },
     };
   }
+}
+
+/**
+ * The store in the commit its ref points at, whose files `readFile` reads as an overview's commit's
+ * are read ({@link OverviewFiles.read}): `terms.json` parsed, when it's a file no larger than the store
+ * may be, or why it can't be used. Never rejects: a reader that fails, or hasn't answered once
+ * `signal` aborts, leaves it unreadable.
+ */
+export async function readStore(
+  readFile: OverviewFiles['read'],
+  signal: AbortSignal,
+): Promise<StoreRead> {
+  const answer = await answered(() => readFile(STORE_FILE, STORE_READ, signal), STORE_READ, signal);
+  switch (answer.kind) {
+    case 'file':
+      // Its size comes first: bytes past the cap were never read.
+      return answer.size > STORE_READ ? unusable('too-large', TOO_LARGE) : parseStore(answer.bytes);
+    case 'missing':
+      return unusable('commit', `The commit at ${STORE_REF} has no ${STORE_FILE}.`);
+    case 'notFile':
+      return unusable(
+        'commit',
+        `${STORE_FILE}, at ${STORE_REF}, is ${article(answer.is)}. It's a file.`,
+      );
+    case 'noCommit':
+      return unusable('commit', `The repository doesn't have the commit at ${STORE_REF}.`);
+    case 'unread':
+      return unusable(
+        'unreadable',
+        answer.why === 'stopped'
+          ? `${STORE_FILE} wasn't read in time.`
+          : `Lo couldn't read ${STORE_FILE}.`,
+      );
+    default:
+      answer satisfies never;
+      return unusable('unreadable', `Lo couldn't read ${STORE_FILE}.`);
+  }
+}
+
+/** A store that can't be used, for `message`. */
+function unusable(code: StoreProblemCode, message: string): StoreRead {
+  return { ok: false, problem: { code, message } };
 }
 
 /** Why the store is refused, thrown from where it's found to {@link parseStore}. */
@@ -333,12 +385,10 @@ function textOf(source: Uint8Array | string): string {
   }
 }
 
+const TOO_LARGE = `terms.json is larger than ${STORE_LIMITS.size / 1024 / 1024} MiB, the most the store may be.`;
+
 function tooLarge(): never {
-  refuse(
-    'too-large',
-    undefined,
-    `terms.json is larger than ${STORE_LIMITS.size / 1024 / 1024} MiB, the most the store may be.`,
-  );
+  refuse('too-large', undefined, TOO_LARGE);
 }
 
 /** The term at `at`, from its entry, `value`. */

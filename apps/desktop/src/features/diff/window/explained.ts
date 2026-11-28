@@ -1,5 +1,5 @@
 // The lines of a pull request's tab's diff that something else explains, such as the pull
-// request's overview, which the diff marks: a ball on the first, a rail down the rest and a note
+// request's overview, which the diff marks: a ball on the last, a stem up to the first and a note
 // under the last. The diff asks for them at the commit its newer side shows, each time it's drawn
 // and each time they change, so marks are always on the lines it draws, and "Read it in the
 // overview" in a note goes back to what explains them.

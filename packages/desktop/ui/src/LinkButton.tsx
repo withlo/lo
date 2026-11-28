@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { UNFOCUSABLE } from './focus.ts';
 import { Glyphs } from './Icon.tsx';
 
 /**
@@ -11,16 +12,23 @@ export function LinkButton({
   children,
   onClick,
   label,
+  focusable = true,
 }: {
   children: ReactNode;
   onClick?: (() => void) | undefined;
   /** What a screen reader says in place of the text, when the text alone doesn't tell links apart. */
   label?: string | undefined;
+  /**
+   * `false` for one the keyboard never reaches, on a surface that takes no focus, as a term's card:
+   * it's out of the tab order, and a click leaves focus where it was.
+   */
+  focusable?: boolean | undefined;
 }) {
   return (
     <button
       type="button"
       aria-label={label}
+      {...(focusable ? {} : UNFOCUSABLE)}
       className="rounded-xs text-link underline-offset-2 text-small hover:text-link-hover hover:underline focus-visible:shadow-ring"
       onClick={onClick}
     >
