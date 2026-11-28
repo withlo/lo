@@ -419,8 +419,8 @@ test('marks the lines it explains in the diff at r2, opens what it says of them,
         'src/text/wrap.ts 2-15 9',
       ]);
 
-    // src/format.ts at the top: its first line's ball opens the note of the block on lines 1–3, and
-    // Esc in the diff closes it.
+    // src/format.ts at the top: the ball on line 3 opens the note of the block on lines 1–3, its
+    // last, and Esc in the diff closes it.
     await keysToDiff(page);
     const format = await page.evaluate(
       () => window.loDiff?.files.find((file) => file.path === 'src/format.ts')?.id,
@@ -448,7 +448,7 @@ test('marks the lines it explains in the diff at r2, opens what it says of them,
     // the diff.
     const ballOf = () =>
       page.evaluate((file) => {
-        const line = { kind: 'line' as const, at: { file, side: 'new' as const, line: 1 } };
+        const line = { kind: 'line' as const, at: { file, side: 'new' as const, line: 3 } };
         const top = window.loDiff?.probe.spotTop(line);
         const bottom = window.loDiff?.probe.spotBottom(line);
         const frame = document
@@ -470,7 +470,7 @@ test('marks the lines it explains in the diff at r2, opens what it says of them,
       }, format);
     await expect.poll(ballOf).toBeDefined();
     const ball = await ballOf();
-    if (!ball) throw new Error('src/format.ts’s first line has no ball.');
+    if (!ball) throw new Error('src/format.ts’s line 3 has no ball.');
     await page.mouse.click(ball.x, ball.y);
     const note = diff.locator('.lo-ovnote');
     await expect(note).toHaveCount(1);

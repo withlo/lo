@@ -1070,8 +1070,8 @@ export interface LinesMark {
 }
 
 /**
- * Lines a block of the pull request's overview explains: a ball on the first, a rail down the
- * rest, and a note under the last that says what the block says about them. An overview explains
+ * Lines a block of the pull request's overview explains: a ball on the last, a stem up to the
+ * first, and a note under the last that says what the block says about them. An overview explains
  * new lines only: a mark on the old side isn't drawn.
  */
 export interface OverviewMark {
