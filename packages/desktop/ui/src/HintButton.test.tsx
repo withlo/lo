@@ -13,7 +13,7 @@ import { Registry } from './commands/registry.ts';
 import type { LineTarget } from './commands/targets.ts';
 import { HintButton } from './HintButton.tsx';
 import { HintRow } from './HintRow.tsx';
-import { menuOpener, MoreButton } from './MoreButton.tsx';
+import { menuOpenedByKey, menuOpener, MoreButton } from './MoreButton.tsx';
 import { TOOLTIP_DELAY, TooltipGroup } from './Tooltip.tsx';
 import { useControl } from './useControl.ts';
 
@@ -268,6 +268,24 @@ test('the more button is the menu’s opener while its surface hears it, and no 
   act(() => button.click());
   expect(openers).toEqual([button]);
   expect(menuOpener()).toBeUndefined();
+});
+
+test('the more button says whether a key pressed it while its surface hears it, and no longer', () => {
+  const keyed: boolean[] = [];
+  const host = draw(
+    <div onContextMenu={() => keyed.push(menuOpenedByKey())}>
+      <MoreButton />
+    </div>,
+  );
+  const button = host.querySelector('button')!;
+  // ⏎ or Space clicks it counting no clicks; the pointer, one.
+  for (const detail of [0, 1]) {
+    act(() => {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail }));
+    });
+  }
+  expect(keyed).toEqual([true, false]);
+  expect(menuOpenedByKey()).toBe(false);
 });
 
 test('a shy more button keeps its room and its place in `Tab`’s order', () => {

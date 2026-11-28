@@ -155,6 +155,8 @@ test('` steps from the diff to the timeline, read as it’s first shown; j, k an
     await more.click();
     await expect(menu.getByRole('menuitem', { name: /Open on GitHub/ })).toBeVisible();
     await expect(menu.getByRole('menuitem', { name: /^Show in diff/ })).toHaveCount(0);
+    // The pointer's press highlights nothing; a key's, the first action that can be done.
+    await expect(menu.locator('[data-highlighted]')).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(menu).toBeHidden();
     await expect(timeline).toBeFocused();
@@ -162,6 +164,9 @@ test('` steps from the diff to the timeline, read as it’s first shown; j, k an
     await expect(more).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(menu.getByRole('menuitem', { name: /Open on GitHub/ })).toBeVisible();
+    await expect(
+      menu.locator('[role^="menuitem"]:not([aria-disabled="true"])').first(),
+    ).toHaveAttribute('data-highlighted');
     await page.keyboard.press('Escape');
     await expect(menu).toBeHidden();
     await expect.poll(on).toContain('pushed 1 commit');
