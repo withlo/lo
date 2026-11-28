@@ -92,7 +92,7 @@ test('a name cut short shows whole as its tooltip, and one drawn whole shows non
   // Its neighbour's would come at once, with one just shown: drawn whole, it has none.
   await page.locator('#whole').hover();
   await expect(tooltip).toHaveCount(0);
-  await page.evaluate(() => new Promise((done) => requestAnimationFrame(done)));
+  await page.evaluate(() => window.waits.frames('a frame with the name drawn whole hovered'));
   await expect(tooltip).toHaveCount(0);
 });
 

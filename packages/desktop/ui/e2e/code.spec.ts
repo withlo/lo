@@ -116,7 +116,7 @@ async function wrapping(layout: DiffLayout, below = 30): Promise<Page> {
 function narrowed(page: Page): Promise<void> {
   return page.evaluate(() => {
     window.harness.narrow(640);
-    return window.harness.frames(1);
+    return window.waits.frames('a frame to start with the view narrowed to 640 px');
   });
 }
 
@@ -132,7 +132,9 @@ function other(layout: DiffLayout): DiffLayout {
 
 /** Waits for a few frames, which lay out and measure what changed, and line it up. */
 function frames(page: Page): Promise<void> {
-  return page.evaluate(() => window.harness.frames(3));
+  return page.evaluate(() =>
+    window.waits.frames('the view to lay out what changed, and line it up', 3),
+  );
 }
 
 /** The unchanged lines all on screen, top to bottom. */
@@ -225,7 +227,7 @@ for (const layout of ['split', 'inline'] as const) {
       expect(await list.evaluate((each) => each.scrollHeight > each.clientHeight)).toBe(true);
       const height = await peek.evaluate((each) => each.getBoundingClientRect().height);
       const opened = [...(await tops()), under, await box()];
-      await page.evaluate(() => window.harness.frames(10));
+      await page.evaluate(() => window.waits.frames('ten frames more, in which nothing moves', 10));
       near(
         [
           ...(await tops()),
@@ -317,7 +319,7 @@ for (const layout of ['split', 'inline'] as const) {
       expect(await page.evaluate(() => window.harness.misalignment())).toBeLessThan(1);
       // Nothing moves in the frames after the one that brought it on screen.
       const shown = await onScreen(page);
-      await page.evaluate(() => window.harness.frames(10));
+      await page.evaluate(() => window.waits.frames('ten frames more, in which nothing moves', 10));
       await still(page, shown);
       near([await peekEnd(page)], [height]);
       // Closing it scrolls nothing back.
@@ -349,7 +351,7 @@ for (const layout of ['split', 'inline'] as const) {
 
       // Its code comes, 12 lines: shorter than the peek, which keeps its height.
       expect(await page.evaluate(() => window.harness.peek(40, 12))).toBe(true);
-      await page.evaluate(() => window.harness.frames(10));
+      await page.evaluate(() => window.waits.frames('ten frames more, in which nothing moves', 10));
       await still(page, before);
       near([await peekEnd(page)], [end]);
     });
@@ -369,7 +371,7 @@ for (const layout of ['split', 'inline'] as const) {
       expect(Math.abs((await lineTop(page, 40))! - PINNED)).toBeLessThan(1);
       expect(await peekEnd(page)).toBeGreaterThan(300);
       const shown = await onScreen(page);
-      await page.evaluate(() => window.harness.frames(10));
+      await page.evaluate(() => window.waits.frames('ten frames more, in which nothing moves', 10));
       await still(page, shown);
     });
 
@@ -596,19 +598,15 @@ for (const layout of ['split', 'inline'] as const) {
 
       test(`a ${opened} under a wrapped line partly above the top, the view narrowing the frame after, leaves the first line on screen where it is`, async () => {
         const page = await wrapping(layout);
-        const before = await page.evaluate(
-          (kind) =>
-            new Promise<number | undefined>((resolve) => {
-              if (kind === 'peek') window.harness.peek(19);
-              else window.harness.compose(19);
-              requestAnimationFrame(() => {
-                const top = window.harness.lineTop(20);
-                window.harness.narrow(640);
-                resolve(top);
-              });
-            }),
-          opened,
-        );
+        const before = await page.evaluate(async (kind) => {
+          if (kind === 'peek') window.harness.peek(19);
+          else window.harness.compose(19);
+          // In the next frame, before it's laid out.
+          await window.waits.frames(`the frame after the ${kind} opened`);
+          const top = window.harness.lineTop(20);
+          window.harness.narrow(640);
+          return top;
+        }, opened);
         await frames(page);
         expect(before).toBeGreaterThan(0);
         near([await lineTop(page, 20)], [before]);
@@ -819,7 +817,7 @@ test('in the whole file, a peek under a line partly below the foot of the screen
   expect(top).toBeGreaterThan(0);
   expect(top).toBeLessThan(before);
   const shown = await onScreen(page);
-  await page.evaluate(() => window.harness.frames(10));
+  await page.evaluate(() => window.waits.frames('ten frames more, in which nothing moves', 10));
   await still(page, shown);
   near([await peekEnd(page)], [height]);
   expect(await page.evaluate(() => window.harness.filePeek(40, false))).toBe(true);
@@ -848,7 +846,7 @@ test('in the whole file, a peek under the last line on screen, opened before its
 
   // Its code comes, 9 lines.
   expect(await page.evaluate(() => window.harness.filePeek(40))).toBe(true);
-  await page.evaluate(() => window.harness.frames(10));
+  await page.evaluate(() => window.waits.frames('ten frames more, in which nothing moves', 10));
   await still(page, before);
   near([await peekEnd(page)], [end]);
 });
@@ -868,7 +866,7 @@ test('in the whole file, a peek taller than the room under its line puts the lin
   expect(Math.abs((await lineTop(page, 40))!)).toBeLessThan(1);
   expect(await peekEnd(page)).toBeGreaterThan(200);
   const shown = await onScreen(page);
-  await page.evaluate(() => window.harness.frames(10));
+  await page.evaluate(() => window.waits.frames('ten frames more, in which nothing moves', 10));
   await still(page, shown);
 });
 
@@ -1224,7 +1222,7 @@ for (const [from, to] of [
     // A key nothing is bound to, the reader's all the same; and past the frames the view holds the
     // line at the top for, as a key keeps the cursor on screen for a while.
     await page.keyboard.press('F2');
-    await page.evaluate(() => window.harness.frames(40));
+    await page.evaluate(() => window.waits.frames('40 frames after the key', 40));
     expect((await drawnLayout(page)).layout).toBe(to < 480 ? 'inline' : 'split');
     near([await lineTop(page, first!.line)], [first!.top]);
     expect(await page.evaluate(() => window.harness.cursorOnScreen())).toBe(false);

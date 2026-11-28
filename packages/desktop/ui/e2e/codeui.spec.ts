@@ -72,8 +72,8 @@ async function fit(page: Page, scene: Scene, theme: Theme, width: number): Promi
   });
   // Drawn, and laid out: two frames.
   await page.evaluate(
-    () =>
-      new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))),
+    (drawn) => window.waits.frames(`${drawn.scene} drawn ${drawn.width} px wide`, 2),
+    { scene, width },
   );
   return page.evaluate(() => {
     const box = document.getElementById('root')!;

@@ -813,16 +813,6 @@ const harness = {
     const { left, top, bottom } = grip.getBoundingClientRect();
     return { x: left, top, bottom };
   },
-  /** Waits for `count` frames. */
-  frames(count: number): Promise<void> {
-    return new Promise((resolve) => {
-      const next = (left: number): void => {
-        if (left === 0) resolve();
-        else requestAnimationFrame(() => next(left - 1));
-      };
-      next(count);
-    });
-  },
 };
 
 declare global {

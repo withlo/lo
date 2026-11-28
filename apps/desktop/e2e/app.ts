@@ -41,6 +41,12 @@ export const HELD_LONG = 3_000;
 /** How long Lo's window has to draw its first frame before the test fails for it. */
 const DRAW_LIMIT = 60_000;
 
+/**
+ * How long a wait for Lo's window to draw has, once it has drawn its first frame: far longer than
+ * frames take, so a frame that never comes fails as that, saying what waited for it.
+ */
+const FRAME_LIMIT = 10_000;
+
 /** The app's folder. Electron starts the built main process its `package.json` names. */
 export const appFolder = fileURLToPath(new URL('..', import.meta.url));
 
@@ -542,7 +548,7 @@ declare global {
 /**
  * Sets the window's size, as the reader would, and waits until the page has taken it: its last
  * resize was 100 ms ago, and two frames have drawn since. A window that was that size already sends
- * no resize, which is waited for half a second.
+ * no resize, which is waited for half a second. Fails if that takes `FRAME_LIMIT`.
  */
 export async function sizeWindow(
   app: ElectronApplication,
@@ -567,9 +573,18 @@ export async function sizeWindow(
     { width, height },
   );
   await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
+    (size) =>
+      new Promise<void>((resolve, reject) => {
         const from = performance.now();
+        let drawing = false;
+        const timer = setTimeout(() => {
+          const missed = drawing ? 'no frame came' : 'it was still resizing';
+          reject(
+            new Error(
+              `Waiting for Lo’s window to take its size, ${size.width}×${size.height}, ${missed} in ${size.limit / 1000} s.`,
+            ),
+          );
+        }, size.limit);
         const check = () => {
           const now = performance.now();
           const sized = window.loSized;
@@ -578,10 +593,17 @@ export async function sizeWindow(
             setTimeout(check, 25);
             return;
           }
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          drawing = true;
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              clearTimeout(timer);
+              resolve();
+            }),
+          );
         };
         check();
       }),
+    { width, height, limit: FRAME_LIMIT },
   );
 }
 

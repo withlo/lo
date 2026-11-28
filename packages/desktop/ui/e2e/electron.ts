@@ -2,6 +2,9 @@
 // one window that's never shown. On Linux each worker opens its pages on an X display of its own
 // (`@lo/testing/display`), so another worker's windows never take its focus or the pointer. As a
 // file, the page loads its script as a plain one: Chromium loads no module from a `file:` address.
+// A spec waits for a frame, or for what a frame brings, only through the page's `window.waits`,
+// which fails within 10 s, saying what it waited for, where a frame that never came would otherwise
+// fail as the test's whole time running out.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +35,11 @@ export const test = base.extend<object, { display: string | undefined }>({
 
 export { expect } from '@playwright/test';
 
-/** Electron's side: one window, never shown, with the page. */
+/**
+ * Electron's side: one window, never shown, with the page. Never shown, the page could be taken as
+ * in the background, which holds back its frames and timers, so it's never throttled: a spec
+ * waiting for a frame gets one.
+ */
 const MAIN = `
 const { app, BrowserWindow } = require('electron');
 const { join } = require('node:path');
@@ -40,13 +47,110 @@ app.whenReady().then(() => {
   const window = new BrowserWindow({
     width: 1200,
     height: 900,
-    show: false,
-    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+    show: process.platform === 'linux',
+    webPreferences: {
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      backgroundThrottling: false,
+    },
   });
   void window.loadFile(join(__dirname, 'index.html'));
 });
 app.on('window-all-closed', () => app.quit());
 `;
+
+/** How long a wait in a page for frames may take: far longer than frames take, and under a test's. */
+const FRAME_LIMIT = 10_000;
+
+/**
+ * How long a page may take to draw its first frame. Its frames come once Electron's GPU process has
+ * started, which in CI, with copies of Lo starting at once, has taken up to half a minute.
+ */
+const FIRST_FRAME_LIMIT = 60_000;
+
+/** What a spec's code in the page waits on, as `window.waits`. */
+interface Waits {
+  /**
+   * Waits for `count` frames, one unless it says, by when what changed before is laid out, measured
+   * and drawn. Fails if they haven't come within `limit`, 10 s unless it says, saying it was waiting
+   * for `what` and how many came.
+   */
+  frames(what: string, count?: number, limit?: number): Promise<void>;
+  /**
+   * Waits for a resize observer's first notice of `element`, which comes as the next frame lays it
+   * out, after the notices of the page's own observers made before it, drawn or not. Fails
+   * likewise.
+   */
+  resized(what: string, element: Element): Promise<void>;
+}
+
+declare global {
+  interface Window {
+    /** The waits for frames every page has, from before its harness runs (`putWaits`). */
+    waits: Waits;
+  }
+}
+
+/**
+ * Puts the page's `window.waits`, each failing after `limit` unless what it waits for has come. The
+ * page gets this function as text, so it uses nothing from outside itself.
+ */
+function putWaits(limit: number): void {
+  /**
+   * Waits for `wait` to call its `done`, failing after `until` with what it waited for and what of
+   * it came (`came`).
+   */
+  const within = (
+    what: string,
+    came: () => string,
+    wait: (done: () => void) => void,
+    until = limit,
+  ) =>
+    new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`Waiting for ${what}, ${came()} in ${until / 1000} s.`));
+      }, until);
+      wait(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  window.waits = {
+    frames: (what, count = 1, until = limit) => {
+      let seen = 0;
+      return within(
+        what,
+        () => `${seen} of ${count} ${count === 1 ? 'frame' : 'frames'} came`,
+        (done) => {
+          const next = (): void => {
+            if (seen === count) done();
+            else {
+              requestAnimationFrame(() => {
+                seen += 1;
+                next();
+              });
+            }
+          };
+          next();
+        },
+        until,
+      );
+    },
+    resized: (what, element) =>
+      within(
+        what,
+        () => 'no resize notice came',
+        (done) => {
+          const observer = new ResizeObserver(() => {
+            observer.disconnect();
+            done();
+          });
+          observer.observe(element);
+        },
+      ),
+  };
+}
 
 /** The folder of each page this worker has built, by its harness. */
 const built = new Map<string, Promise<string>>();
@@ -94,6 +198,7 @@ async function buildOnce(
   const css = typeof style === 'string' ? style : await style();
   const page =
     `<!doctype html><meta charset="utf-8"><title>${title}</title><style>${css}</style>` +
+    `<script>(${putWaits.toString()})(${FRAME_LIMIT});</script>` +
     `<div id="root" class="lo-app"></div><script src="./${name}.js"></script>`;
   writeFileSync(`${folder}index.html`, page);
   writeFileSync(`${folder}main.cjs`, MAIN);
@@ -117,7 +222,10 @@ export async function utilities(): Promise<string> {
   return `${await buildCss(scanner.scan())}\nbody { margin: 0; }`;
 }
 
-/** Opens the page `buildPage` built in `folder`, in a copy of Electron of its own. */
+/**
+ * Opens the page `buildPage` built in `folder`, in a copy of Electron of its own, once the page has
+ * drawn its first frame (`drawn`).
+ */
 export async function launch(folder: string): Promise<ElectronApplication> {
   if (typeof electronBinary !== 'string') throw new Error('The electron package gave no path.');
   const env: Record<string, string> = {};
@@ -125,10 +233,37 @@ export async function launch(folder: string): Promise<ElectronApplication> {
     if (value !== undefined) env[name] = value;
   }
   delete env.ELECTRON_RUN_AS_NODE;
-  return electron.launch({
+  const app = await electron.launch({
     args: [folder],
     executablePath: electronBinary,
     env,
     chromiumSandbox: true,
   });
+  try {
+    await drawn(app);
+  } catch (error) {
+    await app.close();
+    throw error;
+  }
+  return app;
+}
+
+/**
+ * Waits for the page to draw its first frame, which can take far longer than a spec's wait for
+ * frames may (`FIRST_FRAME_LIMIT`), and puts off the test's time limit for as long as it takes.
+ */
+async function drawn(app: ElectronApplication): Promise<void> {
+  const info = base.info();
+  const timeout = info.timeout;
+  const from = performance.now();
+  // Zero is no limit at all, which a wait can't add to.
+  if (timeout > 0) info.setTimeout(timeout + FIRST_FRAME_LIMIT);
+  const page = await app.firstWindow();
+  // Checked on a timer, not on frames, which may not have come yet.
+  await page.waitForFunction(() => 'waits' in window, undefined, { polling: 100 });
+  await page.evaluate(
+    (limit) => window.waits.frames('the page’s first frame', 1, limit),
+    FIRST_FRAME_LIMIT,
+  );
+  if (timeout > 0) info.setTimeout(timeout + Math.ceil(performance.now() - from));
 }

@@ -32,9 +32,7 @@ function at(page: Page, width: number, rows = '#frame .give-up:not(:has(h1))'): 
       const frame = document.querySelector<HTMLElement>(found.split(' ')[0]!)!;
       frame.style.width = `${wide}px`;
       // What it gives up is measured as the frame is laid out, before it's painted.
-      for (let count = 0; count < 3; count += 1) {
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-      }
+      await window.waits.frames(`the frame of ${found} laid out ${wide} px wide`, 3);
       return [...document.querySelectorAll(found)].map(
         (row) => row.getAttribute('data-gave-up') ?? '',
       );
@@ -111,13 +109,7 @@ function fittedAt(page: Page, widths: readonly number[]): Promise<Fitted[]> {
     const seen: Fitted[] = [];
     for (const width of each) {
       frame.style.width = `${width}px`;
-      await new Promise<void>((resolve) => {
-        const sized = new ResizeObserver(() => {
-          sized.disconnect();
-          resolve();
-        });
-        sized.observe(frame);
-      });
+      await window.waits.resized(`the header laid out ${width} px wide`, frame);
       seen.push({
         width,
         steps: (row.getAttribute('data-gave-up') ?? '').split(' ').filter(Boolean),
@@ -205,13 +197,7 @@ test('narrowed from 640 to 160 px, a diff’s note gives up its control, then it
     for (const width of each) {
       frame.style.width = `${width}px`;
       // One frame: the row fits itself in its own resize observer, made before this one.
-      await new Promise<void>((resolve) => {
-        const sized = new ResizeObserver(() => {
-          sized.disconnect();
-          resolve();
-        });
-        sized.observe(frame);
-      });
+      await window.waits.resized(`the note laid out ${width} px wide`, frame);
       const steps = row.getAttribute('data-gave-up') ?? '';
       // Drawn with one step fewer, the row or what it keeps whole runs past its end.
       const fewer = steps.split(' ').filter(Boolean).slice(0, -1).join(' ');
