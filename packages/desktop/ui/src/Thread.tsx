@@ -192,6 +192,18 @@ export interface SentPostProps {
   image?: string | undefined;
   /** What's being done with it, where its time will be: "Sending…", or "Saving…" for an edit. */
   label?: string | undefined;
+  /** Its author opened the pull request, which its card will say. */
+  byAuthor?: boolean | undefined;
+  /**
+   * The thread's row that offers a reply comes under it, as it will under the comment in the card
+   * that takes its place, for a new thread's comment and a reply. It takes nothing until then.
+   */
+  reply?: boolean | undefined;
+  /**
+   * Its text alone, as an edit's in a card whose own head says who wrote it and that it's being
+   * saved: no head, no avatar and no room of its own around it.
+   */
+  bare?: boolean | undefined;
   /** The text as it will read, already drawn. */
   body: ReactNode;
 }
@@ -199,10 +211,27 @@ export interface SentPostProps {
 /**
  * A comment the reader has sent that GitHub hasn't answered for yet, drawn as it will be on its
  * card, with "Sending…" where its time will be, under the head row of the thread it starts, if it
- * starts one. The comment box draws it in its own place from the
- * moment it's sent, so the text never leaves the screen; the card takes its place when it arrives.
+ * starts one, and over the row that offers a reply, where the card will have one. The comment box
+ * draws it in its own place from the moment it's sent, so the text never leaves the screen; the
+ * card takes its place when it arrives, with nothing moving.
  */
-export function SentPost({ state, author, image, label = 'Sending…', body }: SentPostProps) {
+export function SentPost({
+  state,
+  author,
+  image,
+  label = 'Sending…',
+  byAuthor = false,
+  reply = false,
+  bare = false,
+  body,
+}: SentPostProps) {
+  if (bare) {
+    return (
+      <div data-sent="" className="lo-selectable text-fg read-comment">
+        {body}
+      </div>
+    );
+  }
   const post = (
     // Whoever sends it says so to a screen reader: drawn with its words, this would say nothing.
     <div data-sent="" className="flex gap-8 px-12 py-8">
@@ -219,22 +248,68 @@ export function SentPost({ state, author, image, label = 'Sending…', body }: S
             <Spinner />
             {label}
           </span>
+          {byAuthor && <Tag>Author</Tag>}
         </div>
         <div className="lo-selectable mt-2 text-fg read-comment">{body}</div>
       </div>
     </div>
   );
-  if (state === undefined) return post;
   return (
     <>
-      <div className={HEAD_ROW}>
-        <span className={HEAD_WORDS}>
-          <Tag tone="warning">{state}</Tag>
-          <span className="whitespace-nowrap">1 comment</span>
-        </span>
-      </div>
+      {state !== undefined && (
+        <div className={HEAD_ROW}>
+          <span className={HEAD_WORDS}>
+            <Tag tone="warning">{state}</Tag>
+            <span className="whitespace-nowrap">1 comment</span>
+          </span>
+        </div>
+      )}
       {post}
+      {reply && <ReplyRow />}
     </>
+  );
+}
+
+interface ReplyRowProps {
+  /** Its keys, as this system shows them: shown while it has focus. */
+  keys?: readonly string[] | undefined;
+  /** Pressed. Without it, the row only holds its place, as under a comment being sent: inert. */
+  onReply?: (() => void) | undefined;
+}
+
+/**
+ * The row at the foot of a thread's open card that offers a reply: a field-like button, "Reply",
+ * which opens the reply's box in the row's place. Without `onReply` it's the same row, inert, as
+ * under a comment on its way, whose card will have it.
+ */
+function ReplyRow({ keys, onReply }: ReplyRowProps) {
+  const face =
+    'flex h-control-h w-full items-center gap-8 rounded-sm border border-border bg-bg-well px-8 text-start text-fg-subtle text-ui';
+  return (
+    <div className="border-t border-border-subtle py-8 ps-40 pe-12">
+      {onReply === undefined ? (
+        <div inert aria-hidden="true" className={face}>
+          Reply
+        </div>
+      ) : (
+        // Its key: the field says "Reply" already.
+        <Tooltip label={keys === undefined ? null : 'Reply'} keys={keys}>
+          <button
+            type="button"
+            {...keyAria(keys, undefined)}
+            className={`${face} hover:border-border-strong focus-visible:shadow-ring`}
+            onClick={onReply}
+          >
+            Reply
+            {keys && (
+              <span className="ms-auto">
+                <Key keys={keys} when="focus" quiet decorative />
+              </span>
+            )}
+          </button>
+        </Tooltip>
+      )}
+    </div>
   );
 }
 
@@ -589,26 +664,7 @@ export function Thread({
           </div>
         ),
       )}
-      {showReply && (
-        <div className="border-t border-border-subtle py-8 ps-40 pe-12">
-          {/* Its key: the field says "Reply" already. */}
-          <Tooltip label={keys.reply === undefined ? null : 'Reply'} keys={keys.reply}>
-            <button
-              type="button"
-              {...keyAria(keys.reply, undefined)}
-              className="flex h-control-h w-full items-center gap-8 rounded-sm border border-border bg-bg-well px-8 text-start text-fg-subtle text-ui hover:border-border-strong focus-visible:shadow-ring"
-              onClick={onReply}
-            >
-              Reply
-              {keys.reply && (
-                <span className="ms-auto">
-                  <Key keys={keys.reply} when="focus" quiet decorative />
-                </span>
-              )}
-            </button>
-          </Tooltip>
-        </div>
-      )}
+      {showReply && <ReplyRow keys={keys.reply} onReply={onReply ?? (() => {})} />}
       {reply !== undefined && (
         <div className="border-t border-border-subtle px-12 py-8">{reply}</div>
       )}

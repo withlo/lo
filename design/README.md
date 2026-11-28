@@ -998,16 +998,19 @@ text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" di
 - **Actions.** "Add to review" and "Send now" under a line or a thread, "Send" under the pull
   request, "Save" in an edit. While a review is pending GitHub adds every comment to it, so the box
   has "Add to review" alone. A dimmed action says why in its tooltip.
-- **Sending.** A comment is its card from the moment it's sent: the box draws the text as it will
-  read, with "Sending…" where its time will be (`SentPost`; "Saving…" for an edit), in the room the
-  box had. The box keeps that height, and the comment on it, until the card from GitHub is drawn,
-  and gives way to it in one frame: the text never leaves the screen, and what's under it moves
-  once. A send that fails turns back into the open box with the text as it was, under a note that
-  says what wasn't sent and why, in the danger tone. The box's own action sends it again: a note
-  never offers a second button for what a button under it does. A screen reader hears each step from
-  the comments' one live region (`tell`): that it's sending, that it was sent, or the note. A note
-  takes focus back into its box only from a reader still there, or with focus nowhere: one who left
-  for the code keeps their place.
+- **Sending.** A comment is its card from the moment it's sent, where that card will be: the box
+  draws the text as it will read, formatted from its first frame, with "Sending…" where its time
+  will be (`SentPost`; "Saving…" for an edit), as tall as the card and no taller. A new thread's has
+  the head row its thread will have, and a reply is the next comment of its thread's card, each over
+  the row that offers a reply. A comment on the pull request itself is the timeline's last row,
+  drawn as its card, while the box at the end stays as it is, empty; an edit there is the comment's
+  card, saying "Saving…". Each stays until the card from GitHub is drawn, and gives way to it in one
+  frame with nothing moving: the text never leaves the screen. A send that fails turns back into the
+  open box with the text as it was, under a note that says what wasn't sent and why, in the danger
+  tone. The box's own action sends it again: a note never offers a second button for what a button
+  under it does. A screen reader hears each step from the comments' one live region (`tell`): that
+  it's sending, that it was sent, or the note. A note takes focus back into its box only from a
+  reader still there, or with focus nowhere: one who left for the code keeps their place.
 - **An edit's box is the comment.** From an edit opening to its card showing what was saved, the
   comment's text shows once, in the box: the thread's card draws without that comment and offers no
   reply meanwhile.

@@ -249,6 +249,13 @@ and the whole-file view.
   knows which account it acts as. As a tab opens, these reads go ahead of polls, in one turn of the
   account's queue: the ref, the tree, the text, the first figures it names and the commit. The code
   an overview shows comes from the local copy.
+- **The repo's definitions come the same way.** Lo watches `refs/lo/terms` in the base repo with
+  ETags, and for a commit it hasn't read, reads the top of its tree and `terms.json` by its ID,
+  never one larger than the store may be. It reads them only for a tab with an overview to show, in
+  a turn after the overview's read, so the overview never waits for them: as the tab is shown, if
+  they weren't read in the last 30 s, and every 5 minutes while it's on screen. One read serves
+  every tab of the repo that acts as the same account. What's read is kept for 30 days after its
+  last read, up to 16 MiB of files in all.
 - **Sign-in.** Git signs in with the account's token, and your git config is never touched.
 - **Checkouts.** Trusted repos get a checkout at the PR head for language servers. The old side is
   read straight from git.
@@ -505,8 +512,12 @@ writes is called an artifact.
   holds `artifact.md` and a `figures/` folder.
 - **One per PR.** Each rewrite is a new commit on the ref and replaces the last for everyone. Lo
   shows the latest.
-- **Forks.** Lo looks in the base repo, then the PR's fork, and labels an overview that came from
-  the fork.
+- **Forks.** Lo looks in the base repo, then the PR's fork, then, for a PR from a fork, the base
+  repo's copy of the fork's overview (`refs/lo/kept/pr/<n>`), which outlives the fork, and labels an
+  overview that came from the fork or the copy.
+- **Closed PRs.** Lo's cache never drops a closed PR's overview to make room, and doesn't count its
+  files toward its cap. Once GitHub has none anywhere, Lo shows the one it kept, labelled a saved
+  copy.
 - **Stacks.** Each layer has its own.
 
 ### The format

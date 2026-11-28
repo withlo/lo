@@ -15,6 +15,7 @@
     "GET https://api.github.com/repos/rozed-dev/e2e/rules/branches/stack/root?per_page=100": "2026-11-16T22:10:50Z",
     "GET https://api.github.com/repos/rozed-dev/e2e/rules/branches/stack/a?per_page=100": "2026-11-16T22:10:51Z",
     "GET https://api.github.com/repos/rozed-dev/e2e/rules/branches/stack/m?per_page=100": "2026-11-16T22:10:53Z",
-    "GET https://api.github.com/repos/rozed-dev/e2e/rules/branches/stack/mroot?per_page=100": "2026-11-16T22:10:54Z"
+    "GET https://api.github.com/repos/rozed-dev/e2e/rules/branches/stack/mroot?per_page=100": "2026-11-16T22:10:54Z",
+    "GET https://api.github.com/repos/rozed-dev/e2e/git/matching-refs/lo/terms": "2026-11-28T06:53:50Z"
   }
 }

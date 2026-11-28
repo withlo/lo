@@ -51,6 +51,7 @@ import {
   filesFromDetails,
   headerFromDetails,
   headerFromOpened,
+  isForked,
   isUnreached,
   problemOf,
   rateLimitedUntil,
@@ -162,6 +163,8 @@ export class PullTab {
    * has said: a poll's summary doesn't, so the header's guess from one isn't taken.
    */
   #fork: RepoRef | null | undefined;
+  /** Whether the head is in a fork, one GitHub no longer has included, once a read has said. */
+  #forked = false;
   /** When GitHub last confirmed what the header shows, for "Checked 5 min ago" while it's stale. */
   #savedAt: number | undefined;
   #problem: Problem | undefined;
@@ -487,7 +490,8 @@ export class PullTab {
       repository: { owner: repository.owner, name: repository.name },
       number: this.pull.number,
       acting: this.#acting,
-      head: this.#fork === undefined ? undefined : { fork: this.#forkName() },
+      head: this.#fork === undefined ? undefined : { fork: this.#forkName(), forked: this.#forked },
+      state: this.#header?.state,
       shown: this.#started ? this.#shown : undefined,
       latest: this.#started ? this.#latest : undefined,
       provisional: this.#provisional,
@@ -503,10 +507,14 @@ export class PullTab {
     return fork ? { owner: fork.owner, name: fork.name } : null;
   }
 
-  /** Keeps the fork the header names, from a read that names it. */
-  #learnFork(header: Header): void {
+  /**
+   * Keeps the fork the header names, from a read that names it, and whether the head is in a fork,
+   * which it says even of one GitHub no longer has.
+   */
+  #learnFork(header: Header, forked: boolean): void {
     const named = header.head.fork;
     this.#fork = named === null ? null : (RepoRef.parse(named) ?? null);
+    this.#forked = forked || this.#fork !== null;
   }
 
   /** Tells the features that follow the tab, if what {@link PullTab.info} says changed. */
@@ -754,7 +762,7 @@ export class PullTab {
       this.#anonymousOfflineSince = undefined;
       this.#learnRepository(RepoRef.parse(opened.toOpen.base.repo.full_name));
       this.#header = headerFromOpened(opened);
-      this.#learnFork(this.#header);
+      this.#learnFork(this.#header, isForked(opened));
       this.#savedAt = Date.now();
       this.#keepHeader();
       const { summary } = opened;
@@ -939,7 +947,7 @@ export class PullTab {
    */
   #takeDetails(details: PullRequest, fetchedAt: number, { live }: { live: boolean }): void {
     this.#header = headerFromDetails(details);
-    this.#learnFork(this.#header);
+    this.#learnFork(this.#header, details.isCrossRepository);
     this.#savedAt = fetchedAt;
     this.#keepHeader();
     const base = { branch: details.baseRefName, sha: details.baseRefOid };

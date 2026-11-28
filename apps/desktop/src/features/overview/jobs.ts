@@ -1,17 +1,28 @@
-// The overview's jobs in the background process: reading `artifact.md`, and checking the overview
-// against what main read of its commit and its code. The window sends them what main read, as it
-// does the diff's texts, and keeps what comes back. The check takes nothing the window worked out:
+// The overview's jobs in the background process: reading `artifact.md`, checking the overview
+// against what main read of its commit and its code, and reading the repository's definitions,
+// `terms.json`. The window sends them what main read, as it does the diff's texts, and keeps what
+// comes back. The check takes nothing the window worked out:
 // it reads `artifact.md` again, rather than take a parse, and answers its readers only from what
 // main read. Nothing here calls Node or Electron, or loads `@lo/artifact`, which the window
 // doesn't bundle.
 
-import type { CheckedArtifact, CodeReference, ParsedArtifact, TreeEntry } from '@lo/artifact';
+import type {
+  Change,
+  CheckedArtifact,
+  CodeReference,
+  OverviewBlock,
+  ParsedArtifact,
+  StoreProblem,
+  StoreTerm,
+  Suggestion,
+  TreeEntry,
+} from '@lo/artifact';
 import { z } from 'zod';
 
 import { reply } from '../../ipc/contract.ts';
 import { defineJobs } from '../../ipc/jobs.ts';
 import { oid } from '../tab/contract.ts';
-import { CODE_LIMIT, entry, PATH_LIMIT, type Entry } from './contract.ts';
+import { CODE_LIMIT, entry, PATH_LIMIT, STORE_BYTES, type Entry } from './contract.ts';
 
 /**
  * The most bytes of `artifact.md` the checks read, its limit and a byte-order mark: `@lo/artifact`'s
@@ -117,6 +128,29 @@ export interface Parsed {
   figures: string[];
 }
 
+/** A definition of the repository's, with the blocks the overview's tree draws it as. */
+export interface Drawn {
+  definition: string;
+  blocks: OverviewBlock[];
+}
+
+/**
+ * A term of the repository's definitions, as `@lo/artifact`'s `parseStore` reads it, with each of
+ * its definitions drawn: its own, its earlier ones' and its suggestions'.
+ */
+export interface StoredTerm extends Omit<StoreTerm, 'changes' | 'suggestions'>, Drawn {
+  changes: (Change & Drawn)[];
+  suggestions: (Suggestion & Drawn)[];
+}
+
+/**
+ * What reading `terms.json` gave: its format, its terms in the order it holds them, and each name
+ * a term goes by, its own and its aliases', with its term's key; or why it can't be used.
+ */
+export type TermsRead =
+  | { ok: true; format: number; terms: StoredTerm[]; names: [name: string, key: string][] }
+  | { ok: false; problem: StoreProblem };
+
 export const contract = defineJobs('overview', {
   /** Reads `artifact.md`, as main read it, whole. */
   parse: {
@@ -131,6 +165,11 @@ export const contract = defineJobs('overview', {
   check: {
     input: checkInput,
     reply: reply<CheckedArtifact>(),
+  },
+  /** Reads `terms.json`, as main read it, whole, as the repository's definitions. */
+  store: {
+    input: z.strictObject({ bytes: byteArray(STORE_BYTES) }),
+    reply: reply<TermsRead>(),
   },
 });
 

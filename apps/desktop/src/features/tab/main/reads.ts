@@ -76,6 +76,15 @@ export function headerFromOpened({ toOpen, summary }: Opened): Header {
   };
 }
 
+/**
+ * Whether the pull request's head is in a fork, from GitHub's REST view of it read to open it:
+ * GitHub leaves out the head's repository once the fork is deleted.
+ */
+export function isForked({ toOpen }: Opened): boolean {
+  const head = toOpen.head.repo?.full_name;
+  return head === undefined || head.toLowerCase() !== toOpen.base.repo.full_name.toLowerCase();
+}
+
 /** The header from GitHub's GraphQL details of the pull request. */
 export function headerFromDetails(details: PullRequest): Header {
   const fork = details.isCrossRepository ? (details.headRepository?.nameWithOwner ?? null) : null;

@@ -4,7 +4,7 @@
 // there are edited and deleted only where Lo would, others refused in Lo's words before anything
 // is asked.
 
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 
 import { notice } from '../../../window/commands/notices.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
@@ -26,6 +26,7 @@ import {
   timelineEvents,
 } from './boxes.ts';
 import { editOnPull, type PullComment, pullChangeRefusal, removeOnPull } from './conversation.ts';
+import { onPull, readBeforeWith, settleOnPull } from './onpull.ts';
 import { ON_PULL } from './writing.ts';
 
 let VIEW = 'p0';
@@ -115,6 +116,7 @@ function draft(changes: Partial<DraftRow> = {}): DraftRow {
     restored: true,
     sending: null,
     sent: null,
+    sentAt: null,
     base: null,
     home: null,
     ...changes,
@@ -203,6 +205,98 @@ describe('the box at the end of the timeline', () => {
     catchUpDrafts(VIEW);
     await vi.waitFor(() => expect(box.state).toMatchObject({ text: 'Ship it.' }));
     expect(box.state.sending).toBe('notPosted');
+  });
+});
+
+describe('what the timeline draws of a comment sent', () => {
+  test('a comment sent says when it went, and what the timeline on screen held then', async () => {
+    readBeforeWith((view, text) => (view === VIEW ? { had: 2, after: `c-${text}` } : undefined));
+    onTestFinished(() => readBeforeWith(() => undefined));
+    let answer!: (outcome: unknown) => void;
+    answers['comments.send'] = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const box = ownBox();
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
+    const sending = send(box, 'now');
+    await vi.waitFor(() => expect(answer).toBeDefined());
+    expect(onPull.get(VIEW)).toMatchObject([
+      {
+        key: box.id,
+        state: 'sending',
+        text: 'Ship it.',
+        send: 1,
+        sentAt: undefined,
+        before: { had: 2, after: 'c-Ship it.' },
+      },
+    ]);
+    // Main says when it went, by GitHub's clock.
+    takeDrafts({
+      id: VIEW,
+      drafts: [draft({ restored: false, sending: 'sending', sent: 'Ship it.', sentAt: 9_000 })],
+    });
+    expect(onPull.get(VIEW)).toMatchObject([{ send: 1, sentAt: 9_000 }]);
+    // The timeline shows GitHub's copy before the answer comes: the answer brings nothing back.
+    settleOnPull(VIEW, new Set([box.id]));
+    answer({ kind: 'sent', pending: false, joined: false, thread: null, landedOn: null });
+    await sending;
+    expect(box.state.landing).toBe(true);
+    expect(onPull.get(VIEW)).toEqual([]);
+  });
+
+  test('with nothing from before, as from an overview’s block, GitHub’s answer names its copy, though main’s drafts said it was taken first', async () => {
+    let answer!: (outcome: unknown) => void;
+    answers['comments.send'] = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const box = ownBox();
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
+    const sending = send(box, 'now');
+    await vi.waitFor(() => expect(answer).toBeDefined());
+    expect(onPull.get(VIEW)).toMatchObject([{ before: undefined, sentAt: undefined }]);
+    // Main took it down as posted before its answer came here, not yet knowing GitHub's clock.
+    takeDrafts({
+      id: VIEW,
+      drafts: [draft({ restored: false, sending: 'sending', sent: 'Ship it.' })],
+    });
+    takeDrafts({ id: VIEW, drafts: [] });
+    expect(onPull.get(VIEW)).toMatchObject([{ state: 'sent', copy: undefined }]);
+    answer({
+      kind: 'sent',
+      pending: false,
+      joined: false,
+      thread: null,
+      landedOn: null,
+      comment: 'IC_9',
+    });
+    await sending;
+    expect(onPull.get(VIEW)).toMatchObject([{ state: 'sent', copy: 'IC_9' }]);
+  });
+
+  test('an edit says when GitHub answered it, by GitHub’s clock', async () => {
+    answers['comments.editing'] = () => ({ kind: 'done' });
+    answers['comments.edit'] = () => ({ kind: 'done', editedAt: 9_000 });
+    await editOnPull(tab(), comment());
+    const box = timelineBoxes.get(VIEW).edits.get('IC_1');
+    if (!box) throw new Error('The edit’s box didn’t open.');
+    box.set({ text: 'Looks right to me.' });
+    await send(box, 'review');
+    expect(onPull.get(VIEW)).toMatchObject([
+      { comment: 'IC_1', text: 'Looks right to me.', state: 'sent', editedAt: 9_000 },
+    ]);
+  });
+
+  test('one found on its way as Lo starts went when main says, with nothing from before', () => {
+    ownBox();
+    takeDrafts({
+      id: VIEW,
+      drafts: [draft({ sending: 'checking', sent: 'Ship it.', sentAt: 1234 })],
+    });
+    expect(onPull.get(VIEW)).toMatchObject([
+      { state: 'checking', send: 0, sentAt: 1234, before: undefined },
+    ]);
   });
 });
 

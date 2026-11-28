@@ -1,7 +1,9 @@
 // A pull request's overview, as main has it for the window: the commit `refs/lo/pr/<n>` holds,
 // read from GitHub's REST API, with who wrote it and when, what it holds, and its files, which
 // main keeps by their IDs. Main watches the ref while the pull request's tab is on screen, and a
-// newer commit is offered, never put in place of the one on screen.
+// newer commit is offered, never put in place of the one on screen. With it, the repository's
+// definitions: what `refs/lo/terms` holds in the pull request's base repository, and the bytes of
+// its `terms.json`, which the window reads in the background process.
 
 import { z } from 'zod';
 
@@ -65,11 +67,18 @@ export const repository = z.strictObject({
 });
 
 /**
- * An overview's commit, as main read it: its ID, whether it came from the pull request's own
- * repository or the fork its head is in, and which that is; its byline, `null` until main has read
- * it, which it does after the rest, since nothing the overview shows waits for it; its files and
- * folders, as GitHub listed them; and whether `artifact.md` was read, which `files` then gives at
- * once.
+ * Where an overview's commit came from: the pull request's own repository (`base`), the fork its
+ * head is in (`fork`), or the copy the base repository keeps of the fork's (`kept`), on
+ * `refs/lo/kept/pr/<n>`, which Lo reads when neither has one.
+ */
+export const overviewSource = z.enum(['base', 'fork', 'kept']);
+export type OverviewSource = z.output<typeof overviewSource>;
+
+/**
+ * An overview's commit, as main read it: its ID, where it came from, and which repository that
+ * is; its byline, `null` until main has read it, which it does after the rest, since nothing the
+ * overview shows waits for it; its files and folders, as GitHub listed them; and whether
+ * `artifact.md` was read, which `files` then gives at once.
  *
  * Past the most files and folders an overview may hold, only one more than that are listed, with
  * `artifact.md` wherever it is, which is all the overview's checks look at. `artifact.md` isn't
@@ -78,7 +87,7 @@ export const repository = z.strictObject({
  */
 export const overviewCommit = z.strictObject({
   id: oid,
-  source: z.enum(['base', 'fork']),
+  source: overviewSource,
   repository,
   byline: byline.nullable(),
   entries: z.array(entry),
@@ -127,10 +136,12 @@ export type CodeAccess = z.output<typeof codeAccess>;
  * - `watching`: whether main asks GitHub about it again as time goes on, which it does while the
  *   tab is on screen, signed in; a public pull request opened without an account is read once;
  * - `found`: what the ref held when main last read it, in the pull request's repository, else in
- *   its fork: `unknown` until it has, `none`, a `commit`, or `notCommit`, something other than a
- *   commit, which is no overview;
+ *   its fork, else in the base repository's copy of the fork's: `unknown` until it has, `none`, a
+ *   `commit`, or `notCommit`, something other than a commit, which is no overview;
  * - `overview`: the overview on screen: the first commit main had for the tab, from what it kept
- *   or from GitHub, until the newer one is loaded. It stays when the ref later holds nothing;
+ *   or from GitHub, until the newer one is loaded. It stays when the ref later holds nothing, and
+ *   main keeps it: with `found` then `none` or `notCommit`, it's a saved copy, shown once GitHub
+ *   has none;
  * - `newer`: a newer commit the ref holds, read and ready to load;
  * - `saved`: whether the overview on screen is from what main kept from an earlier read, and
  *   GitHub hasn't said since that the ref holds it;
@@ -149,6 +160,67 @@ export const overviewState = z.strictObject({
   code: codeAccess,
 });
 export type OverviewState = z.output<typeof overviewState>;
+
+/**
+ * The most bytes of `terms.json` main reads: `@lo/artifact`'s `STORE_READ`, its limit and a
+ * byte-order mark. A larger one is past the store's limits, and isn't read.
+ */
+export const STORE_BYTES = 2 * 1024 * 1024 + 3;
+
+/**
+ * What `refs/lo/terms`, the repository's definitions, held when main last read it in the pull
+ * request's base repository:
+ *
+ * - `unknown`: main hasn't read it yet, and kept nothing from an earlier read;
+ * - `none`: the repository has none: the ref isn't there;
+ * - `file`: its commit, `commit`, holds `terms.json` as a file of `size` bytes whose ID is `id`,
+ *   which main has read and kept, and `storeFile` gives;
+ * - `unreadable`: it holds nothing Lo reads as the store: the ref holds `object`, something other
+ *   than a commit (`notCommit`), or a commit that holds no `terms.json` (`missing`), something
+ *   other than a file there (`notFile`), or one larger than {@link STORE_BYTES} (`tooLarge`, with
+ *   its size), which main doesn't read.
+ */
+export const storeFound = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('unknown') }),
+  z.strictObject({ kind: z.literal('none') }),
+  z.strictObject({
+    kind: z.literal('file'),
+    commit: oid,
+    id: oid,
+    size: z.number().int().nonnegative().max(STORE_BYTES),
+  }),
+  z.strictObject({
+    kind: z.literal('unreadable'),
+    object: oid,
+    why: z.enum(['notCommit', 'missing', 'notFile', 'tooLarge']),
+    size: z.number().int().nonnegative().nullable(),
+  }),
+]);
+export type StoreFound = z.output<typeof storeFound>;
+
+/**
+ * A pull request's tab's repository's definitions, sent each time they change:
+ *
+ * - `repository`: whose they are: the pull request's base repository, a fork's pull request's
+ *   included;
+ * - `found`: what `refs/lo/terms` held when main last read it;
+ * - `saved`: whether that's what main kept from an earlier read, and GitHub hasn't said since;
+ * - `checkedAt`: when GitHub last said what the ref holds, or null if it hasn't since Lo started;
+ * - `problem`: why the last read failed, or the overview's read they go with, until one succeeds.
+ *
+ * Main reads them with the overview, while it has one to show, as the tab's account, in a turn
+ * after the overview's read: every 5 minutes while the tab is on screen, and as it's shown if they
+ * weren't read in the last 30 s.
+ */
+export const storeState = z.strictObject({
+  id: tabId,
+  repository,
+  found: storeFound,
+  saved: z.boolean(),
+  checkedAt: time.nullable(),
+  problem: problem.nullable(),
+});
+export type StoreState = z.output<typeof storeState>;
 
 /** The most files one `files` asks for: `artifact.md` and every figure an overview may show. */
 export const FILES_LIMIT = 101;
@@ -361,14 +433,20 @@ export type SkillResult =
 /** A pull request's tab, by its id. */
 const byId = z.strictObject({ id: tabId });
 
+/** A pull request's tab's overview, by the tab's id: its stack's with `stack`, else its own. */
+const bySubject = z.strictObject({ id: tabId, stack: z.boolean().optional() });
+
+/** The most a stack's id may be: GitHub's numbers for pull requests and stacks fit in 31 bits. */
+export const STACK_LIMIT = 2 ** 31 - 1;
+
 export const contract = defineContract('overview', {
   requests: {
     /** What main has of a pull request's tab's overview now, which `state` then keeps up to date. */
     current: { input: byId, reply: reply<OverviewState | undefined>() },
     /**
-     * Files of the overview commit `commit`, the one on screen or the newer one, by their paths, in
-     * the order asked: `artifact.md` and figures, read from what main keeps, else from GitHub. A
-     * commit that's neither fails as `moved`.
+     * Files of the overview commit `commit`, the one on screen or the newer one, of the pull
+     * request's or its stack's, by their paths, in the order asked: `artifact.md` and figures, read
+     * from what main keeps, else from GitHub. A commit that's none of them fails as `moved`.
      */
     files: {
       input: z.strictObject({
@@ -433,12 +511,45 @@ export const contract = defineContract('overview', {
       reply: reply<FileSinceText>(),
     },
     /**
-     * Reads the overview again now, after a failure or where it's read once: answered once that
-     * read is done, however it went.
+     * Reads the overview again now, after a failure or where it's read once, the stack's with
+     * `stack`: answered once that read is done, however it went.
      */
-    retry: { input: byId, reply: reply<void>() },
-    /** Puts the newer overview on screen. */
-    load: { input: byId, reply: reply<void>() },
+    retry: { input: bySubject, reply: reply<void>() },
+    /** Puts the newer overview on screen, the stack's with `stack`. */
+    load: { input: bySubject, reply: reply<void>() },
+    /**
+     * Follows the overview of stack `stack`, the stack the pull request is a layer of, beside the
+     * pull request's own: `refs/lo/stack/<stack>`, read as the pull request's is, in its base
+     * repository, then its fork, then the base repository's copy of the fork's, and kept. `null`
+     * stops. `stackState` then says what it is, and `files`, `retry` and `load` take it.
+     */
+    followStack: {
+      input: z.strictObject({
+        id: tabId,
+        stack: z.number().int().positive().max(STACK_LIMIT).nullable(),
+      }),
+      reply: reply<void>(),
+    },
+    /** What main has of the overview of the stack a tab follows now, which `stackState` keeps. */
+    currentStack: { input: byId, reply: reply<OverviewState | undefined>() },
+    /**
+     * What main has of a pull request's tab's repository's definitions now, which `store` then
+     * keeps up to date.
+     */
+    currentStore: { input: byId, reply: reply<StoreState | undefined>() },
+    /**
+     * The bytes of `terms.json`, the file `file` names, as main kept it as the tab's repository's
+     * definitions now. A file that isn't that one fails as `moved`.
+     */
+    storeFile: {
+      input: z.strictObject({ id: tabId, file: oid }),
+      reply: reply<Uint8Array>(),
+    },
+    /**
+     * Reads the tab's repository's definitions again now, after a failure: answered once that read
+     * is done, however it went.
+     */
+    retryStore: { input: byId, reply: reply<void>() },
     /**
      * Where the overview skill goes, for each coding agent, and whether it's there now, which the
      * `skill` topic then keeps up to date.
@@ -457,6 +568,10 @@ export const contract = defineContract('overview', {
   topics: {
     /** A pull request's tab's overview, each time it changes. */
     state: overviewState,
+    /** The overview of the stack a pull request's tab follows, each time it changes. */
+    stackState: overviewState,
+    /** A pull request's tab's repository's definitions, each time what main has of them changes. */
+    store: storeState,
     /** Where the overview skill is, each time installing it changes that. */
     skill: skillState,
   },

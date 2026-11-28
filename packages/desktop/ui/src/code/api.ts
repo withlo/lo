@@ -515,9 +515,10 @@ export interface Composer {
   /**
    * Holds the text as it is, as while it's being sent, so that nothing typed then is lost as the
    * box closes once it's sent: no key changes it, and insert mode ends. While it's held the box
-   * shows only its `sent` part, the comment as a card, in the room it took: it's as tall as it
-   * was. `Esc` in it then leaves it where it is, and gives focus back to its line. `false` lets it
-   * go, and the box is back as it was, with its text.
+   * shows only its `sent` part, the comment as its card will draw it, as tall as that card, its
+   * frame stepping aside where a card or a popover holds it. `Esc` in it then leaves it where it
+   * is, and gives focus back to its line. `false` lets it go, and the box is back as it was, with
+   * its text.
    *
    * Held with `text`, as a review's summary is while the review is sent, the box stays as it was
    * written, in the room it took, head and foot too: only its text is held, read-only and muted.

@@ -45,7 +45,8 @@ function info(): PullTabInfo {
     repository: { owner: 'rozed-dev', name: 'e2e' },
     number: 94,
     acting: { kind: 'account', login: 'rozed-bot' },
-    head: { fork: null },
+    head: { fork: null, forked: false },
+    state: 'open',
     shown: HEAD,
     latest: HEAD,
     provisional: false,
@@ -142,8 +143,11 @@ function poller(answers: Answer[]) {
     now: [],
     leftOut: 0,
   };
+  /** How far GitHub's clock is ahead of this computer's, as the client last heard it. */
+  const clock: { ahead: number | undefined } = { ahead: undefined };
+  const listeners = new Set<(event: { kind: string }) => void>();
   const client = {
-    githubAhead: () => undefined,
+    githubAhead: () => clock.ahead,
     graphqlWithErrors() {
       const { now, leftOut } = timeline;
       if (now instanceof Error) return Promise.reject(now);
@@ -188,7 +192,10 @@ function poller(answers: Answer[]) {
     },
     readSince: () => ({ kind: 'stale' }),
     readOnce: <T>(request: (made: typeof client) => Promise<T>): Promise<T> => request(client),
-    onEvent: () => () => {},
+    onEvent(listener: (event: { kind: string }) => void) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
   };
   return {
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only these are read.
@@ -196,6 +203,11 @@ function poller(answers: Answer[]) {
     sent,
     afresh,
     timeline,
+    clock,
+    /** The poller read something, as it tells its listeners. */
+    read() {
+      for (const listener of listeners) listener({ kind: 'read' });
+    },
   };
 }
 
@@ -237,7 +249,7 @@ afterEach(() => {
 });
 
 describe('commenting on the pull request', () => {
-  test('posts at once, however it was sent, joining no review, and the draft goes', async () => {
+  test('posts at once, however it was sent, joining no review, naming its copy, and the draft goes', async () => {
     const fake = poller(['IC_2']);
     const { made, last } = writer(fake);
     made.save('t1', ON_PULL, 'Ship it.');
@@ -248,9 +260,73 @@ describe('commenting on the pull request', () => {
       joined: false,
       thread: null,
       landedOn: null,
+      comment: 'IC_2',
     });
     expect(fake.sent).toEqual([{ kind: 'post', pull: 'PR_94', body: 'Ship it.' }]);
     expect(last()).toEqual([]);
+  });
+});
+
+describe('when a comment was sent, by GitHub’s clock', () => {
+  /** When the comments are sent, by this computer's clock. */
+  const NOW = Date.parse('2026-11-13T12:00:00Z');
+
+  test.each([
+    ['ahead of', -60_000],
+    ['behind', 60_000],
+  ])(
+    'with this computer’s clock a minute %s GitHub’s, a draft marked sent says when by GitHub’s',
+    async (_, ahead) => {
+      vi.useFakeTimers({ now: NOW });
+      const fake = poller([lost()]);
+      fake.clock.ahead = ahead;
+      const { made, last } = writer(fake);
+      made.save('t1', ON_PULL, 'Ship it.');
+      expect(await made.send('t1', ON_PULL, 'Ship it.', 'review')).toEqual({ kind: 'lost' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(last()).toMatchObject([{ sent: 'Ship it.', sentAt: NOW + ahead }]);
+    },
+  );
+
+  test.each([
+    ['ahead of', -60_000],
+    ['behind', 60_000],
+  ])(
+    'with this computer’s clock a minute %s GitHub’s, an edit GitHub answered says when by GitHub’s',
+    async (_, ahead) => {
+      vi.useFakeTimers({ now: NOW });
+      const fake = poller([undefined]);
+      fake.clock.ahead = ahead;
+      const { made } = writer(fake);
+      await made.editing('t1', EDIT, 'Looks right.');
+      made.save('t1', EDIT, 'Mine.');
+      fake.timeline.now = [{ id: MINE, body: 'Looks right.' }];
+      expect(await made.edit('t1', EDIT, 'Mine.')).toEqual({ kind: 'done', editedAt: NOW + ahead });
+    },
+  );
+
+  test('the first comment since Lo started names its copy, though Lo doesn’t know GitHub’s clock yet', async () => {
+    const fake = poller(['IC_2']);
+    const { made } = writer(fake);
+    made.save('t1', ON_PULL, 'Ship it.');
+    expect(await made.send('t1', ON_PULL, 'Ship it.', 'review')).toMatchObject({
+      kind: 'sent',
+      comment: 'IC_2',
+    });
+  });
+
+  test('with no answer yet to read GitHub’s clock from, a draft says when once its poller has read', async () => {
+    vi.useFakeTimers({ now: NOW });
+    const fake = poller([lost()]);
+    const { made, last } = writer(fake);
+    made.save('t1', ON_PULL, 'Ship it.');
+    expect(await made.send('t1', ON_PULL, 'Ship it.', 'review')).toEqual({ kind: 'lost' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(last()).toMatchObject([{ sent: 'Ship it.', sentAt: null }]);
+    fake.clock.ahead = 2_000;
+    fake.read();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(last()).toMatchObject([{ sent: 'Ship it.', sentAt: NOW + 2_000 }]);
   });
 });
 
