@@ -7,7 +7,9 @@
 // A view has laid out once it shows no `Loading`, a frame after it's drawn. One that hasn't by the
 // time a wait shows its loading state (`LOADING_DELAY_MS`) is shown then, with its own wait or its
 // error: a switch never holds longer. A view that only comes, as the code beside a view does, or
-// only goes, does so at once.
+// only goes, does so at once, and so does a switch from views that only wait, drawing the tab's
+// placeholder: there's nothing drawn to keep, and the view coming takes their wait over, as the
+// timeline does when a tab that waited on its overview finds there's none.
 
 import { LOADING_DELAY_MS, loadingIn, whenSettled } from '@lo/ui';
 import { useLayoutEffect, useRef, useState } from 'react';
@@ -41,6 +43,8 @@ export interface HoldOptions {
   readonly holds: boolean;
   /** Where view `id` is drawn, to see whether it has laid out. */
   readonly element: (id: string) => Element | null;
+  /** Whether view `id` draws only the tab's placeholder, a wait the view coming takes over. */
+  readonly waiting: (id: string) => boolean;
   /**
    * Starts the Swap of views `came` in over views `went`, and gives what moves: the one move each
    * waits for before what it replaced goes.
@@ -69,9 +73,14 @@ export function useHold(want: readonly string[], options: HoldOptions): (id: str
   const [shown, setShown] = useState<Shown>(() => ({ seen: want, under: [], came: [], move: 0 }));
   const coming = want.filter((id) => !shown.seen.includes(id));
   const leaving = shown.seen.filter((id) => !want.includes(id));
-  const switching = options.holds && coming.length > 0 && leaving.length > 0;
+  const switching =
+    options.holds &&
+    coming.length > 0 &&
+    leaving.length > 0 &&
+    !leaving.every((id) => options.waiting(id));
   // A view that only comes or goes, even while a switch's move runs, as the code does beside a
-  // view: that move goes on, and what it left goes once it has run.
+  // view, or a switch from views that only wait: that move goes on, and what it left goes once it
+  // has run.
   if (!switching && !same(shown.seen, want)) {
     setShown({ ...shown, seen: want, under: shown.under.filter((id) => !want.includes(id)) });
   }

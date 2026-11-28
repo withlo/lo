@@ -295,9 +295,9 @@ pnpm nx run desktop:release  # build it, then make a release's DMGs and zips (ne
   own (`@lo/testing/display`), so a window one worker opens or closes never takes the other's focus:
   a run there needs Xvfb, and shows nothing on the screen. With no window manager, X gives focus to
   the window under the pointer, which rests in the middle, in Lo's centered window, so Lo is in
-  front, and reads GitHub every 20 s, for the whole test; a test fails at once if no window of Lo's
-  has focus once it has drawn. CI runs it in four shards, one job each (`app (1)` to `app (4)`),
-  which split the tests by count with Playwright's `--shard`;
+  front, and reads the pull request on screen every 10 s, for the whole test; a test fails at once
+  if no window of Lo's has focus once it has drawn. CI runs it in four shards, one job each
+  (`app (1)` to `app (4)`), which split the tests by count with Playwright's `--shard`;
   `pnpm nx run desktop:e2e -- --shard=2/4` runs one. In CI each test records a trace of the window,
   kept in its results when it fails, which CI uploads as `app-test-results-<shard>`; a test that
   times the page's frames opts out (`traced: false`), since recording slows them, and holds each
@@ -479,6 +479,15 @@ reads files or the network.
   when too many jobs are waiting. Every message with an id gets an answer, and the window gives up
   on one after a minute (`unanswered`). The window can cancel a job it sent (`run`'s `signal`): one
   still waiting never starts, and one running has its worker stopped; either fails as `cancelled`.
+- A short job the reader waits on, whose worker's load would be most of its time, asks to run on the
+  worker kept warm (`warm` in the runner), as the overview's `parse` and `check` do, so a tab knows
+  within the bound whether its overview shows. The process starts that worker as it starts, so it
+  has loaded before the first such job, and keeps it between jobs, which it runs one at a time, each
+  under its own deadline and the default heap's cap; while it runs one, the next runs on a worker of
+  its own, as does one that asks for another heap. A job its worker had to stop (past its deadline
+  or heap, cancelled, or failing other than with its own answer) stops the warm worker too, and a
+  fresh one starts loading in its place, unless that one never loaded: then the next such job starts
+  it. Idle, it costs about 20 MB.
 - Main's jobs wait behind the window's: they run one at a time, and only once a worker is free and
   none of the window's jobs is waiting for one, so main's work never slows what the reader asked
   for. Main waits for each one longer than the window does, since its wait doesn't count against its
@@ -893,13 +902,14 @@ repositories, which account opens a repository, and the pull requests opened lat
   ignores all four.
 - A build run from source takes other waits on GitHub from three more, for its tests, so a test
   needn't wait out Lo's own; a packaged build ignores them. `LO_POLL_MS` is how often it reads
-  what's on screen, in place of 20 s: the pull request on screen, the merge queue a queued one is
-  in, and a merge queue's tab. `LO_WATCHED_POLL_MS` is how often it lists each watched repository's
-  open pull requests, each list looking up the merged pull requests the last one left out, and reads
-  the pull requests it watches off screen, in place of 2 minutes. `LO_ANSWER_START_MS` is how long a
-  request waits for GitHub's answer to begin before Lo gives up on it, in place of 15 s. For these,
-  `LO_DEVICE_POLL_MS` and `LO_HOLD_LIMIT_MS`, a wait below 1 ms, or past the longest a timer takes,
-  2,147,483,647 ms, is left for Lo's own.
+  what's on screen: the pull request on screen, in place of 10 s in front of other windows and 20 s
+  behind them, and the merge queue a queued one is in and a merge queue's tab, in place of 20 s.
+  `LO_WATCHED_POLL_MS` is how often it lists each watched repository's open pull requests, each list
+  looking up the merged pull requests the last one left out, and reads the pull requests it watches
+  off screen, in place of 2 minutes. `LO_ANSWER_START_MS` is how long a request waits for GitHub's
+  answer to begin before Lo gives up on it, in place of 15 s. For these, `LO_DEVICE_POLL_MS` and
+  `LO_HOLD_LIMIT_MS`, a wait below 1 ms, or past the longest a timer takes, 2,147,483,647 ms, is
+  left for Lo's own.
 
 ### A pull request's tab
 
@@ -944,13 +954,15 @@ status bar.
   nothing more. Recent and Settings read nothing from GitHub, so it does nothing there.
 - The `tab.open` setting says which middle view a pull request's tab opens on: the overview, the
   timeline or the diff. A tab that opens on the overview waits for it, up to `HOLD_LIMIT`, and goes
-  to the timeline, where the description is first, when there's none or it's late. The tab keeps its
-  middle view by id (`Panels.middle`): while that view isn't there, as the overview isn't with
-  `overview.on` off, the timeline stands in, and the tab goes back to it when it returns. The key
-  `tab.open` replaced, `overview.open`, stays declared, file-only: main carries a `diff` saved there
-  over once, while the file has no `tab.open`, then sets it to `null` (`tab/main/carry.ts`). A
-  `tab.open` the file has stays, even `overview`, its default. Until it's carried, the window reads
-  it the same way (`useOpensOn`), for the tab and for Settings' row, so both show where tabs open.
+  to the timeline, where the description is first, when there's none or it's late, drawing nothing
+  of the overview on the way: the overview's view draws the tab's placeholder until it's gone from
+  the screen, and the timeline takes that wait over at once. The tab keeps its middle view by id
+  (`Panels.middle`): while that view isn't there, as the overview isn't with `overview.on` off, the
+  timeline stands in, and the tab goes back to it when it returns. The key `tab.open` replaced,
+  `overview.open`, stays declared, file-only: main carries a `diff` saved there over once, while the
+  file has no `tab.open`, then sets it to `null` (`tab/main/carry.ts`). A `tab.open` the file has
+  stays, even `overview`, its default. Until it's carried, the window reads it the same way
+  (`useOpensOn`), for the tab and for Settings' row, so both show where tabs open.
 - The row's layout is the window's, every pull request's tab alike: each panel open or not, and its
   width, unset while it's the default. Main keeps it in `tab_window` (`tab.layout`,
   `tab.keepLayout`), clamping each width to its limits as it's read, and a layout that won't read is
@@ -992,8 +1004,12 @@ status bar.
   meanwhile, not `inert`, so it takes focus that's free and keys typed meanwhile land in it; then it
   fades in over the other, itself in its sheet or its sheet over the other's, and the other goes
   once the move has run. A view that only comes or only goes, as the code beside one does, does so
-  at once. A middle view with nothing to draw yet draws `Loading` or `MiddlePlaceholder`, never
-  nothing, or a switch to it shows it empty.
+  at once, and so does a switch from views that only wait, drawing the tab's placeholder
+  (`useWaiting`): there's nothing drawn to keep, and the view coming takes the wait over. A middle
+  view with nothing to draw yet draws `Loading` or `MiddlePlaceholder`, never nothing, or a switch
+  to it shows it empty; and one that draws something else as it leaves draws it under the view
+  coming, so a view that gives the middle up as it opens, as the overview does to the timeline,
+  draws its placeholder until it's gone from the screen.
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.
@@ -1468,7 +1484,10 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
 - `window/rows.ts` turns what main sent into rows, plain functions tested alone: the description
   card, a note of older items not read, consecutive commits as one push split where a revision ends,
   with its last commit's checks, comments and submitted reviews as cards, a force-push that can
-  compare its revisions, and every other item as a one-line event in Lo's words.
+  compare its revisions, and every other item as a one-line event in Lo's words, but the close
+  GitHub records with each merge (`closedByMerge`), which GitHub's page doesn't draw either: a
+  merged pull request can't be reopened, so a close after its merge is the merge's, as is one at the
+  merge's moment with no reopen since. A close a reopen follows is someone's own, and shows.
 - The rows are one listbox, the focusable element, with the row the keyboard is on as its active
   descendant: `j` and `k` move, staying put at the ends, and `gx` opens the row on GitHub. `Tab` and
   `⇧Tab` go through the links and buttons of that row, round through the list, and `Esc` gives focus

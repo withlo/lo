@@ -61,7 +61,7 @@ import {
   viewCounts,
   viewFocus,
 } from './layout.ts';
-import { MiddleViewOf, Placeholder, useAllWaiting } from './Placeholder.tsx';
+import { MiddleViewOf, Placeholder, useAllWaiting, useWaiting } from './Placeholder.tsx';
 import { LeftPanel, RightPanel, ViewsRow, type Sheet } from './Row.tsx';
 import { BesideToggle, LeftToggle, RightToggle } from './Toggles.tsx';
 import { ViewSwitch } from './ViewSwitch.tsx';
@@ -205,10 +205,13 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   const views = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => catchHidden(views.current));
   // A view shown in another's place comes once it has laid out, over the one it replaces: in the
-  // same sheet, it fades in over that view; in the other, its sheet fades in over that one's.
+  // same sheet, it fades in over that view; in the other, its sheet fades in over that one's. In
+  // place of one that only waits, it comes at once, and takes the wait over.
+  const waiting = useWaiting(tab.id);
   const drawnOf = useHold(onScreen, {
     holds: !failed,
     element: (id) => viewIn(views.current, id),
+    waiting,
     swap: (came, went) =>
       came.flatMap((id) => {
         const element = viewIn(views.current, id);

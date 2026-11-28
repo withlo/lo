@@ -76,11 +76,13 @@ import type { CacheEntry, PollCache } from './cache.ts';
 import {
   backoff,
   interval,
+  isOnScreen,
   pollConfig,
   rateLimitState,
   type Cooldown,
   type PauseReason,
   type PollConfig,
+  type Presence,
   type RateLimitState,
   type Tier,
 } from './governor.ts';
@@ -374,7 +376,7 @@ const RULES = 'TrunkRules';
 /** When a pull request or a repository was polled, and whether it's owed a poll at once. */
 class Schedule {
   lastPolled: number | undefined;
-  /** How many times it was asked to be polled at once: opened, Lo came to the foreground, or a write changed it. */
+  /** How many times it was asked to be polled at once: opened, Lo came back on screen, or a write changed it. */
   forced = 0;
   /** `forced` as it was when the last poll to finish was chosen. A poll asked for while another was in flight is still owed when that one finishes. */
   served = 0;
@@ -738,16 +740,17 @@ function priorityNow(priority: ReadPriorityNow): ReadPriority {
 }
 
 /**
- * Polls GitHub for one account: the open pull request every 20 s, other watched pull requests and
- * their repositories' open pull requests every 2 minutes, and everything every 5 minutes while Lo
- * is in the background. Each poll asks first whether anything changed, with requests that are free
- * when nothing did, and fetches details only when something did. Requests run one at a time in the
+ * Polls GitHub for one account: the open pull request every 10 s while Lo is in front and every
+ * 20 s while it's on screen behind another window, other watched pull requests and their
+ * repositories' open pull requests every 2 minutes, and everything every 5 minutes while Lo isn't
+ * on screen. Each poll asks first whether anything changed, with requests that are free when
+ * nothing did, and fetches details only when something did. Requests run one at a time in the
  * account's {@link RequestQueue}, slowed or paused by the rate limit and backed off while offline.
  *
- * The app says whether Lo is in the foreground ({@link Poller.setForeground}), which pull requests
- * are in tabs ({@link Poller.watch}) and which tab is active ({@link Poller.setOpen}). What changed
- * arrives as {@link PollEvent}s; {@link Poller.status} is for banners, and {@link Poller.onChange}
- * hears when anything here changes. {@link Poller.stop} ends it.
+ * The app says where Lo is for the person at the computer ({@link Poller.setPresence}), which pull
+ * requests are in tabs ({@link Poller.watch}) and which tab is active ({@link Poller.setOpen}).
+ * What changed arrives as {@link PollEvent}s; {@link Poller.status} is for banners, and
+ * {@link Poller.onChange} hears when anything here changes. {@link Poller.stop} ends it.
  */
 export class Poller {
   readonly #accounts: PollAccounts;
@@ -758,7 +761,7 @@ export class Poller {
   readonly #lookUpMerged: LookUpMerged | undefined;
   readonly #seen: PollerOptions['seen'];
   readonly #log: (message: string) => void;
-  #foreground = true;
+  #presence: Presence = 'front';
   #open: PullRef | undefined;
   /** When the open pull request was opened. */
   #openedAt: number | undefined;
@@ -814,7 +817,7 @@ export class Poller {
   #wakeUp: (() => void) | undefined;
   readonly #unsubscribe: () => void;
 
-  /** Starts polling for `login`, an account in `accounts`, in the foreground and with nothing watched. */
+  /** Starts polling for `login`, an account in `accounts`, as if Lo were in front, with nothing watched. */
   constructor(options: PollerOptions) {
     this.#accounts = options.accounts;
     this.#login = options.login;
@@ -886,15 +889,21 @@ export class Poller {
     return this.#queue;
   }
 
-  get foreground(): boolean {
-    return this.#foreground;
+  /** Where Lo is for the person at the computer, as the app last said. */
+  get presence(): Presence {
+    return this.#presence;
   }
 
-  /** Says whether Lo is in the foreground. Coming back polls the open pull request at once. */
-  setForeground(foreground: boolean): void {
-    if (this.#foreground === foreground) return;
-    this.#foreground = foreground;
-    if (foreground && this.#open) this.#pulls.get(this.#open.key)?.schedule.force();
+  /**
+   * Says where Lo is for the person at the computer, which sets how often each poll is due. Coming
+   * back on screen polls the open pull request at once, whatever the backoff; coming to the front
+   * from behind another window only makes it due sooner.
+   */
+  setPresence(presence: Presence): void {
+    if (this.#presence === presence) return;
+    const back = !isOnScreen(this.#presence) && isOnScreen(presence);
+    this.#presence = presence;
+    if (back && this.#open) this.#pulls.get(this.#open.key)?.schedule.force();
     this.#wake();
     this.#changed();
   }
@@ -1239,7 +1248,7 @@ export class Poller {
    * While `pull` is the open pull request, `request` runs in the account's queue, after the open
    * pull request's poll: when Lo has nothing yet, when a field the kind watches in the open pull
    * request's check is no longer what it was when it was read, and, like the details, on the
-   * 5-minute refresh in the foreground. `request` is given the value Lo has, so it can ask GitHub
+   * 5-minute refresh while Lo is on screen. `request` is given the value Lo has, so it can ask GitHub
    * whether that changed, and its client takes a turn in the queue for each request, so a write
    * can go between them. Each time the value changes, a `read` event says so, and each time GitHub
    * gives the same value again, a `confirmed` event does. A read is kept for as long as `pull` is
@@ -1572,9 +1581,9 @@ export class Poller {
   /** How often Lo lists each watched repository's open pull requests now. */
   listSchedule(): ListSchedule {
     const normal =
-      interval('watched', this.#foreground, { kind: 'normal' }, this.#config) ??
+      interval('watched', this.#presence, { kind: 'normal' }, this.#config) ??
       this.#config.watchedInterval;
-    const every = interval('watched', this.#foreground, this.#status.rateLimit, this.#config);
+    const every = interval('watched', this.#presence, this.#status.rateLimit, this.#config);
     return every !== undefined && !this.#signedOut
       ? { every, listing: true }
       : { every: normal, listing: false };
@@ -2322,7 +2331,7 @@ export class Poller {
       !openState ||
       openState.latestCheck === undefined ||
       openState.loading.length > 0 ||
-      interval('open', this.#foreground, rateLimit, config) === undefined
+      interval('open', this.#presence, rateLimit, config) === undefined
     ) {
       return [];
     }
@@ -2419,12 +2428,12 @@ export class Poller {
     // The open pull request's poll that opening it forced, which its awaited reads come right after.
     if (
       openState?.schedule.isForced() &&
-      interval('open', this.#foreground, rateLimit, config) !== undefined &&
+      interval('open', this.#presence, rateLimit, config) !== undefined &&
       this.#awaitsFirst(openState)
     ) {
       return true;
     }
-    const refreshDetails = this.#foreground && rateLimit.kind !== 'openOnly';
+    const refreshDetails = isOnScreen(this.#presence) && rateLimit.kind !== 'openOnly';
     const awaited = this.#openReads(now, config.now(), rateLimit, refreshDetails).some(
       (read) => read.awaited,
     );
@@ -2463,7 +2472,7 @@ export class Poller {
       return { kind: 'wait', wait: Math.max(rateLimit.until - wall, 1) };
     }
     const due = (schedule: Schedule, tier: Tier): number | undefined => {
-      const every = interval(tier, this.#foreground, rateLimit, config);
+      const every = interval(tier, this.#presence, rateLimit, config);
       if (every === undefined) return undefined;
       return schedule.lastPolled !== undefined && !schedule.isForced()
         ? schedule.lastPolled + every
@@ -2473,8 +2482,8 @@ export class Poller {
     // The open pull request first, then the other pull requests, then the repositories; earliest
     // due first.
     let next: { at: number; job: Job; ticket: number; forced: boolean } | undefined;
-    // A poll tried at once whatever the backoff (opening a pull request, or coming back to the
-    // foreground) goes ahead of every poll that's merely due, however overdue: what someone waits
+    // A poll tried at once whatever the backoff (opening a pull request, or coming back on
+    // screen) goes ahead of every poll that's merely due, however overdue: what someone waits
     // on comes right after it, and the reads waiting in the queue give way to it meanwhile.
     const consider = (schedule: Schedule, tier: Tier, job: () => Job) => {
       const at = due(schedule, tier);
@@ -2488,9 +2497,9 @@ export class Poller {
         next = { at, job: job(), ticket: schedule.forced, forced };
       }
     };
-    // In the foreground, and unless the rate limit is very low, details older than
+    // On screen, and unless the rate limit is very low, details older than
     // `detailsMaxAge` are fetched again whatever the check says.
-    const refreshDetails = this.#foreground && rateLimit.kind !== 'openOnly';
+    const refreshDetails = isOnScreen(this.#presence) && rateLimit.kind !== 'openOnly';
     const open = this.#open;
     const openState = open && this.#pulls.get(open.key);
     /** Details a poll left for after the reads waited on. */
@@ -2551,7 +2560,7 @@ export class Poller {
     // The open pull request's reads, once its check says what they watch. One someone on screen
     // waits on for its first value goes ahead of everything else due, the first of them if several,
     // but never of a poll that's tried at once whatever the backoff (opening a pull request, or
-    // coming back to the foreground): that one goes first, and the read after it.
+    // coming back on screen): that one goes first, and the read after it.
     let lead: typeof next;
     for (const read of this.#openReads(now, wall, rateLimit, refreshDetails)) {
       if (read.awaited ? lead === undefined : next === undefined || read.at < next.at) {
@@ -2589,7 +2598,7 @@ export class Poller {
     const chosen: { at: number; job: Job; ticket: number; forced: boolean } | undefined = next;
     if (chosen === undefined) return { kind: 'wait', wait: untilReset };
     let at = chosen.at;
-    // Opening a pull request or coming back to the foreground tries at once, whatever the backoff.
+    // Opening a pull request or coming back on screen tries at once, whatever the backoff.
     const offline = this.#offline;
     if (offline && !chosen.forced) {
       at = Math.max(at, offline.retryAt);

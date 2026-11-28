@@ -24,6 +24,12 @@ export type Jobs<C extends JobContract> = {
      * waits in a queue of its own, ahead of main's other jobs.
      */
     asked?: boolean;
+    /**
+     * Whether it runs on the worker kept warm, while that's free, rather than one started for it:
+     * for a short job the reader waits on, whose worker's load would be most of its time. It runs
+     * under the default heap, and after other jobs on the same worker.
+     */
+    warm?: boolean;
   };
 };
 
@@ -34,7 +40,10 @@ type AnyRun = { run(input: unknown): unknown }['run'];
 export interface Runner {
   readonly contract: JobContract;
   readonly jobs: Readonly<
-    Record<string, { run: AnyRun; limits?: Partial<Limits> | undefined; asked?: boolean }>
+    Record<
+      string,
+      { run: AnyRun; limits?: Partial<Limits> | undefined; asked?: boolean; warm?: boolean }
+    >
   >;
 }
 
@@ -53,7 +62,13 @@ export function findJob(
   runners: readonly Runner[],
   path: string,
 ):
-  | { run: AnyRun; limits: Limits; spec: Runner['contract']['jobs'][string]; asked: boolean }
+  | {
+      run: AnyRun;
+      limits: Limits;
+      spec: Runner['contract']['jobs'][string];
+      asked: boolean;
+      warm: boolean;
+    }
   | undefined {
   const [group, name] = path.split('.');
   const runner = runners.find((candidate) => candidate.contract.group === group);
@@ -73,6 +88,7 @@ export function findJob(
     spec,
     limits: { ...defaultLimits, ...job.limits },
     asked: job.asked === true,
+    warm: job.warm === true,
   };
 }
 

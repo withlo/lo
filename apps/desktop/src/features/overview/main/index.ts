@@ -3,11 +3,11 @@
 // What's read is kept in the database, which clearing the cache empties. While Settings turns
 // overviews off, and until Lo has read the settings file, nothing is read.
 
-import type { GithubClient, ReadPriorityNow } from '@lo/github';
-import { app } from 'electron';
+import { isOnScreen, type GithubClient, type ReadPriorityNow } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
+import { watchPresence } from '../../../main/screen.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
 import { clearing, settings } from '../../settings/service.ts';
@@ -27,7 +27,10 @@ const followed = new Map<string, OverviewTab>();
 const stops: (() => void)[] = [];
 /** Whether overviews are on, as the settings file says: off until Lo has read it. */
 const switched = new Overviews();
-/** Whether Lo's window is in front, which reads the ref on screen more often. */
+/**
+ * Whether Lo's window is on screen, in front or behind another window, which reads the ref on
+ * screen more often.
+ */
 let foreground = false;
 let kept: { blobs: Blobs; saved: SavedRefs } | undefined;
 
@@ -39,14 +42,11 @@ function tabOf(id: string): OverviewTab {
   return tab;
 }
 
-/** Lo came to the front, or went behind another window. */
+/** Lo came back on screen, or went off it. */
 function setForeground(front: boolean): void {
   foreground = front;
   for (const tab of followed.values()) tab.setForeground(front);
 }
-
-const focused = () => setForeground(true);
-const blurred = () => setForeground(false);
 
 /** What's kept, from the database the first time anything asks for it. */
 function keptIn(context: FeatureContext<typeof contract>): { blobs: Blobs; saved: SavedRefs } {
@@ -163,11 +163,8 @@ export default defineFeature(contract, {
   start(context) {
     const service = context.use(tabs);
     const { blobs, saved } = keptIn(context);
-    app.on('browser-window-focus', focused);
-    app.on('browser-window-blur', blurred);
     stops.push(
-      () => app.off('browser-window-focus', focused),
-      () => app.off('browser-window-blur', blurred),
+      watchPresence((presence) => setForeground(isOnScreen(presence))),
       service.onPull((id) => follow(context, id)),
       service.onTabs(() => {
         for (const id of followed.keys()) follow(context, id);
