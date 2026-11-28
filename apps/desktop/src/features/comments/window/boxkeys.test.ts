@@ -53,6 +53,7 @@ function events(): Events {
     mode: vi.fn<NonNullable<ComposerEvents['mode']>>(),
     preview: vi.fn<NonNullable<ComposerEvents['preview']>>(),
     attach: vi.fn<NonNullable<ComposerEvents['attach']>>(),
+    lines: vi.fn<NonNullable<ComposerEvents['lines']>>(),
     files: vi.fn<NonNullable<ComposerEvents['files']>>(),
     dragging: vi.fn<NonNullable<ComposerEvents['dragging']>>(),
   };

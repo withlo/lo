@@ -2941,6 +2941,7 @@ class View implements DiffView {
         this.#jumped = undefined;
         this.#aligner.anchorHere();
       },
+      moveBox: (box, at) => this.#moveBox(box, at),
     };
   }
 
@@ -3086,6 +3087,7 @@ class View implements DiffView {
       case 'tab':
       case 'row':
       case 'box':
+      case 'lines':
       case 'notice':
       case 'none':
         return undefined;
@@ -3639,17 +3641,19 @@ class View implements DiffView {
       },
       // Held, the box stays, and focus goes back to its line.
       leave: (left) => {
-        if (left.hasFocus) this.#focusLine(place);
+        if (left.hasFocus) this.#focusLine(this.#openBoxOf(left)?.place ?? place);
       },
       close: (closed, landed) => this.#closeBox(closed, landed ? 'landed' : 'sent'),
       dismiss: (closed) => this.#closeBox(closed, false),
-      resized: (grown) => this.#boxResized(grown, place),
+      resized: (grown) => this.#boxResized(grown, this.#openBoxOf(grown)?.place ?? place),
       // Where the box put itself is where things belong: nothing holds the line it left.
       shown: () => {
         this.#holding = undefined;
         this.#jumped = undefined;
         this.#aligner.anchorHere();
       },
+      move: (moved, to) => this.#moveBox(moved, to),
+      lines: on.lines,
     });
     const first = 'from' in at ? Math.min(at.from, at.to) : place.line;
     const from = first < place.line ? { side: place.side, line: first } : undefined;
@@ -3671,6 +3675,71 @@ class View implements DiffView {
     if (focus && kept) box.focusShown();
     else if (focus) box.focus();
     return box.composer;
+  }
+
+  /** Box `box` as it's open in the flow, between lines, where it is. */
+  #openBoxOf(box: CommentBox): OpenBox | undefined {
+    for (const open of this.#boxes.values()) if (open.box === box) return open;
+    return undefined;
+  }
+
+  /**
+   * Moves a new comment's box, `box`, to lines `at` of its file, on its side, as `Composer.move`
+   * says: beside lines in the popover, placed again under the new last line; between lines its
+   * block, with the room the other side keeps for it, from under its last line to under the new
+   * one, in one change of both sides, the box's element moved into the new block. The line at the
+   * top of the screen stays where it is, and then the pane scrolls the least that shows the box
+   * whole. Says whether it moved.
+   */
+  #moveBox(box: CommentBox, at: Place | Span): boolean {
+    if (box.thread !== undefined) return false;
+    let place: At;
+    try {
+      place = this.#boxPlace(at);
+    } catch {
+      return false;
+    }
+    if (!this.#drawable(place)) return false;
+    const first = 'from' in at ? Math.min(at.from, at.to) : place.line;
+    const from = first < place.line ? { side: place.side, line: first } : undefined;
+    const { target: was } = box;
+    const name = was.kind === 'line' || was.kind === 'header' ? was.box : undefined;
+    const key = name === undefined ? placeKey(place) : `${placeKey(place)}|${name}`;
+    const where: Place | Span =
+      from === undefined
+        ? this.#outward(place)
+        : { file: this.#ids[place.file]!, side: place.side, from: first, to: place.line };
+    const thread = this.#threadAt(place);
+    const target: LineTarget =
+      thread === undefined ? { kind: 'line', at: where } : { kind: 'line', at: where, thread };
+    if (name !== undefined) target.box = name;
+    if (this.#mode === 'beside') {
+      const open = this.#beside.boxPlace;
+      if (!open || open.file !== place.file || open.side !== place.side || open.line === 0) {
+        return false;
+      }
+      return this.#beside.moveBox(box, { key, place, from, target, written: undefined });
+    }
+    const found = [...this.#boxes].find(([, open]) => open.box === box);
+    if (!found) return false;
+    const [old, open] = found;
+    if (open.place.line === 0 || open.place.file !== place.file || open.place.side !== place.side) {
+      return false;
+    }
+    if (old !== key && this.#boxes.has(key)) return false;
+    box.retarget(target);
+    this.#keepUnasked(() => {
+      this.#boxes.delete(old);
+      this.#boxes.set(key, { box, place, from });
+      if (this.#pickedKey === old) this.#pickedKey = key;
+      this.#boxLines[place.file]![place.side].add(place.line);
+      this.#keepAt(place.file);
+      this.#refresh(place.file);
+    });
+    // Focus in it stays in it, which the block it left took out of the page.
+    if (box.hasFocus || box.dom.contains(document.activeElement)) box.focusShown();
+    box.reveal();
+    return true;
   }
 
   /**

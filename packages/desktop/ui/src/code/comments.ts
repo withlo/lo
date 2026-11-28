@@ -50,7 +50,9 @@ import type {
   HeldText,
   KeptBox,
   Mode,
+  Place,
   Send,
+  Span,
 } from './api.ts';
 import { mapJumps } from './jumps.ts';
 import {
@@ -131,21 +133,48 @@ export interface BoxOptions {
   dismiss?: ((box: CommentBox) => void) | undefined;
   /** The box grew or shrank as it was typed in, or as its editor changed width. */
   resized?: ((box: CommentBox) => void) | undefined;
+  /**
+   * `move()` on its handle: the box goes under lines `at` of its file, on its side, as it is. Says
+   * whether it went. Without it, a box stays where it opened.
+   */
+  move?: ((box: CommentBox, at: Place | Span) => boolean) | undefined;
+  /**
+   * The reader dragged an end of its lines in the gutter to make them `at` (`ComposerEvents.lines`):
+   * a new comment's box on lines with this has those ends to drag.
+   */
+  lines?: ((at: Place | Span) => void) | undefined;
   /** The box scrolled its pane to come on screen whole, as it took focus. */
   shown?: ((box: CommentBox) => void) | undefined;
 }
 
+/**
+ * The keys of CodeMirror's own that a box drops, as they're Lo's there: `⌘⌥↑` and `⌘⌥↓` add a cursor
+ * above or below, and in a box change the comment's lines.
+ */
+const NOT_THE_BOX_KEYS: ReadonlySet<string | undefined> = new Set([
+  'Mod-Alt-ArrowUp',
+  'Mod-Alt-ArrowDown',
+]);
+
+/** CodeMirror's keys for typing, moving, selecting and undoing, as a box takes them. */
+const boxKeymap = defaultKeymap.filter((binding) => !NOT_THE_BOX_KEYS.has(binding.key));
+
 export class CommentBox implements BoxHost, KeySource {
   readonly dom: HTMLElement;
   readonly view: EditorView;
-  /** What a key in the box acts on. */
-  readonly target: Target;
+  /** What a key in the box acts on: its lines, which change as it moves. */
+  #target: Target;
   /** The thread it's written in, if it's written in one. */
   readonly thread: string | undefined;
   /** The comment of that thread it edits, if it edits one. */
   readonly edits: string | undefined;
   /** The caller's handle on the box. */
   readonly composer: Composer;
+  /**
+   * What hears the reader drag an end of its lines in the gutter, for a box whose lines can change
+   * that way.
+   */
+  readonly relines: ((at: Place | Span) => void) | undefined;
   readonly #parts: BoxParts;
   readonly #on: ComposerEvents;
   readonly #escape: (box: CommentBox) => void;
@@ -186,7 +215,8 @@ export class CommentBox implements BoxHost, KeySource {
   constructor(options: BoxOptions) {
     installVim();
     const { on } = options;
-    this.target = options.target;
+    this.#target = options.target;
+    this.relines = options.lines;
     this.thread = options.thread;
     this.edits = options.edits;
     this.#on = on;
@@ -222,7 +252,7 @@ export class CommentBox implements BoxHost, KeySource {
     };
     const extensions: Extension[] = [
       // Without Vim, the editor's own keys: typing, moving, selecting and undoing, as anywhere.
-      switchVim(keymap.of([...historyKeymap, ...defaultKeymap])),
+      switchVim(keymap.of([...historyKeymap, ...boxKeymap])),
       this.#held.of([]),
       drawSelection(),
       history(),
@@ -332,6 +362,24 @@ export class CommentBox implements BoxHost, KeySource {
     });
     this.#takeFiles();
     if (was) this.#resumeAs(was.editor);
+  }
+
+  /** What a key in the box acts on: the line it's under, and its thread. */
+  get target(): Target {
+    return this.#target;
+  }
+
+  /** The box moved to other lines: a key in it acts on `target` from now on. */
+  retarget(target: Target): void {
+    this.#target = target;
+  }
+
+  /**
+   * Brings the box on screen whole, by the least scroll of its pane that does, as it does as it takes
+   * focus, wherever its caret is: as it's moved to other lines.
+   */
+  reveal(): void {
+    this.#show();
   }
 
   /** The draft so far. */
@@ -679,7 +727,7 @@ export class CommentBox implements BoxHost, KeySource {
     return {
       mode: this.#mode(),
       pending: vimPending(this.view),
-      target: this.target,
+      target: this.#target,
       plain: !vimOn(),
     };
   }
@@ -738,6 +786,7 @@ export class CommentBox implements BoxHost, KeySource {
       dismiss: () => (options.dismiss ? options.dismiss(this) : options.close(this, false)),
       leave: () => this.#escape(this),
       keep: () => this.keep(),
+      move: (at) => options.move?.(this, at) ?? false,
     };
   }
 

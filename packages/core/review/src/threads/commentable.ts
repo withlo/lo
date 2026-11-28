@@ -169,6 +169,38 @@ export class CommentableLines {
   }
 
   /**
+   * The nearest line past `line` on its side, `way` down the file (1) or up it (-1), that takes a
+   * comment: the next in its hunk, or else across the lines between hunks, in the next hunk that
+   * has lines on that side. Nothing where none does, as past the last hunk, or on a side that
+   * takes none.
+   */
+  next(line: Line, way: 1 | -1): Line | undefined {
+    if (line.side === 'LEFT' && !this.#left) return undefined;
+    let best: number | undefined;
+    for (const hunk of this.#hunks ?? []) {
+      const [start, count] =
+        line.side === 'LEFT' ? [hunk.oldStart, hunk.old.length] : [hunk.newStart, hunk.new.length];
+      if (count === 0) continue;
+      const last = start + count - 1;
+      const near =
+        way === 1
+          ? line.number < start
+            ? start
+            : line.number < last
+              ? line.number + 1
+              : undefined
+          : line.number > last
+            ? last
+            : line.number > start
+              ? line.number - 1
+              : undefined;
+      if (near === undefined) continue;
+      if (best === undefined || (way === 1 ? near < best : near > best)) best = near;
+    }
+    return best === undefined ? undefined : Line.of(line.side, best);
+  }
+
+  /**
    * Where `line` is in the diff, if it takes a comment, and the line a comment on it goes on.
    */
   #find(line: Line): Found | undefined {

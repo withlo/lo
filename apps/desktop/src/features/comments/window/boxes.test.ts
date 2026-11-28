@@ -244,6 +244,7 @@ function composerOf(draft: string, on: ComposerEvents): Drawn['composer'] {
       composer.closed = 'dismiss';
     },
     keep: () => ({ text: composer.text, editor: 'as it was' }),
+    move: () => false,
   } as Drawn['composer'];
   return composer;
 }

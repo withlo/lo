@@ -2,7 +2,7 @@
 // where one on a code block's lines goes, falling back to the file and then the pull request;
 // where a draft's box goes in a diff as drawn; and what a box's frame says.
 
-import { Line, Screen } from '@lo/review';
+import { Line, Lines, Screen } from '@lo/review';
 import { describe, expect, test } from 'vitest';
 
 import type { DrawnDiff, ThreadedFile } from '../../diff/window/shared.ts';
@@ -12,12 +12,17 @@ import {
   blockComment,
   blockWhere,
   boxAt,
+  changedLines,
   commentableOn,
   commentedOn,
   commentOnText,
+  draftOn,
   hunksOf,
   linesAt,
+  NO_LINE_ABOVE,
+  NO_LINE_BELOW,
   notesOf,
+  ONE_LINE,
   placeKey,
   placeOf,
   offersOf,
@@ -439,5 +444,49 @@ describe('a box’s notes', () => {
     // A send refused for the same reason says it once.
     const notes = notesOf({ refusal: { kind: 'unconfirmed' }, sending: 'unknown' });
     expect(notes.map((each) => each.offers)).toEqual([['checkAgain']]);
+  });
+});
+
+describe('changing a new comment’s lines', () => {
+  /** Two hunks: new lines 3–7, then new lines 20–24, with 12 lines between them. */
+  const two: Commentable = {
+    kind: 'diff',
+    hunks: [
+      { old: 2, new: 2, kinds: '  -++ ' },
+      { old: 18, new: 19, kinds: '  +  ' },
+    ],
+  };
+  const takes = commentableOn(Screen.full(HEAD), two);
+  const right = (from: number, to: number) => Lines.range(Line.right(from), Line.right(to));
+
+  test('a line added is the next that way that takes a comment, over the lines between hunks', () => {
+    expect(changedLines(takes, right(4, 5), 'lineAbove')).toEqual(right(3, 5));
+    expect(changedLines(takes, right(4, 5), 'lineBelow')).toEqual(right(4, 6));
+    expect(changedLines(takes, Lines.one(Line.right(7)), 'lineBelow')).toEqual(right(7, 20));
+    expect(changedLines(takes, right(20, 21), 'lineAbove')).toEqual(right(7, 21));
+  });
+
+  test('a line taken off leaves the next that takes one as the end', () => {
+    expect(changedLines(takes, right(3, 6), 'dropFirst')).toEqual(right(4, 6));
+    expect(changedLines(takes, right(3, 6), 'dropLast')).toEqual(right(3, 5));
+    expect(changedLines(takes, right(6, 20), 'dropLast')).toEqual(right(6, 7));
+    expect(changedLines(takes, right(7, 20), 'dropFirst')).toEqual(Lines.one(Line.right(20)));
+  });
+
+  test('says why where its lines can’t change that way', () => {
+    expect(changedLines(takes, right(3, 4), 'lineAbove')).toBe(NO_LINE_ABOVE);
+    expect(changedLines(takes, right(23, 24), 'lineBelow')).toBe(NO_LINE_BELOW);
+    expect(changedLines(takes, Lines.one(Line.right(5)), 'dropFirst')).toBe(ONE_LINE);
+    expect(changedLines(takes, Lines.one(Line.right(5)), 'dropLast')).toBe(ONE_LINE);
+    expect(changedLines(undefined, right(4, 5), 'lineAbove')).toBe(NO_LINE_ABOVE);
+    expect(draftOn(right(35, 38))).toBe('A draft is already on lines 35–38');
+    expect(draftOn(Lines.one(Line.right(33)))).toBe('A draft is already on line 33');
+  });
+
+  test('a removed line keeps to the old side', () => {
+    const removed = Lines.range(Line.left(5), Line.left(5));
+    expect(changedLines(takes, removed, 'lineAbove')).toEqual(
+      Lines.range(Line.right(4), Line.left(5)),
+    );
   });
 });

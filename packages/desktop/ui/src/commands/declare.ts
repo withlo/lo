@@ -84,6 +84,12 @@ export interface MenuPlace {
   readonly order: number;
   /** What that menu calls it, for a command that does something else to other targets. */
   readonly label?: string;
+  /**
+   * It starts a section of its own there, after a separator, though its group is the one before
+   * it: a command of another sort than those above it, as "Move comment to file" after the rows
+   * that change a comment's lines.
+   */
+  readonly apart?: true;
 }
 
 /** Each right-click menu `command` is in. */

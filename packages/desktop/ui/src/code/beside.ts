@@ -32,6 +32,7 @@ import type {
   PopoverView,
   RenderPopover,
   Side,
+  Span,
   ThreadsMode,
   ThreadView,
 } from './api.ts';
@@ -328,6 +329,11 @@ export interface BesideHost {
   showLine(at: At): void;
   /** A comment box put itself where it is: nothing holds the line it left. */
   boxShown(): void;
+  /**
+   * A comment box asks to move to lines `at` of its file (`Composer.move`): the view works out
+   * where it goes, and moves it there (`moveBox`). Says whether it went.
+   */
+  moveBox?(box: CommentBox, at: Place | Span): boolean;
 }
 
 /**
@@ -1120,6 +1126,8 @@ export class Beside {
       dismiss: (closed) => this.#closeBox(closed, false),
       // Where the box put itself is where things belong: nothing holds the line it left.
       shown: () => host.boxShown(),
+      move: (moved, to) => host.moveBox?.(moved, to) ?? false,
+      lines: on.lines,
     });
     const popBox: PopBox = {
       box,
@@ -1153,6 +1161,55 @@ export class Beside {
     this.placeBox();
     host.marksChanged([place.file], []);
     return box.composer;
+  }
+
+  /**
+   * Moves the popover's comment box `box`, a new comment's on lines, to `where`, as it is: the
+   * popover goes under the new last line, what it shows drawn there in place, with the box in it,
+   * and its lines, its bracket and the rows it picks follow at once. The pane scrolls the least
+   * that shows it whole. Focus in the box stays there. Says whether it moved: not a box sent, or
+   * not the popover's.
+   */
+  moveBox(box: CommentBox, where: BoxWhere): boolean {
+    const host = this.#host;
+    const popBox = this.#box;
+    const pop = this.#pop;
+    if (popBox?.box !== box || popBox.sent || !pop?.open || pop.at?.key !== popBox.at.key) {
+      return false;
+    }
+    const { key, place, from, target } = where;
+    const at: PopPlace = { ...place, key: this.#popKey(place) };
+    const was = popBox.place;
+    const moved: PopBox = {
+      ...popBox,
+      key,
+      place,
+      from,
+      at,
+      // Focus in it stays, wherever it goes in the popover.
+      focus: box.hasFocus ? 'shown' : false,
+      seen: this.#threadsAt(at),
+    };
+    this.#box = moved;
+    box.retarget(target);
+    // Its new last line stays shown while it's open, as its first did.
+    host.showLine(place);
+    host.keep(was.file);
+    pop.move(at);
+    this.placeBox();
+    host.marksChanged(new Set([was.file, place.file]), []);
+    host.relight();
+    box.reveal();
+    return true;
+  }
+
+  /**
+   * The popover steps aside, as while an end of its comment box's lines is dragged, and comes back
+   * where it is now placed: it goes from the screen, its box in it as it is, and nothing else
+   * changes.
+   */
+  stepAside(aside: boolean): void {
+    this.#pop?.aside(aside);
   }
 
   /** The threads drawn at the popover's place `at`: under its line, or its file's header. */

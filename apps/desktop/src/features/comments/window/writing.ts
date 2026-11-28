@@ -518,6 +518,62 @@ export const UNDO = 'Undo';
 export const NEW_SIDE_ONLY = 'New side only';
 
 /**
+ * How a new comment's lines change while its box is open, as its lines button's menu and its keys
+ * name them: a line added above its first or below its last, or its first or last taken off.
+ */
+export type LinesChange = 'lineAbove' | 'dropFirst' | 'lineBelow' | 'dropLast';
+
+/** Why a comment's lines can't take a line above, or below. */
+export const NO_LINE_ABOVE = 'No line above takes a comment';
+export const NO_LINE_BELOW = 'No line below takes a comment';
+
+/** Why a comment's lines can't lose their first or last. */
+export const ONE_LINE = 'The comment is on one line';
+
+/** Why a comment can't go on lines another draft is on: "A draft is already on lines 35–38". */
+export function draftOn(lines: Lines): string {
+  return `A draft is already on ${lineRefText({ lines }, true)}`;
+}
+
+/**
+ * The lines a comment on `lines` goes on once they change `how`, as GitHub takes them, or why they
+ * can't. A line added is the next one that way that takes a comment, over the lines between hunks
+ * if they're between; the line taken off leaves the next that takes one as the new end, never past
+ * the other end. Each end keeps its side.
+ */
+export function changedLines(
+  takes: CommentableLines | undefined,
+  lines: Lines,
+  how: LinesChange,
+): Lines | string {
+  const first = lines.start ?? lines.end;
+  const last = lines.end;
+  const range = (start: Line, end: Line): Lines | undefined => {
+    const on = takes?.range(start, end);
+    return on?.kind === 'lines' ? on.lines : undefined;
+  };
+  switch (how) {
+    case 'lineAbove': {
+      const line = takes?.next(first, -1);
+      return (line && range(line, last)) ?? NO_LINE_ABOVE;
+    }
+    case 'lineBelow': {
+      const line = takes?.next(last, 1);
+      return (line && range(first, line)) ?? NO_LINE_BELOW;
+    }
+    case 'dropFirst':
+    case 'dropLast': {
+      if (lines.start === undefined) return ONE_LINE;
+      const line = how === 'dropFirst' ? takes?.next(first, 1) : takes?.next(last, -1);
+      const changed = line && (how === 'dropFirst' ? range(line, last) : range(first, line));
+      return changed ?? ONE_LINE;
+    }
+    default:
+      throw new Error(`a change of lines Lo doesn’t know: ${how satisfies never}`);
+  }
+}
+
+/**
  * Why a comment on a code block's lines goes on their file: GitHub takes line comments only on
  * lines in its diff (`notInDiff`); Lo couldn't read which lines it takes (`noLines`); the lines
  * `changed` since the overview's commit; they're on the `older` side, which Lo doesn't map past

@@ -194,6 +194,7 @@ function drawBlock(): { writing: WritingBlock; texts: string[]; marks: DraftMark
         leave() {},
         dismiss() {},
         keep: () => ({ text, editor: undefined }),
+        move: () => false,
       } satisfies Composer;
     },
     setDrafts(drafts) {

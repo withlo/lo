@@ -205,3 +205,22 @@ test('a range ending outside the hunks takes no comment', () => {
   expect(full().range(Line.right(5), Line.right(8))).toEqual(notCommentable(Line.right(8)));
   expect(between().range(Line.left(1), Line.right(3))).toEqual(notCommentable(Line.left(1)));
 });
+
+test('the next line that takes a comment is in its hunk, or across the lines between hunks', () => {
+  const lines = full();
+  expect(lines.next(Line.right(3), 1)).toEqual(Line.right(4));
+  expect(lines.next(Line.right(3), -1)).toEqual(Line.right(2));
+  // From the first hunk's last line over the lines between hunks to the next's first, and back.
+  expect(lines.next(Line.right(6), 1)).toEqual(Line.right(18));
+  expect(lines.next(Line.right(18), -1)).toEqual(Line.right(6));
+  // From a line between them.
+  expect(lines.next(Line.right(10), 1)).toEqual(Line.right(18));
+  expect(lines.next(Line.right(10), -1)).toEqual(Line.right(6));
+  // Past the ends, none.
+  expect(lines.next(Line.right(1), -1)).toBeUndefined();
+  expect(lines.next(Line.right(24), 1)).toBeUndefined();
+  // The left column's own lines, in a revision's whole diff only.
+  expect(lines.next(Line.left(2), 1)).toEqual(Line.left(3));
+  expect(between().next(Line.left(2), 1)).toBeUndefined();
+  expect(CommentableLines.notInDiff().next(Line.right(3), 1)).toBeUndefined();
+});
