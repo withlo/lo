@@ -1,0 +1,50 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits",
+    "body_sha256": "eef4552be7950a8e40c724d98029b2c42fd88a61eda17422a62634daaa8c93f1"
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "\"9d72a0636dfcecb19858ba156c16399c98be4809684efb97b2912082a9d86d81\"",
+      "location": "https://api.github.com/repos/rozed-dev/e2e/git/commits/5d1a0040435631be0e43b46898659955f3d7f6b5",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4972",
+      "x-ratelimit-reset": "1795871724",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "28"
+    },
+    "body": {
+      "sha": "5d1a0040435631be0e43b46898659955f3d7f6b5",
+      "node_id": "C_kwDOVleUfdoAKDVkMWEwMDQwNDM1NjMxYmUwZTQzYjQ2ODk4NjU5OTU1ZjNkN2Y2YjU",
+      "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits/5d1a0040435631be0e43b46898659955f3d7f6b5",
+      "html_url": "https://github.com/rozed-dev/e2e/commit/5d1a0040435631be0e43b46898659955f3d7f6b5",
+      "author": {
+        "name": "rozed-bot",
+        "email": "rozed-bot@scornz.com",
+        "date": "2026-11-28T12:24:02Z"
+      },
+      "committer": {
+        "name": "rozed-bot",
+        "email": "rozed-bot@scornz.com",
+        "date": "2026-11-28T12:24:02Z"
+      },
+      "tree": {
+        "sha": "3923d47eaa42212be8447c41eb89b1780a754d8b",
+        "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/3923d47eaa42212be8447c41eb89b1780a754d8b"
+      },
+      "message": "Definitions for the recording",
+      "parents": [],
+      "verification": {
+        "verified": false,
+        "reason": "unsigned",
+        "signature": null,
+        "payload": null,
+        "verified_at": null
+      }
+    }
+  }
+}

@@ -23,9 +23,12 @@ talks to GitHub directly and has no backend of its own.
 
 ### Principles
 
-- **Read-only.** Lo never edits files or pushes commits. It writes to GitHub only to review and
-  merge: comments and their attachments, reviews, viewed marks, merges, queue and auto-merge
-  changes, and changing a PR's base branch to form a stack or to merge a chain.
+- **Read-only.** Lo never edits files, and never pushes to a branch. It writes to GitHub only to
+  review and merge: comments and their attachments, reviews, viewed marks, merges, queue and
+  auto-merge changes, and changing a PR's base branch to form a stack or to merge a chain. The one
+  exception is a repo's definition store: a change to a term in Lo is a commit to `refs/lo/terms`,
+  written through GitHub's API as the signed-in account, fast-forward only, and never to a branch or
+  to any other ref.
 - **No AI inside Lo.** Lo calls no model and runs no agent. It displays what agents write elsewhere.
 - **No backend, no telemetry.** Lo talks only to GitHub and to language servers' official download
   sources. Updates come from GitHub Releases.
@@ -255,7 +258,18 @@ and the whole-file view.
   a turn after the overview's read, so the overview never waits for them: as the tab is shown, if
   they weren't read in the last 30 s, and every 5 minutes while it's on screen. One read serves
   every tab of the repo that acts as the same account. What's read is kept for 30 days after its
-  last read, up to 16 MiB of files in all.
+  last read, up to 16 MiB of files in all. With a commit of them, Lo asks once whether the account
+  has push access (`viewerPermission` `WRITE`, `MAINTAIN` or `ADMIN`), which a change to a term
+  needs.
+- **A change to a term is written through the API too.** In one turn of the account's writes, Lo
+  asks again for push access, reads the ref and `terms.json` afresh, makes the change in the
+  background process, and writes a tree holding `terms.json` alone and a commit of it on the one the
+  ref holds. It moves the ref with GraphQL's `updateRefs`, from that commit only and only by a
+  fast-forward: GitHub's REST API moves a ref under `refs/lo/` that isn't a fast-forward, and can't
+  be told which commit it should still hold. One change to a repo's definitions is written at a
+  time. When the ref moved meanwhile, Lo reads it again and makes the change again, three times at
+  most, but never over a term that changed since the change started: that comes back to whoever made
+  it. A move whose answer was lost is settled by reading the ref, never by sending it again.
 - **Sign-in.** Git signs in with the account's token, and your git config is never touched.
 - **Checkouts.** Trusted repos get a checkout at the PR head for language servers. The old side is
   read straight from git.

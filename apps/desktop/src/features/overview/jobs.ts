@@ -3,8 +3,9 @@
 // `terms.json`. The window sends them what main read, as it does the diff's texts, and keeps what
 // comes back. The check takes nothing the window worked out:
 // it reads `artifact.md` again, rather than take a parse, and answers its readers only from what
-// main read. Nothing here calls Node or Electron, or loads `@lo/artifact`, which the window
-// doesn't bundle.
+// main read. And for an edit of a term: the definition being written, read as the store would hold
+// it, for the window; and the edit made in `terms.json`, for main, which writes what comes back.
+// Nothing here calls Node or Electron, or loads `@lo/artifact`, which the window doesn't bundle.
 
 import type {
   Change,
@@ -21,8 +22,20 @@ import { z } from 'zod';
 
 import { reply } from '../../ipc/contract.ts';
 import { defineJobs } from '../../ipc/jobs.ts';
+import { login } from '../accounts/contract.ts';
 import { oid } from '../tab/contract.ts';
-import { CODE_LIMIT, entry, PATH_LIMIT, STORE_BYTES, type Entry } from './contract.ts';
+import {
+  ALIASES_LIMIT,
+  CODE_LIMIT,
+  DEFINITION_TEXT,
+  editBase,
+  entry,
+  PATH_LIMIT,
+  STORE_BYTES,
+  TERM_TEXT,
+  type Entry,
+  type TermNow,
+} from './contract.ts';
 
 /**
  * The most bytes of `artifact.md` the checks read, its limit and a byte-order mark: `@lo/artifact`'s
@@ -153,6 +166,55 @@ export type TermsRead =
   | { ok: true; format: number; terms: StoredTerm[]; names: [name: string, key: string][] }
   | { ok: false; problem: StoreProblem };
 
+/** What `overview.edit` takes: `terms.json` as main read it, and the edit to make in it. */
+export const editInput = z.strictObject({
+  /** `terms.json`, whole, as the ref holds it; null where there's no ref, for the first. */
+  bytes: byteArray(STORE_BYTES).nullable(),
+  /** The term's key. */
+  key: z.string().min(1).max(TERM_TEXT),
+  /** The term as the edit started from it: null for one the definitions didn't hold. */
+  base: editBase.nullable(),
+  edit: z.strictObject({
+    /** The term as written, which adds it back if it was deleted. */
+    term: z.string().min(1).max(TERM_TEXT),
+    definition: z.string().max(DEFINITION_TEXT),
+    aliases: z.array(z.string().max(TERM_TEXT)).max(ALIASES_LIMIT),
+    /** The account it's by. */
+    login,
+    /** When, as an RFC 3339 time in UTC, to the second. */
+    at: z.string().max(40),
+  }),
+});
+export type EditInput = z.output<typeof editInput>;
+
+/**
+ * What making an edit in `terms.json` came to: `edited`, the file with it, within the store's size,
+ * which reads back as the store; `same`, where it holds the edit already; `changed`, where the term
+ * isn't as the edit started from it, with what it is now, none for a term deleted; `refused`, where
+ * the store can't hold it, in a sentence; `unreadable`, where the file can't be read as the store;
+ * `tooLarge`, where with it the file would be larger than the store may be.
+ */
+export type EditMade =
+  | { kind: 'edited'; text: string }
+  | { kind: 'same' }
+  | { kind: 'changed'; term: TermNow | null }
+  | { kind: 'refused'; message: string }
+  | { kind: 'unreadable'; problem: StoreProblem }
+  | { kind: 'tooLarge' };
+
+/**
+ * A term's edit being written, as the store would hold it: its definition, as the blocks it draws
+ * as and the terms its links name, by their keys, in order, each once, or, where it holds what a
+ * definition can't, what that is (`what`, such as "bold text") and, for a link whose address is
+ * wrong, why; and its other forms, each once, without the term itself, with the key each goes by.
+ */
+export interface DraftRead {
+  definition:
+    | { ok: true; blocks: OverviewBlock[]; terms: string[] }
+    | { ok: false; what: string; why: string | null };
+  aliases: { name: string; key: string }[];
+}
+
 export const contract = defineJobs('overview', {
   /** Reads `artifact.md`, as main read it, whole. */
   parse: {
@@ -172,6 +234,23 @@ export const contract = defineJobs('overview', {
   store: {
     input: z.strictObject({ bytes: byteArray(STORE_BYTES) }),
     reply: reply<TermsRead>(),
+  },
+  /** Reads a term's edit being written, as the store would hold it, for Edit term to show it. */
+  draft: {
+    input: z.strictObject({
+      term: z.string().max(TERM_TEXT),
+      definition: z.string().max(DEFINITION_TEXT),
+      aliases: z.array(z.string().max(TERM_TEXT)).max(ALIASES_LIMIT),
+    }),
+    reply: reply<DraftRead>(),
+  },
+  /**
+   * Makes an edit of a term in `terms.json`, as main read it, for main to write: the term is as
+   * the edit started from it, else what it is now comes back.
+   */
+  edit: {
+    input: editInput,
+    reply: reply<EditMade>(),
   },
 });
 

@@ -1,0 +1,19 @@
+{
+  "description": "rozed-dev/e2e's definitions written as Lo writes them, as rozed-bot: who may write them; a tree of terms.json, a commit of it on nothing, refs/lo/terms made at it, and made again, which GitHub refuses; a second tree and two commits of it on the first; the ref moved to one, then from the first to the other, which it no longer holds, then from where it is to the other, which isn't a fast-forward; and the three compared. rozed-dev/e2e had no refs/lo/terms before, and the ref is deleted after, unrecorded.",
+  "recorded_at": "2026-11-28T12:24:08Z",
+  "repo": "rozed-dev/e2e",
+  "setup": {
+    "repositoryId": "R_kgDOVleUfQ",
+    "first": {
+      "tree": "3923d47eaa42212be8447c41eb89b1780a754d8b",
+      "blob": "c12283aff8b81a6c3452e1eb650b4e8eb877774c"
+    },
+    "made": "5d1a0040435631be0e43b46898659955f3d7f6b5",
+    "second": {
+      "tree": "f691f7f5ede0a9beafb8391be0013a32185c19d0",
+      "blob": "51d7bbd7a35fedd3479f69ac8d7a633e54373788"
+    },
+    "edited": "2895d79cd06e05d06053528f1716f2600ce7078d",
+    "other": "2c093e0da0df24043f7bce85590252c8c7170ef3"
+  }
+}

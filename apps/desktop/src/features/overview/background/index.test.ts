@@ -1,7 +1,16 @@
 // The overview's jobs: the parse says what main reads for the checks, and the check reads
 // `artifact.md` again and answers its readers only from what main read, leaving the rest unread.
+// For an edit of a term: the definition being written reads as the store would hold it, and the
+// edit is made in `terms.json` only from the term as it started, into a file the store reads.
 
-import { BINARY_WINDOW, FIGURE_HEAD as CHECKS_FIGURE_HEAD, LIMITS, SIZE_ONLY } from '@lo/artifact';
+import {
+  BINARY_WINDOW,
+  FIGURE_HEAD as CHECKS_FIGURE_HEAD,
+  LIMITS,
+  parseStore,
+  SIZE_ONLY,
+  STORE_LIMITS,
+} from '@lo/artifact';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -13,11 +22,19 @@ import {
   FILE_BYTES,
   SVG_BYTES,
   type CheckInput,
+  type EditInput,
 } from '../jobs.ts';
-import { CODE_LIMIT, PATH_LIMIT, type Entry } from '../contract.ts';
+import {
+  CODE_LIMIT,
+  DEFINITION_TEXT,
+  PATH_LIMIT,
+  STORE_BYTES,
+  TERM_TEXT,
+  type Entry,
+} from '../contract.ts';
 import { jpeg } from '../test/images.ts';
 import { runJob } from '../test/jobs.ts';
-import { checkOverview, parseOverview } from './index.ts';
+import { checkOverview, makeEdit, parseOverview, readDraft } from './index.ts';
 
 const COMMIT = 'a'.repeat(40);
 const encoder = new TextEncoder();
@@ -64,6 +81,8 @@ describe('the limits the jobs take things to', () => {
     expect(PATH_LIMIT).toBe(LIMITS.argument);
     expect(FIGURE_HEAD).toBe(CHECKS_FIGURE_HEAD);
     expect(SVG_BYTES).toBe(LIMITS.svg);
+    expect(DEFINITION_TEXT).toBe(STORE_LIMITS.definition);
+    expect(TERM_TEXT).toBe(LIMITS.argument);
   });
 });
 
@@ -286,5 +305,197 @@ describe('overview.check', () => {
     ).toBe(false);
     // A parse isn't something the check takes.
     expect(parse({ ...input, parsed: {} })).toBe(false);
+  });
+});
+
+/** `definition` and `aliases` read as an edit of `bucket` being written. */
+function draft(definition: string, aliases: string[] = []) {
+  return readDraft({ term: 'bucket', definition, aliases });
+}
+
+describe('overview.draft', () => {
+  it('draws a definition as the store holds it, with the terms it links to, each once', () => {
+    expect(
+      draft(
+        'The [tokens](term:token) a `tenant` spends, from [its](term:Token) [file](code:src/a.ts#L2).',
+      ).definition,
+    ).toEqual({
+      ok: true,
+      blocks: [
+        {
+          kind: 'paragraph',
+          children: [
+            { kind: 'text', value: 'The ' },
+            {
+              kind: 'link',
+              target: { kind: 'term', key: 'token' },
+              children: [{ kind: 'text', value: 'tokens' }],
+            },
+            { kind: 'text', value: ' a ' },
+            { kind: 'inlineCode', value: 'tenant' },
+            { kind: 'text', value: ' spends, from ' },
+            {
+              kind: 'link',
+              target: { kind: 'term', key: 'token' },
+              children: [{ kind: 'text', value: 'its' }],
+            },
+            { kind: 'text', value: ' ' },
+            {
+              kind: 'link',
+              target: { kind: 'code', path: 'src/a.ts', lines: { start: 2, end: 2 } },
+              children: [{ kind: 'text', value: 'file' }],
+            },
+            { kind: 'text', value: '.' },
+          ],
+        },
+      ],
+      terms: ['token'],
+    });
+    expect(draft('').definition).toEqual({ ok: true, blocks: [], terms: [] });
+  });
+
+  it('says what a definition can’t hold, and why for a wrong address', () => {
+    expect(draft('Spent **fast**.').definition).toEqual({
+      ok: false,
+      what: 'bold text',
+      why: null,
+    });
+    expect(draft('See [it](https://example.com).').definition).toEqual({
+      ok: false,
+      what: "a link that isn't to code or a term",
+      why: null,
+    });
+    expect(draft('See [it](code:src/a.ts#L0).').definition).toMatchObject({
+      ok: false,
+      what: 'a link whose address is wrong',
+      why: expect.any(String),
+    });
+  });
+
+  it('gives the other forms as the store would hold them, each with its key', () => {
+    expect(
+      draft('Tokens.', [' Token  Bucket ', 'buckets', '', 'Bucket', 'BUCKETS']).aliases,
+    ).toEqual([
+      { name: 'Token  Bucket', key: 'token bucket' },
+      { name: 'buckets', key: 'buckets' },
+    ]);
+  });
+
+  it('takes no more than a definition may be', async () => {
+    const input = { term: 'bucket', definition: 'Tokens.', aliases: [] };
+    expect(await runJob('overview.draft', input)).toMatchObject({ definition: { ok: true } });
+    await expect(
+      runJob('overview.draft', { ...input, definition: 'x'.repeat(DEFINITION_TEXT + 1) }),
+    ).rejects.toThrow('invalid');
+  });
+});
+
+/** `terms.json` holding `bucket`, as an agent defined it, `definition`. */
+function store(definition: string): Uint8Array {
+  return encoder.encode(
+    `${JSON.stringify({
+      format: 1,
+      terms: {
+        bucket: {
+          term: 'bucket',
+          definition,
+          written: 'agent',
+          by: { login: 'elle-kzn' },
+          from: '#80',
+          at: '2026-11-11T09:30:00Z',
+        },
+      },
+    })}\n`,
+  );
+}
+
+describe('overview.edit', () => {
+  const AT = '2026-11-28T12:00:00Z';
+  const input = (rest: Partial<EditInput> = {}): EditInput => ({
+    bytes: store('The tokens a tenant has.'),
+    key: 'bucket',
+    base: { definition: 'The tokens a tenant has.', aliases: [] },
+    edit: {
+      term: 'bucket',
+      definition: 'What a tenant spends from.',
+      aliases: ['buckets'],
+      login: 'ravi-k',
+      at: AT,
+    },
+    ...rest,
+  });
+
+  it('writes the edit as a person’s, from Lo, with what it replaced in its changes', () => {
+    const made = makeEdit(input());
+    expect(made.kind).toBe('edited');
+    if (made.kind !== 'edited') return;
+    const read = parseStore(encoder.encode(made.text));
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.store.terms.get('bucket')).toMatchObject({
+      definition: 'What a tenant spends from.',
+      aliases: ['buckets'],
+      written: 'human',
+      by: { login: 'ravi-k' },
+      from: 'lo',
+      at: AT,
+      changes: [{ definition: 'The tokens a tenant has.', written: 'agent', from: 80 }],
+    });
+    expect(read.store.names.get('buckets')).toBe('bucket');
+  });
+
+  it('makes the first definitions where there were none', () => {
+    const made = makeEdit(input({ bytes: null, base: null }));
+    expect(made.kind).toBe('edited');
+    if (made.kind !== 'edited') return;
+    expect(JSON.parse(made.text)).toMatchObject({
+      format: 1,
+      terms: { bucket: { definition: 'What a tenant spends from.', written: 'human' } },
+    });
+  });
+
+  it('gives the term as it is now where it changed since the edit started', () => {
+    expect(makeEdit(input({ bytes: store('Changed elsewhere.') }))).toEqual({
+      kind: 'changed',
+      term: {
+        term: 'bucket',
+        definition: 'Changed elsewhere.',
+        aliases: [],
+        written: 'agent',
+        by: { login: 'elle-kzn' },
+        from: 80,
+        at: '2026-11-11T09:30:00Z',
+      },
+    });
+    // Deleted since.
+    expect(makeEdit(input({ bytes: encoder.encode('{"format":1,"terms":{}}') }))).toEqual({
+      kind: 'changed',
+      term: null,
+    });
+  });
+
+  it('says where the file holds the edit already', () => {
+    const edited = makeEdit(input());
+    if (edited.kind !== 'edited') throw new Error('Not edited.');
+    expect(makeEdit(input({ bytes: encoder.encode(edited.text) }))).toEqual({ kind: 'same' });
+  });
+
+  it('refuses what the store can’t hold, and a file it can’t read', () => {
+    const bold = makeEdit(input({ edit: { ...input().edit, definition: 'Spent **fast**.' } }));
+    expect(bold).toMatchObject({ kind: 'refused', message: expect.stringMatching(/bold text/) });
+    expect(makeEdit(input({ bytes: encoder.encode('{"format":2,"terms":{}}') }))).toMatchObject({
+      kind: 'unreadable',
+      problem: { code: expect.any(String) },
+    });
+  });
+
+  it('takes only an account’s login, and no more than the store holds', async () => {
+    expect(await runJob('overview.edit', input())).toMatchObject({ kind: 'edited' });
+    await expect(
+      runJob('overview.edit', input({ edit: { ...input().edit, login: 'Ravi K' } })),
+    ).rejects.toThrow('invalid');
+    await expect(
+      runJob('overview.edit', input({ bytes: new Uint8Array(STORE_BYTES + 1) })),
+    ).rejects.toThrow('invalid');
   });
 });

@@ -1,0 +1,9 @@
+# Whether the viewer may write a repository's definitions, `refs/lo/terms`: its permission, which
+# pushes as `WRITE`, `MAINTAIN` or `ADMIN`; and the repository's node ID, which moving the ref
+# names it by.
+query TermsAccess($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    id
+    viewerPermission
+  }
+}

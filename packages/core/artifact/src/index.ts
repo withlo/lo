@@ -48,7 +48,7 @@ export {
   MIN_STEPS,
   MIN_TABS,
 } from './limits.ts';
-export { definitionBlocks } from './definitions.ts';
+export { definitionBlocks, notDefinitionText } from './definitions.ts';
 export { FIGURE_TYPES, readCode, readFigure, readPath, readTerm, termKey } from './targets.ts';
 export {
   parseStore,
@@ -71,6 +71,8 @@ export {
   type Written,
 } from './store.ts';
 export {
+  aliasesOf,
+  editTerm,
   emptyStore,
   fittedStoreText,
   sameDefinition,
@@ -78,5 +80,8 @@ export {
   withDefinition,
   withSuggestion,
   withTerm,
+  type EditBase,
+  type EditResult,
   type StoreDefinition,
+  type TermEdit,
 } from './edits.ts';

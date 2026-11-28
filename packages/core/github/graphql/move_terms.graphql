@@ -1,0 +1,13 @@
+# Moves a repository's definitions, `refs/lo/terms`, to `$after`, a commit on `$before`, only if
+# the ref holds `$before` still, and only by a fast-forward. `$before` all zeros makes the ref, only
+# if there's none. GitHub does it whole or not at all.
+mutation MoveTerms($repositoryId: ID!, $before: GitObjectID!, $after: GitObjectID!) {
+  updateRefs(
+    input: {
+      repositoryId: $repositoryId
+      refUpdates: [{ name: "refs/lo/terms", beforeOid: $before, afterOid: $after, force: false }]
+    }
+  ) {
+    clientMutationId
+  }
+}

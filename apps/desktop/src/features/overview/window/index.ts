@@ -21,6 +21,7 @@ import { settingRow } from '../../settings/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
 import {
   activeTab,
+  dialogs,
   middle,
   onActiveTab,
   runOf,
@@ -33,6 +34,7 @@ import keys from '../keys.ts';
 import { auto, on } from '../settings.ts';
 import { CollapsedRow, IgnoredRow } from './Lists.tsx';
 import { copyPrompt, promptNow } from './copy.ts';
+import { EditTermDialog } from './EditTerm.tsx';
 import { blockCode } from './copying.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import { main, tabs } from './main.ts';
@@ -519,6 +521,12 @@ export default {
     // Settings › Integrations, after the `lo` command (10).
     SkillRow,
     InstallCommandRow,
+    defineView(dialogs, {
+      id: 'overview.editTerm',
+      order: 50,
+      render: () => createElement(EditTermDialog),
+      present: overviews,
+    }),
   ],
   start() {
     followSkill();

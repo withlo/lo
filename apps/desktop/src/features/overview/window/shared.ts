@@ -4,9 +4,9 @@
 // it, which the stack's tree shows for the layer on screen; the review threads another feature
 // places and draws on its code blocks, with their popover and the comments written there; whether
 // a tab's overview has a block now, and when that may have changed; the stack's overview, which the
-// stack's tree has a row for, shown in place of the layer's own and back; and what a term's
+// stack's tree has a row for, shown in place of the layer's own and back; what a term's
 // switches, "Ignore in this repo" and "Ignore in every repo", do to a term in the overview on
-// screen.
+// screen; and Edit term, opened on a term there.
 
 import type { StackTreeOverview } from '@lo/ui';
 import type { Target, TermTarget } from '@lo/ui/commands';
@@ -15,6 +15,7 @@ import { createElement, type ReactNode } from 'react';
 import type { Presence } from '../../../window/slots.tsx';
 import { settingNow, watchSetting } from '../../settings/window/shared.ts';
 import {
+  activeTab,
   showMiddle,
   useMiddle,
   usePull,
@@ -22,6 +23,7 @@ import {
   type PullTab,
 } from '../../tab/window/shared.ts';
 import { on } from '../settings.ts';
+import { editRefusal, openEdit } from './edit.ts';
 import { Example } from './Example.tsx';
 import { markOf, newestHead, standingOf, type MarkKind } from './facts.ts';
 import { blockAt, drawnIn, onDrawn } from './follow.ts';
@@ -381,4 +383,20 @@ export function isTermIgnored(target: TermTarget, where: TermIgnored): boolean {
  */
 export function turnTermIgnored(target: TermTarget, where: TermIgnored): void {
   ignoreTerm(target, where);
+}
+
+/**
+ * Whether Edit term can open on the term `target` names, by any name it goes by, in the definitions
+ * of the repository of the pull request on screen, or why not, in a few words.
+ */
+export function termEditReady(target: TermTarget): true | string {
+  const tab = activeTab();
+  if (tab?.kind !== 'pull') return '';
+  return editRefusal(tab, target.term);
+}
+
+/** Opens Edit term on the term `target` names, as `terms.edit` does, where it can. */
+export function editTerm(target: TermTarget): void {
+  const tab = activeTab();
+  if (tab?.kind === 'pull' && editRefusal(tab, target.term) === true) openEdit(tab.id, target.term);
 }

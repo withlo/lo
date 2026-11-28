@@ -29,6 +29,9 @@ import { readTermsAgain, type RepoName, type StoreFailure } from './terms.ts';
 /** The command that goes to the Glossary section, from the line under the byline. */
 const GO_GLOSSARY = `${keys.feature}.goGlossary`;
 
+/** Edit term, the term card's first hint. */
+const EDIT = 'terms.edit';
+
 /**
  * What tab `tab`'s overview, of a pull request in `repo`, shows for each of its terms with the
  * repo's definitions, `definitions` (`useDefinitions`), once it shows, and the note its Glossary
@@ -75,6 +78,8 @@ function shownWith(
     },
     note,
     menu: termMenu,
+    // Shown while Edit term can open on it: with push access.
+    hints: (key) => [{ command: EDIT, target: { kind: 'term', term: key }, label: 'Edit…' }],
     stopIgnoring(key) {
       const term = definitions.of(key);
       if (term) stopIgnoringTerm(repo, namesOf(term), key);

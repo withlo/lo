@@ -3,11 +3,13 @@
 // main keeps by their IDs. Main watches the ref while the pull request's tab is on screen, and a
 // newer commit is offered, never put in place of the one on screen. With it, the repository's
 // definitions: what `refs/lo/terms` holds in the pull request's base repository, and the bytes of
-// its `terms.json`, which the window reads in the background process.
+// its `terms.json`, which the window reads in the background process; and an edit of one of them,
+// which main writes to the ref as the tab's account.
 
+import type { Account, Origin, StoreProblem, Written } from '@lo/artifact';
 import { z } from 'zod';
 
-import { cause } from '../../ipc/cause.ts';
+import { cause, type Cause } from '../../ipc/cause.ts';
 import { defineContract, reply } from '../../ipc/contract.ts';
 import { login } from '../accounts/contract.ts';
 import { helpLink, oid, tabId } from '../tab/contract.ts';
@@ -206,7 +208,10 @@ export type StoreFound = z.output<typeof storeFound>;
  * - `found`: what `refs/lo/terms` held when main last read it;
  * - `saved`: whether that's what main kept from an earlier read, and GitHub hasn't said since;
  * - `checkedAt`: when GitHub last said what the ref holds, or null if it hasn't since Lo started;
- * - `problem`: why the last read failed, or the overview's read they go with, until one succeeds.
+ * - `problem`: why the last read failed, or the overview's read they go with, until one succeeds;
+ * - `push`: whether the tab's account may change them, which takes push access to the repository:
+ *   null until main has asked GitHub, which it does as it reads a commit of them, and without an
+ *   account.
  *
  * Main reads them with the overview, while it has one to show, as the tab's account, in a turn
  * after the overview's read: every 5 minutes while the tab is on screen, and as it's shown if they
@@ -219,8 +224,87 @@ export const storeState = z.strictObject({
   saved: z.boolean(),
   checkedAt: time.nullable(),
   problem: problem.nullable(),
+  push: z.boolean().nullable(),
 });
 export type StoreState = z.output<typeof storeState>;
+
+/**
+ * The most UTF-16 code units of a definition an edit takes: no more than the 2,048 bytes of UTF-8
+ * a definition may be (`@lo/artifact`'s `STORE_LIMITS.definition`), which the store refuses past.
+ */
+export const DEFINITION_TEXT = 2_048;
+
+/** The most UTF-16 code units of a term or one of its other forms: `LIMITS.argument`'s 1,024 bytes. */
+export const TERM_TEXT = 1_024;
+
+/** The most other forms an edit takes: more than the store holds, which it then refuses. */
+export const ALIASES_LIMIT = 50;
+
+/** A term's definition, and the other forms that name it, as an edit started from them. */
+export const editBase = z.strictObject({
+  definition: z.string().max(DEFINITION_TEXT),
+  aliases: z.array(z.string().max(TERM_TEXT)).max(ALIASES_LIMIT),
+});
+export type EditBase = z.output<typeof editBase>;
+
+/**
+ * An edit of a term of the repository's definitions: the term's key and the term as written; the
+ * term as the edit started from it, null where the definitions didn't hold it, which adds it; and
+ * its definition and other forms as the edit has them.
+ */
+export const termEdit = z.strictObject({
+  key: z.string().min(1).max(TERM_TEXT),
+  term: z.string().min(1).max(TERM_TEXT),
+  base: editBase.nullable(),
+  definition: z.string().max(DEFINITION_TEXT),
+  aliases: z.array(z.string().max(TERM_TEXT)).max(ALIASES_LIMIT),
+});
+export type TermEdit = z.output<typeof termEdit>;
+
+/** A term as the repository's definitions hold it now, as an edit found it changed since. */
+export interface TermNow {
+  term: string;
+  definition: string;
+  aliases: string[];
+  written: Written;
+  by: Account;
+  from: Origin;
+  at: string;
+}
+
+/**
+ * Why `refs/lo/terms` holds nothing an edit can change: `terms.json` doesn't read as the store
+ * (`store`, with why), the ref holds no `terms.json` Lo reads (`notStore`), or it's larger than the
+ * store may be, or would be with the edit (`tooLarge`).
+ */
+export type EditUnreadable =
+  | { kind: 'store'; problem: StoreProblem }
+  | { kind: 'notStore'; why: 'notCommit' | 'missing' | 'notFile' }
+  | { kind: 'tooLarge' };
+
+/**
+ * What an edit of a term came to, as `editTerm` and `checkEdit` answer:
+ *
+ * - `saved`: the definitions hold it, which `store` says, or held it already;
+ * - `changed`: the term isn't as the edit started from it: what it is now, none where it was
+ *   deleted. Nothing was written;
+ * - `refused`: GitHub doesn't let the account write them: it has no push access (`push`), or a
+ *   rule of the repository's blocks it (`rule`); or they changed each time it was made again
+ *   (`changing`), with what GitHub said, if anything;
+ * - `invalid`: the definitions can't hold it, in a sentence, such as an alias another term goes by;
+ * - `unreadable`: the ref holds nothing an edit can change;
+ * - `failed`: it wasn't written, for `cause`, with what GitHub or the system said, if anything;
+ * - `unconfirmed`: GitHub's answer to moving the ref to `commit`, the edit's, was lost, and reading
+ *   the ref again failed too: it may or may not have moved, which `checkEdit` settles.
+ */
+export type EditOutcome =
+  | { kind: 'saved' }
+  | { kind: 'changed'; term: TermNow | null }
+  | { kind: 'refused'; why: 'push' | 'rule' | 'changing'; details: string | null }
+  | { kind: 'invalid'; message: string }
+  | { kind: 'unreadable'; why: EditUnreadable }
+  | { kind: 'failed'; cause: Cause; details: string | null }
+  | { kind: 'unconfirmed'; commit: string; details: string | null };
 
 /** The most files one `files` asks for: `artifact.md` and every figure an overview may show. */
 export const FILES_LIMIT = 101;
@@ -584,6 +668,26 @@ export const contract = defineContract('overview', {
      * is done, however it went.
      */
     retryStore: { input: byId, reply: reply<void>() },
+    /**
+     * Edits a term of the tab's repository's definitions, as the tab's account: one commit of
+     * `terms.json` on the one `refs/lo/terms` holds, through GitHub's API, and the ref moved to it,
+     * only from that commit and only forward. One edit of a repository's definitions is written at
+     * a time: another waits. Where the ref moved meanwhile, they're read again and the edit made
+     * again on them, three times at most. Refused as `refused` without an account.
+     */
+    editTerm: {
+      input: z.strictObject({ id: tabId, edit: termEdit }),
+      reply: reply<EditOutcome>(),
+    },
+    /**
+     * Settles an edit whose answer was lost (`unconfirmed`) by reading the tab's repository's
+     * definitions: `saved` where `refs/lo/terms` holds `commit` or a commit after it, `failed` where
+     * it doesn't, and `unconfirmed` again where that read fails too. Nothing is written.
+     */
+    checkEdit: {
+      input: z.strictObject({ id: tabId, commit: oid }),
+      reply: reply<EditOutcome>(),
+    },
     /**
      * Where the overview skill goes, for each coding agent, and whether it's there now, which the
      * `skill` topic then keeps up to date.

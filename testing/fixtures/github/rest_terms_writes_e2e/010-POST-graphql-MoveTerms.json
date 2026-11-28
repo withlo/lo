@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "MoveTerms",
+    "variables": {
+      "repositoryId": "R_kgDOVleUfQ",
+      "before": "5d1a0040435631be0e43b46898659955f3d7f6b5",
+      "after": "2c093e0da0df24043f7bce85590252c8c7170ef3"
+    },
+    "query_sha256": "a81345f675bf009a4da74013c3bf5b47df9752802cfadae59ae82565eff5e8e9"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4989",
+      "x-ratelimit-reset": "1795872124",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "11"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Something went wrong while executing your query on 2026-11-28T12:24:06Z. Please include `D9B6:291BD8:1A4ADAB:1C750D0:6B0AC7E5` when reporting this issue."
+        }
+      ]
+    }
+  }
+}

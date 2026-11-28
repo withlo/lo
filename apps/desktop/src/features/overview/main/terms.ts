@@ -10,13 +10,15 @@
 // them: as the tab is shown, if they weren't read in the last 30 s, and every 5 minutes while it's
 // on screen, never sooner than GitHub's `x-poll-interval` asks or a failure's wait; a public pull
 // request opened without an account reads them once. What was read is kept, so they show at once
-// the next time, offline too. The window reads the file in the background process. Nothing here
-// calls Electron.
+// the next time, offline too. The window reads the file in the background process. With a commit
+// of them, whether the account may change them, once, and again as Retry reads them; and what an
+// edit wrote is taken as read (`edits.ts`). Nothing here calls Electron.
 
 import { STORE_FILE, STORE_REF } from '@lo/artifact';
 import {
   blobBytes,
   rootTree,
+  termsAccess,
   watchRef,
   type GithubClient,
   type OverviewRef,
@@ -250,6 +252,8 @@ class RepoStore {
   floor = 0;
   /** Whether it's been read without an account, which is done once. */
   readOnce = false;
+  /** Whether the account may change them: push access, as GitHub last said; unknown till asked. */
+  push: boolean | undefined;
   readonly listeners = new Set<() => void>();
 
   constructor(acting: Acting | undefined, repository: RepoRef, kept: KeptStore | undefined) {
@@ -303,14 +307,52 @@ export class Stores {
   state(
     acting: Acting | undefined,
     repository: RepoRef,
-  ): Pick<StoreState, 'found' | 'saved' | 'checkedAt' | 'problem'> {
+  ): Pick<StoreState, 'found' | 'saved' | 'checkedAt' | 'problem' | 'push'> {
     const entry = this.#entry(acting, repository);
     return {
       found: entry.found,
       saved: entry.saved,
       checkedAt: entry.checkedAt ?? null,
       problem: entry.problem ?? null,
+      push: entry.push ?? null,
     };
+  }
+
+  /**
+   * Takes what an edit as `acting` found or wrote, `found`, with `terms.json`'s bytes for a file,
+   * as what `repository`'s definitions are now, for every account that reads them: as read just
+   * now, so each asks GitHub afresh next time, without the ETag of what it last heard.
+   */
+  wrote(acting: Acting, repository: RepoRef, found: StoreFound, bytes: Uint8Array | null): void {
+    const now = this.#now();
+    this.#entry(acting, repository);
+    const entries = [...this.#entries.values()].filter((entry) =>
+      entry.repository.equals(repository),
+    );
+    for (const entry of entries) {
+      entry.found = found;
+      entry.saved = false;
+      entry.heard = undefined;
+      entry.problem = undefined;
+      entry.failures = 0;
+      entry.retryAt = 0;
+      entry.readAt = now;
+      entry.checkedAt = now;
+    }
+    try {
+      this.#reads.kept.set(repository, found, found.kind === 'file' ? bytes : null);
+    } catch (error) {
+      this.#reads.log(`keeping the definitions: ${describe(error)}`);
+    }
+    for (const entry of entries) entry.changed();
+  }
+
+  /** Takes what GitHub said of whether `acting` may change `repository`'s definitions. */
+  access(acting: Acting, repository: RepoRef, push: boolean): void {
+    const entry = this.#entry(acting, repository);
+    if (entry.push === push) return;
+    entry.push = push;
+    entry.changed();
   }
 
   /** The bytes of `terms.json`, the file `id` names, kept as `repository`'s definitions. */
@@ -335,7 +377,7 @@ export class Stores {
     const entry = this.#entry(acting, repository);
     if (entry.reading) return entry.reading;
     if (!options.force && !this.#due(entry, options.shown ?? false)) return Promise.resolve();
-    const reading = this.#readNow(entry, options.priority).finally(() => {
+    const reading = this.#readNow(entry, options.priority, options.force ?? false).finally(() => {
       entry.reading = undefined;
       if (entry.listeners.size === 0) this.#entries.delete(this.#key(acting, repository));
     });
@@ -404,11 +446,15 @@ export class Stores {
     return shown ? since >= STORE_SHOWN : since >= Math.max(STORE_EVERY, entry.floor);
   }
 
-  async #readNow(entry: RepoStore, priority: ReadPriorityNow | undefined): Promise<void> {
+  async #readNow(
+    entry: RepoStore,
+    priority: ReadPriorityNow | undefined,
+    force: boolean,
+  ): Promise<void> {
     const { acting, repository } = entry;
     if (!acting) return;
     try {
-      await this.#reads.github(acting, (client) => this.#turn(entry, client), priority);
+      await this.#reads.github(acting, (client) => this.#turn(entry, client, force), priority);
       entry.failures = 0;
       entry.problem = undefined;
       entry.readAt = this.#now();
@@ -426,10 +472,19 @@ export class Stores {
     entry.changed();
   }
 
-  /** Reads the ref, and for a commit not read yet, its `terms.json`, in a turn held. */
-  async #turn(entry: RepoStore, client: GithubClient): Promise<void> {
-    const { repository } = entry;
+  /**
+   * Reads the ref, and for a commit not read yet, its `terms.json`, in a turn held; and with a
+   * commit, whether the account may change them, if that's not known, or `force` asks again.
+   */
+  async #turn(entry: RepoStore, client: GithubClient, force: boolean): Promise<void> {
     const ref = await this.#ask(entry, client);
+    await this.#read(entry, client, ref);
+    if (ref.kind === 'commit' && entry.acting?.kind === 'account') {
+      if (force || entry.push === undefined) await this.#access(entry, client);
+    }
+  }
+
+  async #read(entry: RepoStore, client: GithubClient, ref: OverviewRef): Promise<void> {
     if (ref.kind === 'none') {
       this.#take(entry, { kind: 'none' }, null);
       return;
@@ -447,52 +502,31 @@ export class Stores {
       this.#take(entry, known, null);
       return;
     }
+    const kept = (id: string) => this.file(entry.repository, id);
     if (known.kind === 'file' && known.commit === ref.sha) {
       // Kept as read unless another account's older read, a write that failed or the cap took it
       // since: then the file is read again.
       if (this.#keeps(entry, known)) return;
-      await this.#readFile(entry, client, ref.sha, known.id);
+      const bytes = await storeBytes(client, entry.repository, known.id, kept);
+      this.#take(entry, { ...known, size: bytes.length }, bytes);
       return;
     }
-    const tree = await rootTree(client, repository, ref.sha);
-    const items = tree.items.filter(({ path }) => path === STORE_FILE);
-    const item = items.length === 1 ? items[0] : undefined;
-    const unreadable = (why: 'missing' | 'notFile' | 'tooLarge', size: number | null) =>
-      this.#take(entry, { kind: 'unreadable', object: ref.sha, why, size }, null);
-    if (!item) {
-      unreadable('missing', null);
-      return;
-    }
-    if (item.type !== 'blob' || item.mode === '120000') {
-      unreadable('notFile', null);
-      return;
-    }
-    if (item.size === undefined || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(item.sha)) {
-      throw new Unexpected('GitHub’s listing of the definitions named no file Lo can read.');
-    }
-    if (item.size > STORE_BYTES) {
-      unreadable('tooLarge', item.size);
-      return;
-    }
-    await this.#readFile(entry, client, ref.sha, item.sha);
+    const read = await storeAt(client, entry.repository, ref.sha, kept);
+    this.#take(entry, read.found, read.bytes);
   }
 
-  /** Takes `terms.json`, the file `id` in `commit`: kept, or else read from GitHub by its ID. */
-  async #readFile(
-    entry: RepoStore,
-    client: GithubClient,
-    commit: string,
-    id: string,
-  ): Promise<void> {
-    const kept = this.#reads.kept.get(entry.repository);
-    const bytes =
-      kept?.found.kind === 'file' && kept.found.id === id && kept.bytes
-        ? kept.bytes
-        : await blobBytes(client, entry.repository, id);
-    if (!isBlob(id, bytes)) {
-      throw new Unexpected('GitHub sent a terms.json that isn’t the one its ID names.');
+  /**
+   * Asks GitHub whether the account may change the definitions. Nothing it says stops the read:
+   * not known, they're shown, and an edit asks again before it writes.
+   */
+  async #access(entry: RepoStore, client: GithubClient): Promise<void> {
+    try {
+      entry.push = (await termsAccess(client, entry.repository)).push;
+    } catch (error) {
+      this.#reads.log(
+        `asking whether Lo may change ${entry.repository.toString()}'s definitions: ${describe(error)}`,
+      );
     }
-    this.#take(entry, { kind: 'file', commit, id, size: bytes.length }, bytes);
   }
 
   /** Whether what's kept is `found`, which a read found again: if so, it's kept as read now. */
@@ -537,6 +571,48 @@ export class Stores {
       this.#reads.log(`keeping the definitions: ${describe(error)}`);
     }
   }
+}
+
+/**
+ * What `commit`, a commit of `repository`'s definitions, holds: its `terms.json`, from `kept` when
+ * that has the file its ID names, else read from GitHub by its ID, once it hashes to it; or why it
+ * holds no `terms.json` Lo reads. Never reads a file larger than the store may be.
+ */
+export async function storeAt(
+  client: GithubClient,
+  repository: RepoRef,
+  commit: string,
+  kept: (id: string) => Uint8Array | undefined,
+): Promise<{ found: StoreFound; bytes: Uint8Array | null }> {
+  const tree = await rootTree(client, repository, commit);
+  const items = tree.items.filter(({ path }) => path === STORE_FILE);
+  const item = items.length === 1 ? items[0] : undefined;
+  const unreadable = (why: 'missing' | 'notFile' | 'tooLarge', size: number | null) => ({
+    found: { kind: 'unreadable' as const, object: commit, why, size },
+    bytes: null,
+  });
+  if (!item) return unreadable('missing', null);
+  if (item.type !== 'blob' || item.mode === '120000') return unreadable('notFile', null);
+  if (item.size === undefined || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(item.sha)) {
+    throw new Unexpected('GitHub’s listing of the definitions named no file Lo can read.');
+  }
+  if (item.size > STORE_BYTES) return unreadable('tooLarge', item.size);
+  const bytes = await storeBytes(client, repository, item.sha, kept);
+  return { found: { kind: 'file', commit, id: item.sha, size: bytes.length }, bytes };
+}
+
+/** `terms.json`, the file `id`: from `kept`, else read from GitHub by its ID, once it hashes to it. */
+async function storeBytes(
+  client: GithubClient,
+  repository: RepoRef,
+  id: string,
+  kept: (id: string) => Uint8Array | undefined,
+): Promise<Uint8Array> {
+  const bytes = kept(id) ?? (await blobBytes(client, repository, id));
+  if (!isBlob(id, bytes)) {
+    throw new Unexpected('GitHub sent a terms.json that isn’t the one its ID names.');
+  }
+  return bytes;
 }
 
 /**

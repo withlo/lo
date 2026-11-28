@@ -85,3 +85,4 @@ export {
   type TermMark,
   type TermMarks,
 } from './TermTags.tsx';
+export { DefinitionPreview, type DefinitionPreviewProps } from './DefinitionPreview.tsx';

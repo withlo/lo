@@ -896,3 +896,24 @@
 .lo-toc__foot {
   padding-inline: 0;
 }
+
+/* A definition as it will read, in Edit term (`DefinitionPreview`): as a term's card draws it. */
+.lo-definition-preview {
+  font: 400 13px/20px var(--lo-font-ui);
+  color: var(--lo-fg);
+  overflow-wrap: anywhere;
+}
+.lo-definition-preview code {
+  font-family: var(--lo-font-mono);
+  font-variant-ligatures: none;
+  font-size: var(--lo-code-inline-size);
+}
+.lo-definition-preview__link {
+  color: var(--lo-link);
+  text-decoration: underline;
+  text-decoration-color: var(--lo-accent-line);
+  text-underline-offset: 3px;
+}
+.lo-definition-preview .lo-term {
+  cursor: text;
+}

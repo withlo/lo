@@ -1,0 +1,44 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "MoveTerms",
+    "variables": {
+      "repositoryId": "R_kgDOVleUfQ",
+      "before": "2895d79cd06e05d06053528f1716f2600ce7078d",
+      "after": "2c093e0da0df24043f7bce85590252c8c7170ef3"
+    },
+    "query_sha256": "a81345f675bf009a4da74013c3bf5b47df9752802cfadae59ae82565eff5e8e9"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4988",
+      "x-ratelimit-reset": "1795872124",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "12"
+    },
+    "body": {
+      "data": {
+        "updateRefs": null
+      },
+      "errors": [
+        {
+          "type": "UNPROCESSABLE",
+          "path": [
+            "updateRefs"
+          ],
+          "locations": [
+            {
+              "line": 3,
+              "column": 3
+            }
+          ],
+          "message": "rejecting non-fast forward update"
+        }
+      ]
+    }
+  }
+}

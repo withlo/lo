@@ -19,7 +19,7 @@ import {
   useRendering,
   type Rendering,
 } from '../markdown/index.ts';
-import { TermCard } from './TermCard.tsx';
+import { TermCard, type TermHint } from './TermCard.tsx';
 import { TERM_ATTRIBUTE, useGlossary, type TermMenu, type TermShown } from './terms.ts';
 
 /** How long the pointer rests on a term before its card opens, and leaves before it closes. */
@@ -147,6 +147,8 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
   const shown = terms?.of(term.key);
   const ignored = shown?.ignored === true;
   const menu = terms?.menu;
+  // With keyboard focus, its card's hints show their keys.
+  const [keyed, setKeyed] = useState(false);
   const menuOpen = useMenuOpen(menu, term.key, element);
   // Ignored, its card goes, and doesn't come back by itself once it's a term again.
   if (ignored && open) setOpen(false);
@@ -243,10 +245,12 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
         onPointerLeave={() => later(false, HOVER_CLOSE_MS)}
         onFocus={() => {
           focused.current = true;
+          setKeyed(true);
           if (!dismissed.current) now(true);
         }}
         onBlur={(event) => {
           focused.current = false;
+          setKeyed(false);
           // The window losing focus blurs the term but leaves it the focused element, and gives it
           // focus again when the window comes back: a card closed with `Esc` stays closed. Only
           // focus moving elsewhere undoes the `Esc`.
@@ -279,6 +283,8 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
         shown={shown}
         rendering={card}
         menu={menu !== undefined}
+        hints={terms?.hints?.(term.key)}
+        keys={keyed}
         onClose={() => now(false)}
         onPointerEnter={() => clearTimeout(timer.current)}
         onPointerLeave={() => later(false, HOVER_CLOSE_MS)}
@@ -300,6 +306,10 @@ interface HoverCardProps {
   rendering: Rendering<Overview>;
   /** The term has a menu: the card draws its `⋯`, which opens it as a right-click does. */
   menu: boolean;
+  /** The hints in its foot, each shown while its command can run. */
+  hints?: readonly TermHint[] | undefined;
+  /** The term has keyboard focus: the hints show their keys. */
+  keys?: boolean | undefined;
   onClose: () => void;
   onPointerEnter: () => void;
   onPointerLeave: () => void;
@@ -320,6 +330,8 @@ function HoverCard({
   shown,
   rendering,
   menu,
+  hints,
+  keys,
   onClose,
   onPointerEnter,
   onPointerLeave,
@@ -361,6 +373,8 @@ function HoverCard({
                   more={own && first?.kind === 'paragraph' && rest.length > 0}
                   before={shown?.before && <Inlines blocks={shown.before} />}
                   byline={shown?.byline}
+                  hints={hints}
+                  keys={keys}
                 />
               </MarkdownProvider>
             )}

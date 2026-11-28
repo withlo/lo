@@ -17,9 +17,12 @@ git refs (`refs/lo/`), the `lo://` links, `~/.config/lo` and environment variabl
 
 These bind every change (design section 1).
 
-- **Read-only.** Lo never edits files or pushes commits. It writes to GitHub only to review and
-  merge: comments and their attachments, reviews, viewed marks, merges, queue and auto-merge
-  changes, and changing a PR's base branch to form a stack or to merge a chain.
+- **Read-only.** Lo never edits files, and never pushes to a branch. It writes to GitHub only to
+  review and merge: comments and their attachments, reviews, viewed marks, merges, queue and
+  auto-merge changes, and changing a PR's base branch to form a stack or to merge a chain. The one
+  exception is a repo's definition store: a change to a term in Lo is a commit to `refs/lo/terms`,
+  written through GitHub's API as the signed-in account, fast-forward only, and never to a branch or
+  to any other ref.
 - **No AI inside Lo.** Lo calls no model and runs no agent. It displays what agents write elsewhere.
 - **No backend, no telemetry.** Lo talks only to GitHub and to language servers' official download
   sources. Updates come from GitHub Releases.

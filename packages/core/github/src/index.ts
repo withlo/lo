@@ -49,6 +49,7 @@ export * from './sidebar.ts';
 export * from './stack-layers.ts';
 export * from './threads.ts';
 export * from './timeline.ts';
+export * from './terms.ts';
 export * from './token.ts';
 export * from './trees.ts';
 export * from './trunk-rules.ts';

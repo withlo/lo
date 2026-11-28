@@ -1,7 +1,8 @@
 /**
  * The overview's glossary, as its document reads it: each defined term by its key, with ids of the
  * document's own for its entry; what shows for each with the repo's definitions, and whether the
- * reader ignores it; the term's menu; and the term the reader last went to from the text.
+ * reader ignores it; the term's menu and its card's hints; and the term the reader last went to
+ * from the text.
  */
 
 import { createContext, useContext, type ReactNode, type RefObject } from 'react';
@@ -10,6 +11,7 @@ import type { Definition, OverviewBlock } from '@lo/artifact';
 
 import type { Anchors } from '../markdown/index.ts';
 import type { TermBylineShown } from './TermByline.tsx';
+import type { TermHint } from './TermCard.tsx';
 import type { TermMarks } from './TermTags.tsx';
 
 export interface Glossary {
@@ -117,6 +119,11 @@ export interface OverviewTerms {
   readonly note?: ReactNode;
   /** The terms' menu. Without it, a term has none, and its card and row no `⋯`. */
   readonly menu?: TermMenu | undefined;
+  /**
+   * The hints in the foot of the card of the term `key` names: "Edit…" `i`. Each shows only while
+   * its command can run.
+   */
+  readonly hints?: ((key: string) => readonly TermHint[]) | undefined;
   /**
    * "Stop ignoring" was pressed on the row of the term `key` names, in the Ignored group: both its
    * switches turn off.

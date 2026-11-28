@@ -1,21 +1,30 @@
 // The overview's jobs: reading `artifact.md`, checking the overview against what main read of its
 // commit and code, and reading the repository's definitions, each drawn as the overview draws its
-// glossary's. Pure work on what the window sends: nothing here reads the repository, the
-// disk or the network. The readers the check runs with answer only from what main read, and fail
+// glossary's; and for an edit of a term, reading the definition being written, and making the edit
+// in `terms.json` for main to write. Pure work on what the window and main send: nothing here
+// reads the repository, the disk or the network. The readers the check runs with answer only from what main read, and fail
 // what it didn't, which leaves that figure or code unread.
 
 import {
+  aliasesOf,
   checkArtifact,
   definitionBlocks,
+  editTerm,
+  emptyStore,
+  fittedStoreText,
   LIMITS,
+  notDefinitionText,
   parseArtifact,
   parseStore,
   SIZE_ONLY,
+  termKey,
   type CheckedArtifact,
   type CodeReader,
   type FileAnswer,
+  type Overview,
   type OverviewFiles,
 } from '@lo/artifact';
+import type { Inline } from '@lo/markdown';
 
 import { defineRunner } from '../../../background/runners.ts';
 import {
@@ -23,7 +32,10 @@ import {
   contract,
   treeEntries,
   type CheckInput,
+  type DraftRead,
   type Drawn,
+  type EditInput,
+  type EditMade,
   type Parsed,
   type TermsRead,
 } from '../jobs.ts';
@@ -48,7 +60,108 @@ export default defineRunner(contract, {
     // Bounded on any input: 2 MiB of JSON, and its definitions, read once each.
     limits: { deadline: 30_000 },
   },
+  draft: {
+    run: (input) => readDraft(input),
+    // One definition of at most 2,048 characters. Edit term reads one as each key is typed.
+    limits: { deadline: 10_000 },
+    warm: true,
+  },
+  edit: {
+    run: (input) => makeEdit(input),
+    // The store read, the edit made, and the store written and read again: 2 MiB of JSON, twice.
+    limits: { deadline: 30_000 },
+  },
 });
+
+/**
+ * A term's edit being written, read as the store would hold it: its definition, as the blocks it
+ * draws as and the terms it links to, or what it holds that a definition can't; and its other
+ * forms, with their keys.
+ */
+export function readDraft(draft: {
+  term: string;
+  definition: string;
+  aliases: readonly string[];
+}): DraftRead {
+  const aliases = aliasesOf(draft.term, draft.aliases).map((name) => ({
+    name,
+    key: termKey(name),
+  }));
+  return { definition: draftDefinition(draft.definition), aliases };
+}
+
+/** A definition being written, `text`, as the store would hold it. */
+function draftDefinition(text: string): DraftRead['definition'] {
+  const not = notDefinitionText(text);
+  const blocks = not === undefined ? definitionBlocks(text) : undefined;
+  if (blocks === undefined) {
+    return { ok: false, what: not?.what ?? 'formatting', why: not?.why ?? null };
+  }
+  const terms = new Set<string>();
+  const visit = (inlines: readonly Inline<Overview>[]) => {
+    for (const inline of inlines) {
+      if (inline.kind !== 'link') continue;
+      if (inline.target.kind === 'term') terms.add(inline.target.key);
+      visit(inline.children);
+    }
+  };
+  for (const block of blocks) if (block.kind === 'paragraph') visit(block.children);
+  return { ok: true, blocks, terms: [...terms] };
+}
+
+/**
+ * The edit `input` names made in its `terms.json`, as `overview.edit` makes it: the file, written
+ * again with it, within the store's size and read back as the store.
+ */
+export function makeEdit(input: EditInput): EditMade {
+  let store = emptyStore();
+  if (input.bytes !== null) {
+    const read = parseStore(input.bytes);
+    if (!read.ok) return { kind: 'unreadable', problem: read.problem };
+    store = read.store;
+  }
+  const { term, definition, aliases, login, at } = input.edit;
+  const made = editTerm(store, input.key, input.base, {
+    term,
+    definition,
+    aliases,
+    by: { login },
+    at,
+  });
+  switch (made.kind) {
+    case 'same':
+    case 'refused':
+      return made;
+    case 'changed': {
+      const now = made.term;
+      if (now === undefined) return { kind: 'changed', term: null };
+      return {
+        kind: 'changed',
+        term: {
+          term: now.term,
+          definition: now.definition,
+          aliases: [...now.aliases],
+          written: now.written,
+          by: now.by,
+          from: now.from,
+          at: now.at,
+        },
+      };
+    }
+    case 'edited': {
+      const text = fittedStoreText(made.store);
+      if (text === undefined) return { kind: 'tooLarge' };
+      // What's written is what the store reads: anything else would leave the definitions
+      // unreadable to every reader.
+      const again = parseStore(new TextEncoder().encode(text));
+      if (!again.ok) return { kind: 'unreadable', problem: again.problem };
+      return { kind: 'edited', text };
+    }
+    default:
+      made satisfies never;
+      throw new Error('An edit came to nothing known.');
+  }
+}
 
 /**
  * `terms.json` read as the repository's definitions, each drawn as the overview's tree draws a

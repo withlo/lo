@@ -1,7 +1,8 @@
 // The repositories' definitions in main: `refs/lo/terms` watched with an ETag, and for a commit not
 // read yet, the top of its tree and `terms.json`, in one turn; never a file past the store's limit;
 // one read for every tab of a repository acting as one account; read with the tab's overview, on
-// its own cadence; and kept, so they show at once the next time.
+// its own cadence; and kept, so they show at once the next time. With a commit, whether the account
+// may change them; and what an edit wrote, taken as read for every account.
 
 import { STORE_READ } from '@lo/artifact';
 import { RepoRef, type GithubClient, type ReadPriority, type ReadPriorityNow } from '@lo/github';
@@ -107,14 +108,17 @@ describe("a repository's definitions", () => {
       saved: false,
       checkedAt: null,
       problem: null,
+      push: null,
     });
     tab.read('foreground', true);
     await settle();
+    // And whether the account may change them, asked once.
     expect(turns).toEqual([
       [
         'rozed-dev/e2e/git/matching-refs/lo/terms',
         `rozed-dev/e2e/git/trees/${store.commit}`,
         `rozed-dev/e2e/git/blobs/${idOf(json)}`,
+        'graphql TermsAccess',
       ].join(' '),
     ]);
     expect(last()).toEqual({
@@ -124,6 +128,7 @@ describe("a repository's definitions", () => {
       saved: false,
       checkedAt: Date.now(),
       problem: null,
+      push: true,
     });
     expect(new TextDecoder().decode(tab.file(idOf(json)))).toBe(json);
     expect(() => tab.file(fakeId('other'))).toThrow(IpcError);
@@ -386,9 +391,99 @@ describe("a repository's definitions", () => {
     tab.update(ROZED, E2E);
     tab.read('foreground', true);
     await settle();
-    expect(again.turns).toEqual(['rozed-dev/e2e/git/matching-refs/lo/terms']);
+    // Whether the account may change them isn't kept: it's asked again.
+    expect(again.turns).toEqual(['rozed-dev/e2e/git/matching-refs/lo/terms graphql TermsAccess']);
     expect(last()).toMatchObject({ saved: false, checkedAt: Date.now() });
     tab.close();
+  });
+
+  it('says whether the account may change them, asked again by Retry, and reads them whatever GitHub says', async () => {
+    const github = new FakeGithub();
+    github.push('rozed-dev/e2e', TERMS, overview('store', { 'terms.json': termsJson('Bucket') }));
+    github.permissions.set('rozed-dev/e2e', 'READ');
+    const { stores, turns, lines } = storesWith(github);
+    const { tab, last } = tabOf(stores);
+    tab.read('foreground', true);
+    await settle();
+    expect(last()).toMatchObject({ found: { kind: 'file' }, push: false });
+
+    github.permissions.set('rozed-dev/e2e', 'MAINTAIN');
+    await tab.retry();
+    expect(turns.at(-1)).toBe('rozed-dev/e2e/git/matching-refs/lo/terms graphql TermsAccess');
+    expect(last()).toMatchObject({ push: true });
+
+    // Not answered, it stays as it was, and the read goes through.
+    github.answer.set('graphql TermsAccess', () =>
+      Response.json({ message: 'x' }, { status: 502 }),
+    );
+    await tab.retry();
+    expect(last()).toMatchObject({ found: { kind: 'file' }, push: true, problem: null });
+    expect(lines.at(-1)).toMatch(/asking whether Lo may change rozed-dev\/e2e's definitions/);
+    tab.close();
+  });
+
+  it('asks nothing of the account where there are none, or without one', async () => {
+    const github = new FakeGithub();
+    const { stores, turns } = storesWith(github);
+    const { tab, last } = tabOf(stores);
+    tab.read('foreground', true);
+    await settle();
+    expect(turns).toEqual(['rozed-dev/e2e/git/matching-refs/lo/terms']);
+    expect(last()).toMatchObject({ found: { kind: 'none' }, push: null });
+    tab.close();
+
+    github.push('rozed-dev/e2e', TERMS, overview('store', { 'terms.json': termsJson('Bucket') }));
+    const anonymous = storesWith(github);
+    const nobody = tabOf(anonymous.stores, 't2', { kind: 'anonymous' });
+    nobody.tab.read('foreground', true);
+    await settle();
+    expect(anonymous.turns.at(-1)).not.toMatch(/graphql/);
+    expect(nobody.last()).toMatchObject({ found: { kind: 'file' }, push: null });
+    nobody.tab.close();
+  });
+
+  it('takes what an edit wrote as read, for every account, and asks each afresh next time', async () => {
+    const github = new FakeGithub();
+    github.push('rozed-dev/e2e', TERMS, overview('one', { 'terms.json': termsJson('Bucket') }));
+    const { stores, turns, kept } = storesWith(github);
+    const one = tabOf(stores);
+    const other = tabOf(stores, 't2', { kind: 'account', login: 'elle-kzn' });
+    one.tab.read('foreground', true);
+    other.tab.read('foreground', true);
+    await settle();
+
+    const json = termsJson('Bucket', 'Tenant');
+    const edited = overview('two', { 'terms.json': json });
+    github.push('rozed-dev/e2e', TERMS, edited);
+    await vi.advanceTimersByTimeAsync(1000);
+    const found: StoreFound = {
+      kind: 'file',
+      commit: edited.commit,
+      id: idOf(json),
+      size: json.length,
+    };
+    stores.wrote(ROZED, E2E, found, new TextEncoder().encode(json));
+    for (const tab of [one, other]) {
+      expect(tab.last()).toMatchObject({ found, saved: false, checkedAt: Date.now() });
+    }
+    expect(kept.get(E2E)?.found).toEqual(found);
+    expect(new TextDecoder().decode(other.tab.file(idOf(json)))).toBe(json);
+
+    // Read just now: not again as it's shown, and then without the ETag of what was heard before.
+    const before = turns.length;
+    one.tab.read('foreground', true);
+    await settle();
+    expect(turns).toHaveLength(before);
+    await vi.advanceTimersByTimeAsync(STORE_SHOWN);
+    one.tab.read('foreground', true);
+    await settle();
+    expect(github.asked.at(-1)).toMatchObject({
+      path: 'rozed-dev/e2e/git/matching-refs/lo/terms',
+      etag: null,
+    });
+    expect(turns.at(-1)).toBe('rozed-dev/e2e/git/matching-refs/lo/terms');
+    one.tab.close();
+    other.tab.close();
   });
 
   it('forgets what was kept that no longer reads', () => {
