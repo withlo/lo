@@ -2325,6 +2325,28 @@ function sendable(box: Box, own = false): boolean {
 }
 
 /**
+ * Lets go box `box`, held from its send's press, where its comment can't go after all: one still
+ * among its view's boxes says why, as a send main refused does, where it doesn't say it already.
+ */
+function letGo(box: Box): void {
+  const { view } = box;
+  const here = boxesOf(view).get(box.key) === box;
+  box.set({ busy: false, refusal: here ? unsent(view) : undefined });
+}
+
+/**
+ * Why nothing sends for view `view` now, as a send main refused would say it: its account is
+ * signed out, it's in a layer of a stack, or it's offline. Nothing for any other reason, which the
+ * box says itself.
+ */
+function unsent(view: string): Refusal | undefined {
+  if (pullOf(view)?.acting?.kind !== 'account') return { kind: 'signIn' };
+  if (runOf(view)) return { kind: 'run' };
+  const away = offline(view);
+  return away === undefined ? undefined : { kind: 'github', message: `${away}.` };
+}
+
+/**
  * Sends a box's text, as `⌘⏎` (`review`) or `⌥⏎` (`now`) asks: an edit's saves it over the
  * comment, either way.
  */
@@ -2352,7 +2374,7 @@ export async function send(box: Box, how: Send): Promise<void> {
     }
     // Gone meanwhile, as with its tab, or it can't go now, as offline: it's let go, and nothing goes.
     if (boxesOf(view).get(box.key) !== box || !sendable(box, true)) {
-      box.set({ busy: false });
+      letGo(box);
       return;
     }
   }
@@ -2370,7 +2392,7 @@ export async function send(box: Box, how: Send): Promise<void> {
     }
     // Gone meanwhile, as with its tab: nothing goes.
     if (boxesOf(view).get(box.key) !== box || !sendable(box, waits)) {
-      if (waits) box.set({ busy: false });
+      if (waits) letGo(box);
       return;
     }
   }

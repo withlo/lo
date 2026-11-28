@@ -99,10 +99,11 @@ import {
   type Box,
 } from './boxes.ts';
 import { landed } from './landed.ts';
+import { onPull } from './onpull.ts';
 import type * as Main from './main.ts';
 import type * as SaidModule from './Said.tsx';
 import * as threads from './threads.ts';
-import { CHECK_FIRST, NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF, offersOf } from './writing.ts';
+import { CHECK_FIRST, NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF, notesOf, offersOf } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
 const OLDER = 'b'.repeat(40);
@@ -2193,6 +2194,11 @@ function changedFromSix(lines: { side: string; from: number; to: number }): Comm
   return lines.to >= 6 ? { kind: 'file', path: PATH, why: 'changed' } : sameAtHead(lines);
 }
 
+/** The block's file, deleted at the head. */
+function goneAtHead(): CommentOnHead {
+  return { kind: 'gone', path: PATH };
+}
+
 /** Lines at the head as in the block, but up to line 5, which changed. */
 function changedToFive(lines: { side: string; from: number; to: number }): CommentOnHead {
   return lines.from <= 5 ? { kind: 'file', path: PATH, why: 'changed' } : sameAtHead(lines);
@@ -2509,6 +2515,54 @@ describe('changing a new comment’s lines on a code block', () => {
       { id: VIEW, place: onLines(5, 6), text: 'Look here', how: 'review' },
     ]);
     expect(drawn.composer.held).toBe(true);
+  });
+
+  test('a send while its comment goes from the pull request to the file leaves the timeline nothing of it', async () => {
+    // The file is deleted at the head, and which of its lines take a comment isn't known yet.
+    answers['comments.commentable'] = () => ({ kind: 'unknown' });
+    const { drawn, target, box } = await blockOn(5, 5, 'new', goneAtHead);
+    expect(box.state.place).toEqual({ kind: 'conversation' });
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    overview.cold = true;
+    const held: (() => void)[] = [];
+    overview.held = held;
+    answers['comments.send'] = () => new Promise<SendOutcome>(() => {});
+    void changingLines('lineBelow').run(target);
+    void send(box, 'review');
+    // Now main can tell: the file takes a comment, as GitHub takes one on a file it deletes.
+    answers['comments.commentable'] = () => ({
+      kind: 'diff',
+      hunks: [{ old: 1, new: 1, kinds: ' '.repeat(20) }],
+    });
+    held[0]!();
+    await vi.waitFor(() => expect(asked('comments.send')).toHaveLength(1));
+    expect(asked('comments.send')).toEqual([
+      { id: VIEW, place: onTheFile(), text: 'Look here', how: 'review' },
+    ]);
+    expect(onPull.get(VIEW)).toEqual([]);
+  });
+
+  test('a send that can’t go once its lines are placed lets the box go, which says why', async () => {
+    const { drawn, target, box } = await blockOn(5, 5);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    overview.cold = true;
+    const held: (() => void)[] = [];
+    overview.held = held;
+    void changingLines('lineBelow').run(target);
+    void send(box, 'review');
+    said.pull = pull({
+      connection: { kind: 'offline', retryAt: null, cause: { kind: 'offline' }, error: 'down' },
+    });
+    held[0]!();
+    await vi.waitFor(() => expect(drawn.composer.held).toBe(false));
+    expect(asked('comments.send')).toEqual([]);
+    expect(box.state).toMatchObject({ busy: false, place: onLines(5, 6) });
+    expect(notesOf(box.state)[0]).toMatchObject({
+      title: 'Couldn’t send the comment',
+      text: 'Offline.',
+    });
   });
 
   test('a send while the box moves back posts it on the lines it went back to', async () => {
