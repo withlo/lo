@@ -21,6 +21,8 @@ import { Queues, type TabSource } from './queues.ts';
 
 let queues: Queues | undefined;
 let acts: QueueActs | undefined;
+/** Stops the merge queues' tabs reading again as the reader asks. */
+let stopRefresh: (() => void) | undefined;
 
 /**
  * Where `tab` reads from: GitHub, as its account, in that account's poller's queue, and the stacks
@@ -95,6 +97,11 @@ export default defineFeature(contract, {
       every: pollEvery({ packaged: app.isPackaged, env: process.env }),
     });
     queues = shown;
+    // The reader's refresh of a merge queue's tab reads it as "Check again" does, which says why a
+    // read failed on the tab itself.
+    stopRefresh = context
+      .use(tabs)
+      .onRefresh((id) => (shown.found(id) ? shown.look(id) : undefined));
     acts = new QueueActs({
       tab: (id) => shown.found(id),
       poller: (login) => access.poller(login),
@@ -113,6 +120,8 @@ export default defineFeature(contract, {
     shown.start();
   },
   stop() {
+    stopRefresh?.();
+    stopRefresh = undefined;
     acts?.stop();
     acts = undefined;
     queues?.stop();

@@ -1,7 +1,15 @@
 import type { Repo } from '@lo/git';
 
 import { defineService } from '../../main/services.ts';
-import type { Acting, LocalState, Opening, QueueOpening, Stack, Tabs } from './contract.ts';
+import type {
+  Acting,
+  FrontView,
+  LocalState,
+  Opening,
+  QueueOpening,
+  Stack,
+  Tabs,
+} from './contract.ts';
 
 /**
  * A view of a pull request's tab, as features in main that show what's in it follow it: the tab's
@@ -130,6 +138,17 @@ export interface TabService {
    * as a newer push instead, so the diff never moves under the reader.
    */
   drawn(id: string, head: string): void;
+  /**
+   * Calls `refresher` each time the reader asks to read what a tab shows from GitHub again, with
+   * the tab's id, or a pull request's tab's view on screen's, and the middle views on screen, until
+   * the returned function is called. A feature that shows a part of a tab reads its part again,
+   * and the refresh lasts until what `refresher` returns settles. One that draws a middle view
+   * names it in `shows`, so it reads before the rest while that view is on screen.
+   */
+  onRefresh(
+    refresher: (id: string, front: readonly FrontView[]) => Promise<unknown> | undefined,
+    shows?: readonly FrontView[],
+  ): () => void;
 }
 
 export const tabs = defineService<TabService>('tab.tabs');

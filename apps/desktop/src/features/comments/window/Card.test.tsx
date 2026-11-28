@@ -189,12 +189,7 @@ function resolving(stands: 'sending' | 'notDone', atWork = true): HTMLElement {
         author="rozed-bot"
         body={(each) => <p>{each.body}</p>}
         login="rozed-bot"
-        actions={{
-          onReply: () => undefined,
-          onResolve: () => undefined,
-          onEdit: () => undefined,
-          onDelete: () => undefined,
-        }}
+        actions={{ onReply: () => undefined, onResolve: () => undefined }}
         now={NOW}
       />,
     ),

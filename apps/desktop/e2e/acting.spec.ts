@@ -8,7 +8,8 @@
 // the line pins its popover, changing nothing. Each change comes into the card as GitHub reads it
 // back. In the timeline, as
 // `app_comments_box` recorded, `c` puts focus in the box at its end, and `⌘⏎` posts a comment on
-// the pull request itself, which `i` edits in its card and `dd` deletes.
+// the pull request itself, which `i` edits in its card and `dd` deletes, and whose `⋯` opens its
+// row's menu, which has both.
 
 import { cassette as recorded, recordedKey } from '@lo/testing';
 import { COMMENTS_PULL, writeCommentsRemote } from '@lo/testing/git';
@@ -345,6 +346,22 @@ test.describe('in the timeline', () => {
       await expect(comment).toContainText('Posted from the timeline’s box. Then edited.', {
         timeout: 20_000,
       });
+    });
+
+    await test.step('its `⋯` opens its row’s menu, with Edit and Delete and their keys, and `Esc` closes it', async () => {
+      await comment.hover();
+      const more = comment.getByRole('button', { name: 'More actions' });
+      await more.click();
+      const menu = page.getByRole('menu');
+      await expect(menu.getByRole('menuitem', { name: /^Edit comment/ })).toContainText('i');
+      await expect(menu.getByRole('menuitem', { name: /^Delete comment…/ })).toContainText(/d\s*d/);
+      // It says it's expanded while its menu is open, which keeps it showing.
+      await expect(more).toHaveAttribute('aria-expanded', 'true');
+      await page.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0);
+      await expect(more).not.toHaveAttribute('aria-expanded', 'true');
+      // Focus is back on the list, on the comment's row, for its keys.
+      await expect(timeline).toBeFocused();
     });
 
     await test.step('`dd` asks first, and `⏎` deletes the comment, the keyboard going to the row before it', async () => {

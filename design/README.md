@@ -287,7 +287,14 @@ where the action's target is.
   right-click opens the menu, at the end of its row (before a chevron that opens or closes the row,
   as on a thread's card), and opens that same menu under itself (`openMenuUnder`), so the two can
   never list different things. It's named "More actions", or "More actions for retry.ts" (`label`)
-  where a row has several.
+  where a row has several. On a card or row a list repeats, as a post in the timeline or a comment
+  in a thread, it's `shy`: it keeps its room, and shows only on the one under the pointer, the one
+  the keyboard is on (`data-shy-scope`, with `data-focused` as for a chip) or has focus in, and
+  while its menu is open, coming and going in a Tint. `Tab` still stops at it, and shows it.
+- **A card or row a list repeats shows only what most readers come to it for.** Its other actions,
+  as a comment's Edit and Delete, are in its menu, each with its key, and not buttons or hints on
+  every one of them: a thread's card keeps Reply and Resolve, and a review comment in the timeline
+  its "Show in diff".
 - **A control a code view draws** in its own DOM, where React doesn't reach, carries its command's
   id in `data-command`. The view runs the command on the line or file the control is drawn at, and
   gives it the tooltip a `Button` would have: the command's label and key, or why it can't run.
@@ -421,7 +428,8 @@ changes in the same frame.
   greyed. Without a `working`, it shows its label beside the ring, so it keeps its name.
 - `working` is a node, for a button that can be its icon alone: give its words the same mark its
   label's have (`data-gives` in a row that gives up, see `useGiveUp`), so as its icon the ring takes
-  the icon's place and no words come back with it, as Delete… on a narrow comment's head does.
+  the icon's place and no words come back with it, as Resolve in a narrow thread popover's head
+  does.
 - It's as wide as the wider of its label and its `working` beside the ring, so keep `working` short:
   "Checking…", not "Checking what merges with it". Where the words change as the work goes on, as
   trusting a repo's do ("Checking…", "Waiting…", "Trusting…"), keep each within the label's width,
@@ -997,11 +1005,12 @@ text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" di
   that says "Checking…" comes on screen whole as Lo starts to look, unless the reader has left the
   box. An edit and a resolve follow the same rule: a card's "Resolve not confirmed" offers "Check
   again", and "Try again" only once Lo knows it didn't go. A resolve, an unresolve or a delete shows
-  as asked, its control at work, until the thread itself shows it, so a card never flips back
-  between GitHub's answer and the next read of its threads. If they don't show it in ten seconds the
-  control is its own again, and the card still shows what was asked until they're read again. One
-  change to a thread at a time: while one is at work, resolving it or deleting from it is dimmed,
-  with what's at work as the reason ("Resolving…").
+  as asked, its control at work (a comment being deleted says "Deleting…" in place of its `⋯`),
+  until the thread itself shows it, so a card never flips back between GitHub's answer and the next
+  read of its threads. If they don't show it in ten seconds the control is its own again, and the
+  card still shows what was asked until they're read again. One change to a thread at a time: while
+  one is at work, resolving it or deleting from it is dimmed, with what's at work as the reason
+  ("Resolving…").
 - **Said where it's seen.** A send, an edit, a resolve or a delete that fails, or can't be
   confirmed, where its card or box isn't on screen to say it, as beside lines once its popover has
   closed, is said in one toast, in its note's tone, whose "Show thread" opens the thread where its

@@ -27,6 +27,7 @@ import {
   type CassetteInfo,
   type Interaction,
   type Json,
+  type RecordedRequest,
   type RecordedResponse,
 } from './cassette.ts';
 import { fileName, recordedRequest, recordedResponse } from './record.ts';
@@ -213,12 +214,14 @@ export interface AddRestOptions {
 /**
  * Records GitHub's answers to a REST read that `dirs`' cassettes don't hold yet, and adds them after
  * each cassette's others: the first answer, then the `304` to the same read asked again with the
- * first answer's ETag, as what replays them asks it again, so both are there to replay. Each
- * cassette gets its own requests to GitHub. Nothing else changes but `cassette.json`, which notes
- * when the read was added. As {@link addAnswers} does, it keeps only what the recorder keeps, and
- * writes nothing unless every first answer came back `200` with an ETag, every second `304`, and
- * nothing holds a secret; it refuses a cassette that already holds the read. Returns how many it
- * added in each folder.
+ * first answer's ETag, as what replays them asks it again, so both are there to replay. A cassette
+ * that holds the read already, but never asked it again, gets only the `304` to the ETag of the
+ * last answer it holds. Each cassette gets its own requests to GitHub. Nothing else changes but
+ * `cassette.json`, which notes when the read was added. As {@link addAnswers} does, it keeps only
+ * what the recorder keeps, and writes nothing unless every first answer came back `200` with an
+ * ETag, every second `304`, and nothing holds a secret; it refuses a cassette that already holds
+ * the read asked again, or holds the read without an ETag. Returns how many it added in each
+ * folder.
  */
 export async function addRestAnswers(options: AddRestOptions): Promise<Map<string, number>> {
   const { fetch, token, path, dirs, at } = options;
@@ -232,16 +235,30 @@ export async function addRestAnswers(options: AddRestOptions): Promise<Map<strin
   const counts = new Map<string, number>();
   for (const dir of dirs) {
     const cassette = recordedCassette(dir);
-    const key = recordedKey(recordedRequest('GET', url, ''));
-    if (cassette.interactions.some(({ interaction }) => recordedKey(interaction.request) === key)) {
-      throw new Error(`${dir} holds ${what} already`);
-    }
-    const first = await get(fetch, token, url, undefined);
-    const etag = first.response.headers['etag'];
-    if (first.response.status !== 200 || etag === undefined) {
-      throw new Error(
-        `${dir}: GitHub answered ${what} ${first.response.status}${etag === undefined ? ' without an ETag' : ''}`,
+    const holds = (request: RecordedRequest) => {
+      const key = recordedKey(request);
+      return cassette.interactions.filter(
+        ({ interaction }) => recordedKey(interaction.request) === key,
       );
+    };
+    // A read held already is asked again with the ETag of the last answer it holds.
+    const held = holds(recordedRequest('GET', url, '')).at(-1)?.interaction.response;
+    let first: Interaction | undefined;
+    let etag: string | undefined;
+    if (held) {
+      etag = held.headers['etag'];
+      if (etag === undefined) throw new Error(`${dir} holds ${what} already, without an ETag`);
+      if (holds(recordedRequest('GET', url, '', { ifNoneMatch: etag })).length > 0) {
+        throw new Error(`${dir} holds ${what} already, and asked again`);
+      }
+    } else {
+      first = await get(fetch, token, url, undefined);
+      etag = first.response.headers['etag'];
+      if (first.response.status !== 200 || etag === undefined) {
+        throw new Error(
+          `${dir}: GitHub answered ${what} ${first.response.status}${etag === undefined ? ' without an ETag' : ''}`,
+        );
+      }
     }
     const again = await get(fetch, token, url, etag);
     if (again.response.status !== 304) {
@@ -253,7 +270,8 @@ export async function addRestAnswers(options: AddRestOptions): Promise<Map<strin
       0,
       ...cassette.interactions.map(({ file }) => Number.parseInt(file, 10) || 0),
     );
-    for (const [step, interaction] of [first, again].entries()) {
+    const added = first ? [first, again] : [again];
+    for (const [step, interaction] of added.entries()) {
       writes.push({
         path: join(dir, fileName(index + step + 1, interaction.request)),
         text: `${JSON.stringify(interaction, null, 2)}\n`,
@@ -261,7 +279,7 @@ export async function addRestAnswers(options: AddRestOptions): Promise<Map<strin
     }
     const info: CassetteInfo = { ...cassette.info, added: { ...cassette.info.added, [what]: at } };
     writes.push({ path: join(dir, 'cassette.json'), text: `${JSON.stringify(info, null, 2)}\n` });
-    counts.set(dir, 2);
+    counts.set(dir, added.length);
   }
   for (const { path: file, text } of writes) {
     const found = findSecret(text, [token]);

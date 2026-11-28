@@ -21,6 +21,8 @@ import {
   resolveThread,
   takeActs,
   threw,
+  type ThreadKeyTarget,
+  whyNotOn,
 } from './acts.ts';
 import { held } from './threads.ts';
 
@@ -544,3 +546,33 @@ describe('a reply or an edit asked for on a code block', () => {
     expect(said.dropped).toEqual([{ kind: 'edit', thread: 'T1', comment: 'C1' }]);
   });
 });
+
+describe('a comment’s own menu', () => {
+  test('dims Edit and Delete on a comment that isn’t yours, or is gone, with why, and not on yours', () => {
+    const theirs = comment({ id: 'C2', author: 'mira-chen', viewerCanUpdate: false });
+    held.set(VIEW, {
+      threads: {
+        id: VIEW,
+        status: 'ready',
+        threads: [row({ comments: [comment(), theirs] })],
+        missing: 0,
+        compared: null,
+        problem: null,
+      },
+    });
+    expect(whyNotOn(VIEW, onT1('C1'), 'edit')).toBeUndefined();
+    expect(whyNotOn(VIEW, onT1('C1'), 'delete')).toBeUndefined();
+    expect(whyNotOn(VIEW, onT1('C2'), 'edit')).toMatch(/\byours\b/);
+    expect(whyNotOn(VIEW, onT1('C2'), 'delete')).toMatch(/\byours\b/);
+    expect(whyNotOn(VIEW, onT1('C9'), 'delete')).toMatch(/\bdeleted\b/);
+    // Naming no comment, its key acts on your newest, which it finds as it runs.
+    expect(whyNotOn(VIEW, onT1(), 'edit')).toBeUndefined();
+  });
+});
+
+/** Thread `T1` as a menu's target, from one of its comments' own, or from the thread's. */
+function onT1(id?: string): ThreadKeyTarget {
+  return id === undefined
+    ? { kind: 'thread', thread: 'T1' }
+    : { kind: 'thread', thread: 'T1', comment: id };
+}

@@ -441,12 +441,16 @@ interface ReadState {
   retryAt: number | undefined;
   /** The same, by the wall clock, as worked out once when it failed, for what shows the wait. */
   retryWall: number | undefined;
+  /** The `generation` its failures were last forgotten at: a run that started before counts none. */
+  forgotten: number;
   /** How many times it was made due at once whatever its stamp. A run that started before the last time doesn't stamp its value, so it's read again. */
   generation: number;
   /** The `generation` of the newest run that finished with all of the value and started at that generation: every mark up to it is past. */
   finished: number | undefined;
   /** The `generation` of the newest run that finished at all and started at that generation. */
   landed: number | undefined;
+  /** The `generation` of the newest run that ended, answered or not, and started at that generation. */
+  tried: number | undefined;
   /** When it's due again after a write it shows, whatever its stamp. */
   againAt: number | undefined;
   /** Whether its next run is given nothing Lo has, so it reads everything again. A run that started since clears it. */
@@ -497,6 +501,30 @@ interface PullState {
   readAt?: number | undefined;
   /** The check whose details the last poll left for after the reads waited on, until fetched. */
   detailsDue?: PullRequestCheck | undefined;
+}
+
+/** What a refresh reads first, and whether it reads its repository's open pull requests too. */
+export interface RefreshOptions {
+  /** The reads to run first, by name, in this order, as those of what's on screen: the rest follow. */
+  readonly first?: readonly string[] | undefined;
+  /** Whether to read the repository's open pull requests again too, once the reads are in. */
+  readonly list?: boolean | undefined;
+}
+
+/** A refresh of the open pull request under way ({@link Poller.refresh}). */
+interface Refresh {
+  readonly pull: PullRef;
+  /** Its schedule's `forced` once the refresh asked for its poll: a poll chosen since then serves it. */
+  readonly ticket: number;
+  /** Each read it runs again, by name: which read it is, and the generation a run of it starts at. */
+  readonly reads: ReadonlyMap<string, { readonly id: number; readonly generation: number }>;
+  /** The reads it runs first, by name, in order. */
+  readonly first: readonly string[];
+  readonly list: boolean;
+  /** Its repository's schedule's `forced` once the refresh asked for its list, once it has. */
+  listTicket: number | undefined;
+  readonly done: Promise<void>;
+  readonly settle: () => void;
 }
 
 interface RepoState {
@@ -783,6 +811,8 @@ export class Poller {
   /** The pull requests' files being read, or read lately. */
   readonly #pullFiles: SharedPullFiles;
   readonly #listeners = new Set<(event: PollEvent) => void>();
+  /** The refreshes under way, by their pull request's key. */
+  readonly #refreshes = new Map<string, Refresh>();
   readonly #observers = new Set<() => void>();
   #stopped = false;
   #woken = false;
@@ -822,6 +852,7 @@ export class Poller {
       this.#looping = false;
       this.#leading = undefined;
       this.#queue.recheck();
+      this.#settleRefreshes();
     });
   }
 
@@ -832,6 +863,7 @@ export class Poller {
     this.#queue.recheck();
     this.#wake();
     for (const wake of this.#pauseWaiters) wake();
+    this.#settleRefreshes();
   }
 
   /** Calls `listener` with each {@link PollEvent}, until the returned function is called. */
@@ -1041,6 +1073,98 @@ export class Poller {
   }
 
   /**
+   * Reads `pull`, the open pull request, again now, whatever its interval, as when the reader asks:
+   * its poll goes ahead of every poll that's merely due, whatever the offline backoff, and fetches
+   * its details whatever its check says, then every read kept for it runs again with what it has,
+   * as on the 5-minute refresh. Its requests take their turns in the account's queue, and the rate
+   * limit holds them as it holds every poll. Resolves once all of that has answered or failed: at
+   * once when `pull` isn't the open pull request, and as soon as the rest can't go on, with the
+   * poller stopped, the account signed out, the rate limit used up or GitHub out of reach. Asked
+   * again while one is under way, it waits on that one and asks nothing more.
+   *
+   * The reads `first` names run first, in that order, as those of what's on screen. With `list`,
+   * once the reads are in, the repository's open pull requests are read again too, ahead of every
+   * poll merely due, as for a stack's tree, and it resolves once they're in.
+   */
+  refresh(pull: PullRef, { first = [], list = false }: RefreshOptions = {}): Promise<void> {
+    const under = this.#refreshes.get(pull.key);
+    if (under) return under.done;
+    const state = this.#pulls.get(pull.key);
+    if (this.#stopped || !state || !this.#open?.equals(pull)) return Promise.resolve();
+    // Without the check its details were fetched at, the poll fetches them again.
+    state.check = undefined;
+    state.schedule.force();
+    const reads = new Map<string, { id: number; generation: number }>();
+    for (const [name, read] of state.reads) {
+      this.#readAgain(pull, name, false, true);
+      reads.set(name, { id: read.id, generation: read.generation });
+    }
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const refresh: Refresh = {
+      pull,
+      ticket: state.schedule.forced,
+      reads,
+      first,
+      list,
+      listTicket: undefined,
+      done: promise,
+      settle: resolve,
+    };
+    this.#refreshes.set(pull.key, refresh);
+    this.#wake();
+    this.#changed();
+    return promise;
+  }
+
+  /** Settles each refresh that's over, or can't go on ({@link Poller.refresh}). */
+  #settleRefreshes(): void {
+    for (const [key, refresh] of this.#refreshes) {
+      const stands = this.#refreshStands(refresh);
+      if (stands === 'reading' || (stands === 'read' && !this.#listRead(refresh))) continue;
+      this.#refreshes.delete(key);
+      refresh.settle();
+    }
+  }
+
+  /** Whether `refresh`'s poll and reads are still to come, are in, or can't go on. */
+  #refreshStands(refresh: Refresh): 'reading' | 'read' | 'stopped' {
+    const state = this.#pulls.get(refresh.pull.key);
+    if (this.#stopped || !this.#looping || this.#signedOut || !state) return 'stopped';
+    if (!this.#open?.equals(refresh.pull) || this.#status.rateLimit.kind === 'paused') {
+      return 'stopped';
+    }
+    if (state.schedule.served < refresh.ticket || state.detailsDue !== undefined) return 'reading';
+    // Out of reach, the reads wait out the backoff, and without a check, they don't run at all.
+    if (this.#offline || state.latestCheck === undefined) return 'stopped';
+    for (const [name, mark] of refresh.reads) {
+      const read = state.reads.get(name);
+      // One let go of isn't waited for.
+      if (read?.id === mark.id && (read.tried ?? -1) < mark.generation) return 'reading';
+    }
+    return 'read';
+  }
+
+  /**
+   * Whether the open pull requests `refresh` asked for are in: asked for the first time this is
+   * asked, once its reads are, so its repository's poll goes ahead of every poll merely due. True
+   * when it didn't ask for them, or they can't be read now: while the rate limit is so low that
+   * only the open pull request is polled, or GitHub is out of reach.
+   */
+  #listRead(refresh: Refresh): boolean {
+    const repo = this.#repos.get(refresh.pull.repo.key);
+    if (!refresh.list || !repo || this.#offline || this.#status.rateLimit.kind === 'openOnly') {
+      return true;
+    }
+    if (refresh.listTicket === undefined) {
+      repo.schedule.force();
+      refresh.listTicket = repo.schedule.forced;
+      this.#wake();
+      return false;
+    }
+    return repo.schedule.served >= refresh.listTicket;
+  }
+
+  /**
    * Has the open pull request's poll wait for `reading`, the tab's own read of it, and take the
    * summary it read as the poll's, as hearing it from GitHub just now: it's kept and sent as a
    * poll's is, and the poll asks GitHub only for the rest. One that fails leaves the poll to read it.
@@ -1167,9 +1291,11 @@ export class Poller {
       failures: 0,
       retryAt: undefined,
       retryWall: undefined,
+      forgotten: 0,
       generation: 0,
       finished: undefined,
       landed: undefined,
+      tried: undefined,
       againAt: undefined,
       afresh: false,
       loading: true,
@@ -1179,6 +1305,7 @@ export class Poller {
     state.reads.set(kind.name, read);
     this.#wake();
     this.#changed();
+    const { generation } = read;
     let entry: CacheEntry | undefined;
     try {
       entry = await this.#cache.get(this.#login, pull.key, kind.name);
@@ -1193,7 +1320,8 @@ export class Poller {
       this.#pulls.get(pull.key)?.reads.get(kind.name) === read
     ) {
       read.value = entry.value;
-      read.stamp = entry.stamp;
+      // Asked to read it again meanwhile, as a refresh does, it's read whatever the stamp says.
+      read.stamp = read.generation === generation ? entry.stamp : undefined;
       read.fetchedAt = entry.fetchedAt;
       this.#emit({ kind: 'read', pull, name: kind.name });
     }
@@ -1528,6 +1656,7 @@ export class Poller {
       read.failures = 0;
       read.retryAt = undefined;
       read.retryWall = undefined;
+      read.forgotten = read.generation;
     }
     this.#wake();
     this.#changed();
@@ -2152,6 +2281,7 @@ export class Poller {
 
   #changed(): void {
     for (const observer of this.#observers) observer();
+    this.#settleRefreshes();
   }
 
   #wake(): void {
@@ -2190,8 +2320,8 @@ export class Poller {
 
   /**
    * The open pull request's reads that are due at some point, once its check says what they watch,
-   * in the order of their names: when each is due, and whether someone on screen waits on it for its
-   * first value now.
+   * in the order of their names, but for those a refresh reads first: when each is due, and whether
+   * someone on screen waits on it for its first value now.
    */
   #openReads(
     now: number,
@@ -2212,7 +2342,16 @@ export class Poller {
       return [];
     }
     const check = openState.latestCheck;
-    const reads = sorted(openState.reads, ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    // In the order of their names, but those a refresh reads first come first, in its order.
+    const ahead = this.#refreshes.get(open.key)?.first ?? [];
+    const rank = (name: string) => {
+      const at = ahead.indexOf(name);
+      return at === -1 ? ahead.length : at;
+    };
+    const reads = sorted(
+      openState.reads,
+      ([a], [b]) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0),
+    );
     const due: { at: number; awaited: boolean; job: Extract<Job, { kind: 'read' }> }[] = [];
     for (const [name, read] of reads) {
       // What the cache holds is still loading, or a run of it goes on beside the loop.
@@ -2329,6 +2468,7 @@ export class Poller {
   /** The next poll to run, or how long to wait for one. */
   #nextStep(): Step {
     this.#refreshStatus();
+    this.#settleRefreshes();
     if (this.#signedOut) return { kind: 'wait', wait: undefined };
     const config = this.#config;
     const now = config.monotonic();
@@ -2677,6 +2817,10 @@ export class Poller {
     const dropped = job.kind === 'read' && kept?.id !== job.read.id;
     // Whatever came of it, a run someone may have waited on is over: what follows are polls.
     if (kept && !dropped) kept.first = undefined;
+    // A run that started after the read was last made due has been tried, whatever came of it.
+    if (kept && !dropped && job.kind === 'read' && job.read.generation === kept.generation) {
+      kept.tried = job.read.generation;
+    }
     if (job.kind === 'details') {
       // Fetched or not, the next poll fetches them if they're still out of date.
       const state = this.#pulls.get(job.pull.key);
@@ -2694,19 +2838,20 @@ export class Poller {
       if (detail.kind === 'network' || detail.kind === 'tokenUnavailable') {
         if (polls) this.#schedule(target)?.serve(ticket);
         const failure = new GithubError(detail);
-        this.#backOff(failure, failure.said(), now, wall);
+        if (!this.#refreshTried(target, ticket)) this.#backOff(failure, failure.said(), now, wall);
       } else if (detail.kind === 'rateLimited') {
         // Taken in from the client above, as it heard it.
       } else if (detail.kind === 'unauthorized' && this.#accounts.isSignedOut(this.#login)) {
         // The client's renewal has already signed the account out, or read a newer token from `gh`
         // for an account imported from it.
         this.#signedOut = true;
-      } else if (read !== undefined && target instanceof PullRef) {
+      } else if (job.kind === 'read' && target instanceof PullRef) {
         if (!dropped) {
-          this.#log(`reading ${read} for ${target.toString()}: ${new GithubError(detail).message}`);
-          this.#readFailed(target, read, now);
+          const { name, generation } = job.read;
+          this.#log(`reading ${name} for ${target.toString()}: ${new GithubError(detail).message}`);
+          this.#readFailed(target, name, generation, now);
           if (this.#isWatched(target)) {
-            this.#emit({ kind: 'readFailed', pull: target, name: read, error: detail });
+            this.#emit({ kind: 'readFailed', pull: target, name, error: detail });
           }
         }
       } else {
@@ -2728,13 +2873,14 @@ export class Poller {
   }
 
   /**
-   * Notes that a read failed, or gave a value that isn't complete, so it waits before it's read
-   * again: the open pull request's interval, doubling with each failure in a row, up to the
-   * 5-minute refresh's.
+   * Notes that a read's run, started at `generation`, failed, or gave a value that isn't complete,
+   * so it waits before it's read again: the open pull request's interval, doubling with each
+   * failure in a row, up to the 5-minute refresh's. A run that started before its failures were
+   * last forgotten, as a refresh forgets them, counts none: the run asked for since goes at once.
    */
-  #readFailed(pull: PullRef, name: string, now: number): void {
+  #readFailed(pull: PullRef, name: string, generation: number, now: number): void {
     const read = this.#pulls.get(pull.key)?.reads.get(name);
-    if (!read) return;
+    if (!read || generation < read.forgotten) return;
     const { openInterval, detailsMaxAge, jitter, random } = this.#config;
     read.failures += 1;
     const wait = backoff(read.failures, openInterval, detailsMaxAge, jitter, random());
@@ -3012,7 +3158,9 @@ export class Poller {
         else if (restamped) {
           writes.push(() => cache.touch(login, target.key, outcome.name, wall, { stamp: stamped }));
         } else touch(outcome.name);
-        if (!complete) this.#readFailed(target, outcome.name, this.#config.monotonic());
+        if (!complete) {
+          this.#readFailed(target, outcome.name, generation, this.#config.monotonic());
+        }
         this.#emit({ kind: changed ? 'read' : 'confirmed', pull: target, name: outcome.name });
         return writes;
       }
@@ -3047,6 +3195,17 @@ export class Poller {
     this.#changed();
   }
 
+  /**
+   * Whether a poll of `target`, chosen when its `forced` was `ticket`, was a refresh's, tried while
+   * GitHub was already out of reach ({@link Poller.refresh}). Its failure leaves the backoff as it
+   * was: pressing Refresh doesn't put Lo's own next try off.
+   */
+  #refreshTried(target: Target, ticket: number): boolean {
+    if (this.#offline === undefined || !(target instanceof PullRef)) return false;
+    const refresh = this.#refreshes.get(target.key);
+    return refresh !== undefined && refresh.ticket <= ticket;
+  }
+
   /** Whether the accounts say the account is signed out, or it's gone. Only then is it signed out here. */
   #accountSignedOut(): boolean {
     return (
@@ -3065,7 +3224,9 @@ export class Poller {
       this.#signedOut = true;
     } else {
       this.#schedule(target)?.serve(ticket);
-      this.#backOff(error, message, this.#config.monotonic(), this.#config.now());
+      if (!this.#refreshTried(target, ticket)) {
+        this.#backOff(error, message, this.#config.monotonic(), this.#config.now());
+      }
     }
     this.#refreshStatus();
   }

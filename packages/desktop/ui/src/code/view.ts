@@ -177,7 +177,7 @@ import {
   shiftRows,
   shownRuns,
 } from './rows.ts';
-import { type ThreadHost, Threads } from './threads.ts';
+import { commentIn, type ThreadHost, Threads } from './threads.ts';
 import {
   type BoxHost,
   CollapsedWidget,
@@ -4034,7 +4034,14 @@ class View implements DiffView {
     let clicked: Target | undefined;
     if (card?.dataset.threadId) {
       const id = card.dataset.threadId;
-      clicked = { kind: 'thread', thread: id, collapsed: this.#hosts.get(id)?.open === false };
+      // On a comment of it, the comment's own menu: what Edit and Delete act on.
+      const comment = commentIn(card, target);
+      clicked = {
+        kind: 'thread',
+        thread: id,
+        collapsed: this.#hosts.get(id)?.open === false,
+        ...(comment === undefined ? {} : { comment }),
+      };
     } else if (marked) {
       // A mark beside lines: its thread's menu, as on its card.
       clicked = { kind: 'thread', thread: marked.thread };

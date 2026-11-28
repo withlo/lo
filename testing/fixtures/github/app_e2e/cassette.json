@@ -7,7 +7,9 @@
     "PendingReview": "2026-11-13T19:10:01Z",
     "GET https://avatars.githubusercontent.com/rozed-bot?s=40": "2026-11-14T03:33:24Z",
     "MergeSnapshot": "2026-11-16T22:10:06Z",
-    "GET https://api.github.com/repos/rozed-dev/e2e/rules/branches/app/base?per_page=100": "2026-11-16T22:10:46Z"
+    "GET https://api.github.com/repos/rozed-dev/e2e/rules/branches/app/base?per_page=100": "2026-11-16T22:10:46Z",
+    "GET https://api.github.com/repos/rozed-dev/e2e/activity?ref=refs%2Fheads%2Fapp%2Ffeature&direction=desc&per_page=100": "2026-11-28T05:57:39Z",
+    "GET https://api.github.com/repos/rozed-dev/e2e/activity?ref=refs%2Fheads%2Fapp%2Fbase&direction=desc&per_page=100": "2026-11-28T05:57:40Z"
   },
   "rerecorded": {
     "ReviewThreads": "2026-11-27T05:15:18Z"
