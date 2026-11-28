@@ -335,6 +335,19 @@ export class StackFinder {
     return runOf(forest.stacks, forest.prs, a, b);
   }
 
+  /**
+   * The open pull request of tab `id`'s repository whose head is `commit`, as the stacks were last
+   * worked out: none when no head is, or they aren't known.
+   */
+  layerAt(id: string, commit: string): number | undefined {
+    const tab = this.#followed.get(id)?.tab;
+    const entry = tab?.login === undefined ? undefined : this.#pollers.get(tab.login.toLowerCase());
+    const forest =
+      tab && entry?.kind === 'ready' ? this.#forest(entry.poller, tab.pull.repo) : undefined;
+    const at = commit.toLowerCase();
+    return forest?.prs.find((pr) => pr.headOid.toLowerCase() === at)?.number;
+  }
+
   /** Forgets what was kept for an account that was removed, whose poller stopped. */
   forgetAccount(login: string): void {
     const lower = login.toLowerCase();

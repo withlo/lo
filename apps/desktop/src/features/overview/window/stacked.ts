@@ -25,8 +25,11 @@ export interface StackParts {
   ask(id: string): void;
   /** Shows layer `number` of the stack `tab` is in, as `⏎` on its row in the stack's tree does. */
   showLayer(tab: PullTab, number: number): void;
-  /** Shows the whole stack `tab` is in as one diff, at `path`, its lines `lines` marked. */
-  showAt(tab: PullTab, path: string, lines: StackLines | undefined): void;
+  /**
+   * Shows the whole stack `tab` is in as one diff, at `path`, its lines `lines` marked: up to the
+   * layer whose head is `commit`, the one the stack overview describes.
+   */
+  showAt(tab: PullTab, path: string, lines: StackLines | undefined, commit: string): void;
 }
 
 let parts: StackParts | undefined;
@@ -81,7 +84,15 @@ export function showStackLayer(tab: PullTab, number: number): void {
   parts?.showLayer(tab, number);
 }
 
-/** Shows the whole stack `tab` is in as one diff, at `path`, its lines `lines` marked. */
-export function showWholeStackAt(tab: PullTab, path: string, lines: StackLines | undefined): void {
-  parts?.showAt(tab, path, lines);
+/**
+ * Shows the whole stack `tab` is in as one diff, at `path`, its lines `lines` marked, up to the
+ * layer whose head is `commit`.
+ */
+export function showWholeStackAt(
+  tab: PullTab,
+  path: string,
+  lines: StackLines | undefined,
+  commit: string,
+): void {
+  parts?.showAt(tab, path, lines, commit);
 }

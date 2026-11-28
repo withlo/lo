@@ -18,7 +18,6 @@ import {
   PullRef,
   type GithubClient,
   type OverviewRefCommits,
-  type PullBody,
   type ReadPriorityNow,
   type RepoRef,
 } from '@lo/github';
@@ -32,7 +31,7 @@ import { entryAt } from './listing.ts';
 /** The most commits' listings kept, the oldest let go first. */
 export const LISTINGS = 100;
 
-/** The most descriptions kept, the oldest let go first. */
+/** The most descriptions' first lines kept, the oldest let go first. */
 export const BODIES = 200;
 
 /** The most characters of a description's first line that Layers is sent. */
@@ -55,6 +54,12 @@ export interface LayerReadsOptions {
   now?: (() => number) | undefined;
 }
 
+/** The first line of a pull request's description, and the ETag of the read it's from. */
+interface Line {
+  readonly line: string | null;
+  readonly etag: string | undefined;
+}
+
 /** What every overview's ref in a repository held, and when that was read. */
 interface ReadRefs {
   readonly refs: OverviewRefCommits;
@@ -72,8 +77,8 @@ export class LayerReads {
   readonly #reading = new Map<string, Promise<OverviewRefCommits>>();
   /** Each commit's listing, by its repository's key and its ID. */
   readonly #listings = new Map<string, OverviewCommit>();
-  /** Each pull request's description, as last read. */
-  readonly #bodies = new Map<string, PullBody>();
+  /** The first line of each pull request's description, as last read, and the read's ETag. */
+  readonly #lines = new Map<string, Line>();
 
   constructor(options: LayerReadsOptions) {
     this.#options = options;
@@ -138,13 +143,16 @@ export class LayerReads {
         const pull = new PullRef(repo.owner, repo.name, number);
         const key = pull.toString();
         try {
-          const body = await this.#options.github(
+          const known = this.#lines.get(key);
+          const read = await this.#options.github(
             acting,
-            (client) => pullBody(client, pull, this.#bodies.get(key)),
+            (client) => pullBody(client, pull, known?.etag),
             'background',
           );
-          keep(this.#bodies, key, body, BODIES);
-          return firstLine(body.body);
+          const line = read ? { line: firstLine(read.body), etag: read.etag } : known;
+          if (!line) return null;
+          keep(this.#lines, key, line, BODIES);
+          return line.line;
         } catch (error) {
           this.#log(`reading ${key}'s description: ${describe(error)}`);
           return null;
@@ -157,7 +165,7 @@ export class LayerReads {
   clear(): void {
     this.#refs.clear();
     this.#listings.clear();
-    this.#bodies.clear();
+    this.#lines.clear();
   }
 
   async #overview(

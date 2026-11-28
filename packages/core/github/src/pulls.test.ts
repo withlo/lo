@@ -211,7 +211,7 @@ test('an unexpected body is an error', async () => {
   expect(error.message).toContain("reading GitHub's answer");
 });
 
-test('reads a description, and again with its ETag for free', async () => {
+test('reads a description, and again with its ETag for free, saying only that it’s unchanged', async () => {
   expect(readPullBody(JSON.parse(FD_2212))).toBe('');
   expect(readPullBody({ ...JSON.parse(FD_2212), body: 'Fixes #1822.\n\nMore.' })).toBe(
     'Fixes #1822.\n\nMore.',
@@ -231,6 +231,7 @@ test('reads a description, and again with its ETag for free', async () => {
   });
   const first = await pullBody(client, PULL, undefined);
   expect(first).toEqual({ body: 'Honors it.', etag });
-  expect(await pullBody(client, PULL, first)).toEqual(first);
+  // Unchanged: none, for the caller to keep what it has.
+  expect(await pullBody(client, PULL, etag)).toBeUndefined();
   expect(seen).toEqual([null, etag]);
 });

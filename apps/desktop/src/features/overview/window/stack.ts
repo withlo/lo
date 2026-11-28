@@ -18,7 +18,7 @@ import { plainText } from '@lo/markdown';
 import { registry, here } from '../../../window/commands/registry.ts';
 import type { Row, StackView } from '../../stacks/contract.ts';
 import { tabState } from '../../tab/window/shared.ts';
-import type { OverviewState } from '../contract.ts';
+import { LAYERS_LIMIT, type OverviewState } from '../contract.ts';
 import { Checking, type CheckedOverview } from './checking.ts';
 import { standingOf, type Standing } from './facts.ts';
 import { main, overviewJobs } from './main.ts';
@@ -77,6 +77,9 @@ let taking = true;
 
 /** The most characters of a tl;dr that Layers is given: three lines of it at most show. */
 const TLDR_LIMIT = 600;
+
+/** How often the view on screen reads its layers' overviews again, in milliseconds. */
+export const LAYERS_AGAIN_MS = 60_000;
 
 /** The stack's overview of view `id`, as main last said and its check found. */
 export function stackStandingOf(id: string): Standing {
@@ -221,11 +224,53 @@ function keyOf(rows: readonly Row[]): string {
   return rows.map((row) => `${row.number}:${row.head}:${String(row.overview)}`).join(' ');
 }
 
+/** What a layer says while what its overview says isn't known: nothing of a stack or a tl;dr. */
+const UNKNOWN: Omit<LayerSaid, 'line'> = { stack: undefined, tldr: undefined };
+
+/** Whether `a` and `b` say the same of each layer. */
+function sameSaid(a: ReadonlyMap<number, LayerSaid>, b: ReadonlyMap<number, LayerSaid>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [number, layer] of a) {
+    const other = b.get(number);
+    if (
+      other === undefined ||
+      other.stack !== layer.stack ||
+      other.tldr !== layer.tldr ||
+      other.line !== layer.line
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Sets what view `id`'s layers say to `said`, unless they say that already: setting it runs what
+ * follows it, which reads them again only as it changes.
+ */
+function setSaid(id: string, said: ReadonlyMap<number, LayerSaid>): void {
+  if (!sameSaid(layersSaid.get(id), said)) layersSaid.set(id, said);
+}
+
+/** Asks for `layers` in requests of at most {@link LAYERS_LIMIT} each, the replies in order. */
+function inParts<T>(
+  layers: readonly number[],
+  ask: (part: number[]) => Promise<readonly T[]>,
+): Promise<T[]> {
+  const parts: number[][] = [];
+  for (let at = 0; at < layers.length; at += LAYERS_LIMIT) {
+    parts.push(layers.slice(at, at + LAYERS_LIMIT));
+  }
+  return Promise.all(parts.map(ask)).then((replies) => replies.flat());
+}
+
 /**
  * Reads what view `id`'s layers' overviews say, as `view`, its stack, lists them, unless it's read
  * them already for the stack as it is: each layer whose overview Lo can see. One without is said at
  * once, with no tl;dr. `again` reads them whatever was read before, as the stack's overview is
- * shown, so an overview pushed since is read.
+ * shown and every {@link LAYERS_AGAIN_MS} while the view is on screen, so an overview pushed since
+ * is read. When none of them could be read, they're read again as anything changes. A layer whose
+ * overview couldn't be read keeps what it said before.
  */
 export function readLayers(id: string, view: StackView | undefined, again = false): void {
   const rows = rowsOf(view);
@@ -241,34 +286,33 @@ export function readLayers(id: string, view: StackView | undefined, again = fals
   const said = new Map<number, LayerSaid>();
   for (const row of rows) {
     const known = kept.get(row.number);
-    if (row.overview !== true)
-      said.set(row.number, { stack: undefined, tldr: undefined, line: known?.line });
+    if (row.overview !== true) said.set(row.number, { ...UNKNOWN, line: known?.line });
     else if (known) said.set(row.number, known);
   }
-  layersSaid.set(id, said);
+  setSaid(id, said);
   const reading = rows.filter((row) => row.overview === true).map((row) => row.number);
   if (reading.length === 0) return;
-  main()
-    .layerOverviews({ id, layers: reading })
-    .then((read) =>
-      Promise.all(
-        read.map((overview, at) => {
-          const number = reading[at] ?? 0;
-          return overview.kind === 'read'
-            ? parsedOf(number, overview.commit, overview.artifact)
-            : Promise.resolve({ stack: undefined, tldr: undefined });
-        }),
-      ),
-    )
-    .then((parsed) => {
+  inParts(reading, (layers) => main().layerOverviews({ id, layers }))
+    .then(async (read) => {
+      const parsed = await Promise.all(
+        read.map((overview, at) =>
+          overview.kind === 'read'
+            ? parsedOf(reading[at] ?? 0, overview.commit, overview.artifact)
+            : Promise.resolve(undefined),
+        ),
+      );
       if (readFor.get(id) !== key) return;
+      // None could be read now, as when GitHub can't be reached: read again as anything changes.
+      if (read.every((overview) => overview.kind === 'unread')) readFor.delete(id);
       const next = new Map(layersSaid.get(id));
-      parsed.forEach((each, at) => {
+      read.forEach((overview, at) => {
         const number = reading[at];
         if (number === undefined) return;
-        next.set(number, { ...each, line: next.get(number)?.line });
+        const was = next.get(number);
+        const now = overview.kind === 'unread' ? (was ?? UNKNOWN) : (parsed[at] ?? UNKNOWN);
+        next.set(number, { stack: now.stack, tldr: now.tldr, line: was?.line });
       });
-      layersSaid.set(id, next);
+      setSaid(id, next);
     })
     .catch((error: unknown) => {
       console.error("Lo couldn't read the stack's layers' overviews:", error);
@@ -277,11 +321,18 @@ export function readLayers(id: string, view: StackView | undefined, again = fals
       // What they say is unknown: Layers falls back to their descriptions.
       const next = new Map(layersSaid.get(id));
       for (const number of reading) {
-        if (!next.has(number))
-          next.set(number, { stack: undefined, tldr: undefined, line: undefined });
+        if (!next.has(number)) next.set(number, { ...UNKNOWN, line: undefined });
       }
-      layersSaid.set(id, next);
+      setSaid(id, next);
     });
+}
+
+/**
+ * Reads what view `id`'s layers' overviews say again, as `view` lists them, while overviews are on:
+ * every {@link LAYERS_AGAIN_MS} for the view on screen.
+ */
+export function readLayersAgain(id: string, view: StackView | undefined): void {
+  if (taking) readLayers(id, view, true);
 }
 
 /**
@@ -300,8 +351,7 @@ export function readLines(id: string, view: StackView | undefined): void {
     });
   if (wanted.length === 0) return;
   for (const number of wanted) asked.add(number);
-  main()
-    .layerLines({ id, layers: wanted })
+  inParts(wanted, (layers) => main().layerLines({ id, layers }))
     .then((lines) => {
       const next = new Map(layersSaid.get(id));
       lines.forEach((line, at) => {
@@ -318,12 +368,14 @@ export function readLines(id: string, view: StackView | undefined): void {
 }
 
 /**
- * The stack the layer's own overview, `own`, names: none for one that names none, or can't be
- * shown; unknown while it's read and checked.
+ * The stack the layer's own overview, `own`, names: none for one that names none, can't be shown,
+ * or isn't the repository's own, since a fork's overview names what its writer likes; unknown while
+ * it's read and checked.
  */
 export function namedBy(own: Standing): number | null | undefined {
   if (own.kind === 'reading' || own.kind === 'checking') return undefined;
-  return own.kind === 'shown' ? (own.header.stack ?? null) : null;
+  if (own.kind !== 'shown' || own.commit.source !== 'base') return null;
+  return own.header.stack ?? null;
 }
 
 /**

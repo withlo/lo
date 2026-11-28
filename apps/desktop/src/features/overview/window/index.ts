@@ -83,7 +83,9 @@ import {
   followStackOf,
   hasStackOverview,
   keepStacksOnly,
+  LAYERS_AGAIN_MS,
   layersSaid,
+  readLayersAgain,
   takeStackOverviews,
   takeStackState,
 } from './stack.ts';
@@ -331,6 +333,13 @@ function followOnScreen(): void {
   followStackOf(tab.id, stackViewOf(tab.id));
 }
 
+/** Reads the layers' overviews of the pull request's view on screen again, for any pushed since. */
+function readOnScreenAgain(): void {
+  const tab = activeTab();
+  if (tab?.kind !== 'pull' || runOf(tab.id) !== undefined) return;
+  readLayersAgain(tab.id, stackViewOf(tab.id));
+}
+
 /** Whether reading the ref again could find more: its last read failed, or it's read only once. */
 function lookAgain(state: ReturnType<typeof stateNow>): boolean {
   return Boolean(state?.problem) || state?.watching === false;
@@ -543,6 +552,7 @@ export default {
     checked.subscribe(followOnScreen);
     layersSaid.subscribe(followOnScreen);
     onActiveTab(followOnScreen);
+    setInterval(readOnScreenAgain, LAYERS_AGAIN_MS);
     main().subscribe('store', takeStore);
     client(revisionsContract).subscribe('comparison', takeRevisions);
     // Each view of a pull request's tab keeps its overview until the tab closes.

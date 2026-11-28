@@ -38,6 +38,7 @@ import {
   type PullTab,
 } from '../../tab/window/shared.ts';
 import { goToTree } from '../../tree/window/shared.ts';
+import type { Row } from '../contract.ts';
 import { makeStack } from './actions.ts';
 import {
   choosing,
@@ -353,42 +354,77 @@ export function openRun(tab: PullTab, layers: readonly number[]): void {
 }
 
 /**
+ * Which order puts the branch a stack overview's writer goes up first: lower layers first at the
+ * first place two paths differ, and of two where one goes on from the other, the longer.
+ */
+function writersOrder(a: readonly number[], b: readonly number[]): number {
+  for (let at = 0; at < Math.min(a.length, b.length); at++) {
+    const [x, y] = [a[at] ?? 0, b[at] ?? 0];
+    if (x !== y) return x - y;
+  }
+  return b.length - a.length;
+}
+
+/**
+ * The layers of `rows`, a stack, a stack overview's code shows as one diff, from the bottom: up to
+ * `top`, the layer whose head the overview describes, when it's one of them; else up the branch
+ * the overview's writer goes up, through the lowest-numbered layer wherever more than one sits on
+ * another, to the top.
+ */
+export function branchFor(rows: readonly Row[], top: number | undefined): readonly number[] {
+  const at = rows.find((row) => row.number === top);
+  if (at) return at.path;
+  let first: readonly number[] = [];
+  for (const row of rows) {
+    if (first.length === 0 || writersOrder(row.path, first) < 0) first = row.path;
+  }
+  return first;
+}
+
+/**
  * Shows the whole stack `tab` is in as one diff, as selecting its layers from the bottom to the
- * top does, at `path`, its lines `lines` marked: where a stack overview's code goes. A stack that
- * branches shows its longest branch, the one its overview was most likely written at the top of.
- * One that's a layer alone shows that layer.
+ * top does, at `path`, its lines `lines` marked: where a stack overview's code goes, the overview
+ * describing `commit`. It goes up to the layer whose head that is, else up the branch the overview's
+ * writer goes up (`branchFor`). One that's a layer alone shows that layer.
  */
 export function showStackAt(
   tab: PullTab,
   path: string,
   lines: { readonly start: number; readonly end: number } | undefined,
+  commit: string,
 ): void {
   const view = stacks.get(tab.id);
   const rows = view?.kind === 'stack' ? view.rows : [];
-  const layers = rows.reduce<readonly number[]>(
-    (longest, row) => (row.path.length > longest.length ? row.path : longest),
-    [],
-  );
-  const [bottom] = layers;
-  const top = layers.at(-1);
-  if (bottom === undefined || top === undefined) {
-    refuse(STACK_CHANGED);
-    return;
-  }
   const place = (id: string | undefined) => {
     if (id === undefined) return;
     showPlace(id, path, lines?.start, lines && { from: lines.start, to: lines.end });
   };
-  if (layers.length === 1) {
-    void showLayer(tab, bottom).then(place);
-    return;
-  }
-  const shown = runViewOf(tab.id, layers);
-  if (shown !== undefined) showDiff(shown);
-  runTrouble.set(tab.id, undefined);
   main()
-    .run({ id: tab.id, bottom, top })
-    .then(place, (error: unknown) => failed(error, tab, layers));
+    .layerAt({ id: tab.id, commit })
+    .catch((error: unknown) => {
+      console.error("Lo couldn't find the layer a stack overview describes:", error);
+      return null;
+    })
+    .then((top) => {
+      const layers = branchFor(rows, top ?? undefined);
+      const [bottom] = layers;
+      const last = layers.at(-1);
+      if (bottom === undefined || last === undefined) {
+        refuse(STACK_CHANGED);
+        return;
+      }
+      if (layers.length === 1) {
+        void showLayer(tab, bottom).then(place);
+        return;
+      }
+      const shown = runViewOf(tab.id, layers);
+      if (shown !== undefined) showDiff(shown);
+      runTrouble.set(tab.id, undefined);
+      main()
+        .run({ id: tab.id, bottom, top: last })
+        .then(place, (error: unknown) => failed(error, tab, layers));
+    })
+    .catch((error: unknown) => console.error("Lo couldn't show the stack as one diff:", error));
 }
 
 /**

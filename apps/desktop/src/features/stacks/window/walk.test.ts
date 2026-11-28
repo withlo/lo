@@ -14,6 +14,7 @@ import { choosing, focused, OVERVIEW_ROW, OVERVIEW_TARGET, runTrouble, stacks } 
 import {
   back,
   backable,
+  branchFor,
   cancel,
   choose,
   goDown,
@@ -81,8 +82,11 @@ const middle = vi.hoisted(() => {
 vi.mock('../../../window/commands/registry.ts', () => middle);
 vi.mock('../../../window/commands/overlays.tsx', () => ({ askedFrom: () => document.body }));
 
+/** The layer whose head is the commit a stack overview describes, as main finds it. */
+const described = vi.hoisted(() => ({ layer: null as number | null }));
 const bridge = installBridge({
   'stacks.run': () => 'run',
+  'stacks.layerAt': () => described.layer,
   'tab.layer': () => 'shown',
 });
 
@@ -222,12 +226,37 @@ describe('the stack overview’s row', () => {
 });
 
 describe('a stack overview’s code', () => {
-  it('shows the longest branch as one diff, at its lines', async () => {
+  const COMMIT = 'c'.repeat(40);
+
+  it('goes up to the layer whose head the overview describes, as one diff, at its lines', async () => {
+    described.layer = 85;
     const tab = showing(84, STACK);
-    showStackAt(tab, 'src/limits.ts', { start: 3, end: 9 });
+    showStackAt(tab, 'src/limits.ts', { start: 3, end: 9 }, COMMIT);
+    await answered();
+    await answered();
+    expect(bridge.calls).toContainEqual(['stacks.layerAt', { id: tab.id, commit: COMMIT }]);
+    expect(bridge.calls).toContainEqual(['stacks.run', { id: tab.id, bottom: 82, top: 85 }]);
+    expect(diff.showPlace).toHaveBeenCalledWith('run', 'src/limits.ts', 3, { from: 3, to: 9 });
+  });
+
+  it('goes up the branch the writer goes up when no layer’s head is the commit', async () => {
+    described.layer = null;
+    const tab = showing(84, STACK);
+    showStackAt(tab, 'src/limits.ts', undefined, COMMIT);
+    await answered();
     await answered();
     expect(bridge.calls).toContainEqual(['stacks.run', { id: tab.id, bottom: 82, top: 84 }]);
-    expect(diff.showPlace).toHaveBeenCalledWith('run', 'src/limits.ts', 3, { from: 3, to: 9 });
+    expect(diff.showPlace).toHaveBeenCalledWith('run', 'src/limits.ts', undefined, undefined);
+  });
+
+  it('goes through the lowest-numbered layer wherever two sit on one, to the top', () => {
+    const rows = [row(90, []), row(95, [90]), row(91, [90]), row(93, [90, 91]), row(92, [90, 91])];
+    expect(branchFor(rows, undefined)).toEqual([90, 91, 92]);
+    expect(branchFor(rows, 93)).toEqual([90, 91, 93]);
+    expect(branchFor(rows, 95)).toEqual([90, 95]);
+    // A layer the stack doesn't have isn't the top.
+    expect(branchFor(rows, 7)).toEqual([90, 91, 92]);
+    expect(branchFor([], undefined)).toEqual([]);
   });
 });
 

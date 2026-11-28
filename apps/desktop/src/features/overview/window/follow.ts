@@ -35,7 +35,7 @@ import { OVERVIEW_VIEW } from './labels.ts';
 import { main } from './main.ts';
 import { openings, overviewPlace } from './opening.ts';
 import { placeOnHead, placing, writtenIn } from './since.ts';
-import { hasStackOverview, subjects } from './stack.ts';
+import { hasStackOverview, stackStandingOf, subjects } from './stack.ts';
 import { showWholeStackAt } from './stacked.ts';
 
 /** An overview drawn in a tab while it's on screen, as the keys act on it. */
@@ -516,7 +516,8 @@ export function follow(overview: DrawnOverview, block: HTMLElement): void {
 
 /**
  * Shows `code`, which `overview` points at: a layer's own overview's in the tab's diff, as
- * {@link goToCode} does; the stack's, at its commit, in the whole stack shown as one diff.
+ * {@link goToCode} does; the stack's in the stack shown as one diff, up to the layer whose head the
+ * stack's overview describes.
  */
 function goToCodeFrom(overview: DrawnOverview, code: CodeAt): void {
   if (!overview.stack) {
@@ -524,8 +525,9 @@ function goToCodeFrom(overview: DrawnOverview, code: CodeAt): void {
     return;
   }
   const tab = activeTab();
-  if (tab?.kind !== 'pull' || tab.id !== overview.tab) return;
-  showWholeStackAt(tab, code.path, code.lines);
+  const standing = stackStandingOf(overview.tab);
+  if (tab?.kind !== 'pull' || tab.id !== overview.tab || standing.kind !== 'shown') return;
+  showWholeStackAt(tab, code.path, code.lines, standing.header.commit);
 }
 
 /**

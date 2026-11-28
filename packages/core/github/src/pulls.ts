@@ -77,19 +77,19 @@ export function readPullBody(json: unknown): string {
 }
 
 /**
- * Pull request `pull`'s description, sending the ETag of `known`, the one read before: an
- * unchanged answer is `known` again, for free.
+ * Pull request `pull`'s description, sending `etag`, the ETag of the one read before: none when
+ * GitHub answers that it's unchanged, which costs nothing, so the caller keeps only what it needs
+ * of the one before.
  */
 export async function pullBody(
   client: GithubClient,
   pull: PullRef,
-  known: PullBody | undefined,
-): Promise<PullBody> {
-  const etag = known?.etag;
+  etag: string | undefined,
+): Promise<PullBody | undefined> {
   const response = await client.send('GET', pull.restPath(), {
     condition: etag === undefined ? undefined : { ifNoneMatch: etag },
   });
-  if (response.status === 304 && known) return { ...known };
+  if (response.status === 304 && etag !== undefined) return undefined;
   if (response.status !== 200) {
     throw new GithubError({
       kind: 'inconsistent',
