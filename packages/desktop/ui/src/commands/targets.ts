@@ -135,6 +135,15 @@ export interface BoxTarget {
 }
 
 /**
+ * The lines a new comment's box is on, by the box's caller's name for it: what its head's lines
+ * button, its keys and its bracket's ends in the gutter change.
+ */
+export interface LinesTarget {
+  kind: 'lines';
+  box: string;
+}
+
+/**
  * Something Lo offers or advises unasked, such as the offer over a stack's tree to convert it to a
  * GitHub stack, by its id (`stacks.convert`), in the tab it's shown in: what its Dismiss's menu
  * acts on, there, whichever tab is on screen by the time it runs.
@@ -165,6 +174,7 @@ export type Target =
   | TabTarget
   | RowTarget
   | BoxTarget
+  | LinesTarget
   | NoticeTarget
   | NoTarget;
 
@@ -186,6 +196,7 @@ export const targetKinds: readonly TargetKind[] = [
   'tab',
   'row',
   'box',
+  'lines',
   'notice',
   'none',
 ];
@@ -237,6 +248,12 @@ function derive(kind: TargetKind, target: Target): Target | undefined {
     case 'box':
       return (target.kind === 'line' || target.kind === 'header') && target.box !== undefined
         ? { kind: 'box', box: target.box }
+        : undefined;
+    // A box's lines, from a key in it, or its own frame's.
+    case 'lines':
+      if (target.kind === 'box') return { kind: 'lines', box: target.box };
+      return target.kind === 'line' && target.box !== undefined
+        ? { kind: 'lines', box: target.box }
         : undefined;
     // Never with a thread: the thread's commands take the line, and the draft is in the thread.
     case 'draft':
@@ -312,6 +329,8 @@ export function plainTarget(target: Target): Target {
       return { kind: 'row', row: target.row };
     case 'box':
       return { kind: 'box', box: target.box };
+    case 'lines':
+      return { kind: 'lines', box: target.box };
     case 'notice': {
       const notice: NoticeTarget = { kind: 'notice', notice: target.notice, tab: target.tab };
       if (target.pull !== undefined) notice.pull = target.pull;

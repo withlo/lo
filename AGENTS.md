@@ -352,7 +352,10 @@ the window find them with `import.meta.glob`.
   `<feature>.<name>`. Objects in an input are `z.strictObject`, so unknown keys are refused; a test
   checks every contract. A topic's values reach the window in the order main published them, but not
   in order with replies: one published before a reply can come after it, so a value that's older
-  than a reply the window has heard never undoes what the reply said. Main and the window both load
+  than a reply the window has heard never undoes what the reply said. Where a topic says how what
+  the window asked stands, on its way and then not, before main answers, as the comments feature's
+  `drafts` and `acts` do, the window holds what comes after the answer until the value main sent
+  with it (`Answers`, in that feature's `window/answers.ts`). Main and the window both load
   contracts, so lint keeps Electron, Node and either side's code out of them.
 - `main/index.ts` exports `defineFeature(contract, { uses, handlers, provide, start, stop })` by
   default: the other features' services it `uses`; a handler for every request; optionally a
@@ -952,11 +955,11 @@ status bar.
   the rest (`shows` in `onRefresh`), and the poller runs their reads ahead of the others (`first`).
   A tab whose stack's tree is drawn reads its repository's open pull requests last (`list`). Its
   requests take their turns in the account's queue, and the rate limit holds them as it holds polls.
-  A refresh that fails while GitHub is out of reach leaves the backoff as it was, and the reads it
-  runs again go at once, whatever a run already under way or the cache says. The tab's mark in the
-  strip turns until every part is in or has failed, and for `MARKED_MS` (400 ms) from the press at
-  least, so an answer that's in at once still shows it; a press meanwhile asks nothing more. Recent
-  and Settings read nothing from GitHub, so it does nothing there.
+  A refresh's poll is a try made at once, whose failure leaves the backoff as it was (below), and
+  the reads it runs again go at once, whatever a run already under way or the cache says. The tab's
+  mark in the strip turns until every part is in or has failed, and for `MARKED_MS` (400 ms) from
+  the press at least, so an answer that's in at once still shows it; a press meanwhile asks nothing
+  more. Recent and Settings read nothing from GitHub, so it does nothing there.
 - The `tab.open` setting says which middle view a pull request's tab opens on: the overview, the
   timeline or the diff. A tab that opens on the overview waits for it, up to `HOLD_LIMIT`, and goes
   to the timeline, where the description is first, when there's none or it's late, drawing nothing
@@ -1045,6 +1048,12 @@ status bar.
   build ignores it. Out of reach carries why, as `causeOf` names it, from the poller's status or the
   tab's own read: only no connection at all is offline, and a read GitHub took and never answered is
   no answer in time.
+- While GitHub is out of reach, a try made at once ahead of a backoff (opening a tab or switching to
+  one, Lo coming back on screen, Try again, `⌘R`) that fails before the backoff's next try is due
+  leaves the backoff as it was, so trying again and again doesn't push Lo's own tries off towards 5
+  minutes; once that try is due, the one made at once is it, and counts. The poller does this for
+  its polls (`#triedEarly`), and a tab's overview for the reads it makes as the tab is shown or Lo
+  comes back on screen (`early`). Any other backoff something tries ahead of does the same.
 - A read that waits on GitHub (out of reach, the rate limit, a refused token) leaves what the tab
   kept on screen, and the header's chip says why. With nothing kept to show, the tab can't open its
   pull request: it says why in place of its view, with the read's cause, until the read that's due
@@ -1637,14 +1646,17 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   typing saved, so neither "Discard draft" nor its notes take it during that wait, and a box gone by
   its end, as with its tab, sends nothing. A refusal keeps the draft and says why in the box. From
   the send until GitHub's answer, the draft is marked sent, with when, in the database. Main's
-  drafts from before its answer can come after it: once the answer says GitHub took the comment,
-  those that still show it on its way change nothing, until main's drafts don't (`holdAnswered`), so
-  no box takes the text sent again. When the answer is lost, the mark stays, a restart included, and
-  the draft can't be sent again until main's own read of the threads, made 10 s or more after it was
-  sent, settles it, even after a restart: found among your comments made since, by GitHub's clock,
-  the box closes; not found, or not read, the box says so. While the read can't be made, as offline,
-  it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
-  is sent again by itself, and nothing is sent while GitHub can't be reached.
+  drafts say the comment is on its way, then, as main answers, that it isn't, but they can come
+  after the answer: once it's heard, those from before change nothing at its place until the one
+  main sent with it (`Answers`), so no box takes the text sent again, and a refusal is said once,
+  the box at rest from the moment it comes. A refusal main gives at once, before its drafts say
+  anything (`refusedAtOnce`), and a lost answer hold nothing. When the answer is lost, the mark
+  stays, a restart included, and the draft can't be sent again until main's own read of the threads,
+  made 10 s or more after it was sent, settles it, even after a restart: found among your comments
+  made since, by GitHub's clock, the box closes; not found, or not read, the box says so. While the
+  read can't be made, as offline, it stays checking and main tries again. Text changed since it was
+  sent stays as the draft. Nothing is sent again by itself, and nothing is sent while GitHub can't
+  be reached.
 - A comment sent to post at once (`⌥⏎`) while you have a pending review joins it, since GitHub posts
   nothing else from you until it's submitted, and the notice says so ("Added to your pending
   review"). Main says it did when it planned the comment into your review, and for a reply when
@@ -1706,6 +1718,12 @@ threads panel's `x` resolves the thread the keyboard is on, through the same fun
   comment. A delete reads the comment afresh first, and goes only if it's as the question showed it
   (its text, whether it's pending, whether it's its thread's only comment). Lo changes only your own
   comments.
+- `comments.acts` says a change is on its way, then, as main answers, that it isn't, and whether it
+  went is the answer's to say. A refusal puts the card back at once, and what `acts` said before the
+  answer, coming after it, changes nothing (`Answers`), so the card never shows the change at work
+  again, or says it went. The same holds for a delete on the pull request itself that GitHub took,
+  which Lo says went as its answer comes. A change to a thread GitHub took shows at work as `acts`
+  goes on to say, until the threads show it.
 - A write whose answer is lost is never sent again by itself: main reads the comment or the threads
   10 s or more after it was sent, and `comments.acts` says how it stands meanwhile, which the card
   shows, with "Try again" once Lo found it didn't go or can't tell.

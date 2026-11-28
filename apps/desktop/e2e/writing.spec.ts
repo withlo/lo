@@ -542,6 +542,37 @@ test.describe('between lines', () => {
     await expect(box.locator('.cm-content')).toBeFocused();
   });
 
+  test('a new comment’s lines change by key and from its lines button’s menu, the box keeping its text, and a key that can’t says why', async ({
+    page,
+  }) => {
+    await open(page);
+    await onLineTwo(page);
+    await page.keyboard.press('c');
+    const box = boxes(page);
+    await expect(box).toHaveCount(1);
+    await page.keyboard.type('Both lines?');
+    const lines = box.getByRole('button', { name: /^Lines? / });
+    await expect(lines).toHaveText('Line 2');
+    await page.keyboard.press(`${cmd}+Alt+ArrowDown`);
+    await expect(lines).toHaveText('Lines 2–3');
+    await page.keyboard.press(`${cmd}+Alt+Shift+ArrowUp`);
+    await expect(lines).toHaveText('Lines 1–3');
+    // Typing goes on in the box, where it was.
+    await page.keyboard.type(' Yes.');
+    await expect(box.locator('.cm-content')).toHaveText('Both lines? Yes.');
+    await page.keyboard.press(`${cmd}+Alt+Shift+ArrowUp`);
+    await expect(toast(page, 'No line above takes a comment')).toBeVisible();
+    await lines.click();
+    const menu = page.getByRole('menu');
+    await expect(menu.getByRole('menuitem', { name: /Add line above/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await menu.getByRole('menuitem', { name: /Remove last line/ }).click();
+    await expect(lines).toHaveText('Lines 1–2');
+    await expect(box.locator('.cm-content')).toHaveText('Both lines? Yes.');
+  });
+
   test('`c` on lines selected, `s` and a header’s `c` open their boxes; one kept with `Esc` is back after a restart, offline, sending nothing until it’s discarded', async ({
     app,
     page,

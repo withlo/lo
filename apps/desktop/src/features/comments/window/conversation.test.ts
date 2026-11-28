@@ -87,6 +87,7 @@ function drawn(box: Box): Composer {
     leave() {},
     dismiss() {},
     keep: () => ({ text, editor: undefined }),
+    move: () => false,
   } satisfies Composer;
   box.composer = composer;
   return composer;
@@ -251,10 +252,45 @@ describe('the box at the end of the timeline', () => {
     await sending;
     const next = ownBox();
     const composer = drawn(next);
+    // What main sent on the way to its answer comes after it, and changes nothing.
+    takeDrafts({
+      id: VIEW,
+      drafts: [draft({ restored: false, sending: 'sending', sent: 'Ship it.', sentAt: 9_000 })],
+    });
+    expect(composer.text).toBe('');
     // Main keeps the draft, its text changed since it was sent, and says it's sent no more.
     takeDrafts({ id: VIEW, drafts: [draft({ restored: false, text: 'Ship it, then.' })] });
     expect(composer.text).toBe('Ship it, then.');
     expect(next.state).toMatchObject({ text: 'Ship it, then.', sending: null });
+  });
+
+  test('refused before main’s drafts said it was on its way, the timeline lets the comment go once', async () => {
+    let answer!: (outcome: unknown) => void;
+    answers['comments.send'] = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const box = ownBox();
+    const composer = drawn(box);
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
+    const sending = send(box, 'now');
+    await vi.waitFor(() => expect(answer).toBeDefined());
+    expect(onPull.get(VIEW)).toHaveLength(1);
+    answer({ kind: 'refused', refusal: { kind: 'github', message: 'GitHub refused it.' } });
+    await sending;
+    // The row goes as the answer comes, and what main said on the way to it brings it back nowhere.
+    expect(onPull.get(VIEW)).toEqual([]);
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false, sending: 'sending' })] });
+    takeDrafts({
+      id: VIEW,
+      drafts: [draft({ restored: false, sending: 'sending', sent: 'Ship it.', sentAt: 9_000 })],
+    });
+    expect(onPull.get(VIEW)).toEqual([]);
+    expect(timelineBox(VIEW, ON_PULL)).toBe(box);
+    expect(box.state).toMatchObject({ text: 'Ship it.', sending: null, busy: false });
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
+    expect(onPull.get(VIEW)).toEqual([]);
+    expect(composer.text).toBe('Ship it.');
   });
 
   test('asks main for the drafts once, after a reload, though the box was drawn first', async () => {
