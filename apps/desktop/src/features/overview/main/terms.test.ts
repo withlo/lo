@@ -477,6 +477,32 @@ describe("a repository's definitions", () => {
     expect(last()).toMatchObject({ found: { kind: 'none' }, problem: null });
     tab.close();
   });
+  it('takes no failure of one tab’s overview with what it read as every tab’s reason', async () => {
+    const github = new FakeGithub();
+    github.answer.set(
+      'rozed-dev/e2e/git/matching-refs/lo/terms',
+      () => new Response('{"message":"Server Error"}', { status: 500 }),
+    );
+    const { stores, turns } = storesWith(github);
+    const one = tabOf(stores, 't1');
+    const two = tabOf(stores, 't2');
+    one.tab.read('foreground', true);
+    await settle();
+    const before = two.last();
+    expect(before?.problem).toMatchObject({ kind: 'failed' });
+    // Another tab's overview read a commit that isn't the one its ID names: that's its own.
+    one.tab.failed({ kind: 'failed', message: 'Not the file its ID names.', retryAt: 0 });
+    expect(two.last()).toBe(before);
+    // Its wait stands: nothing is read again before it's over.
+    two.tab.read('background', false);
+    await settle();
+    expect(turns).toHaveLength(1);
+    // Offline is every tab's.
+    one.tab.failed({ kind: 'offline', cause: { kind: 'offline' }, message: '', retryAt: 0 });
+    expect(two.last()?.problem).toMatchObject({ kind: 'offline' });
+    one.tab.close();
+    two.tab.close();
+  });
 });
 
 /** A repository of rozed-dev's, `name`. */

@@ -346,9 +346,12 @@ export class Stores {
   /**
    * Says the overview's read, as `acting`, of a pull request of `repository` failed for `problem`,
    * so its definitions weren't read either: that's why, until a read goes through, and they're read
-   * as soon as the overview's next read does. Nothing changes while they're being read.
+   * as soon as the overview's next read does. Only a problem with reaching GitHub as the account
+   * counts, which every tab of the repository acting as it shares: one with what a pull request's
+   * overview holds, `failed`, is that overview's alone. Nothing changes while they're being read.
    */
   failed(acting: Acting, repository: RepoRef, problem: Problem): void {
+    if (!isShared(problem)) return;
     const entry = this.#entry(acting, repository);
     if (entry.reading) return;
     // A wait their own failure asked for stays.
@@ -634,6 +637,22 @@ export class TabStore {
     if (said === this.#said) return;
     this.#said = said;
     this.#publish(state);
+  }
+}
+
+/** Whether `problem` is one with reaching GitHub as the account, rather than with what it read. */
+function isShared(problem: Problem): boolean {
+  switch (problem.kind) {
+    case 'offline':
+    case 'signedOut':
+    case 'rateLimited':
+    case 'blocked':
+      return true;
+    case 'failed':
+      return false;
+    default:
+      problem satisfies never;
+      return false;
   }
 }
 
