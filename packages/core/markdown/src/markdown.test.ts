@@ -984,6 +984,12 @@ describe('inline tokens', () => {
     expect(types('a\nb')).toEqual(['text', 'softbreak', 'text']);
   });
 
+  test('read #123 as a reference only in a repository', () => {
+    expect(types('#4')).toEqual(['text']);
+    const tokens = inlineTokens('#4', { repo: { owner: 'o', name: 'r' } });
+    expect(tokens?.[0]?.attrGet('href')).toBe('https://github.com/o/r/issues/4');
+  });
+
   test('read every reference label as defined, when told to', () => {
     expect(hrefs('[a][b], [c][] and [d], not \\[e\\], and [f](g)')).toEqual([
       ANY_REFERENCE,
@@ -991,6 +997,8 @@ describe('inline tokens', () => {
       ANY_REFERENCE,
       'g',
     ]);
+    // An empty label is never a link, nor one of spaces.
+    expect(hrefs('a slice ([]T), [ ] and [  ][]')).toEqual([]);
     // Otherwise, a label no text defines is text.
     expect(types('[a][b]')).toEqual(['text']);
   });

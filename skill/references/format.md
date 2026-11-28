@@ -345,8 +345,10 @@ A marked entry's definition goes into the repository's definitions when the pull
 it's held to their rules: one paragraph of at most 2,048 bytes, with no control or invisible
 character, holding only text, inline code, links into the code and links to terms, as Markdown reads
 it on its own. A reference-style link, `[label][ref]`, `[label][]` or `[label]`, is refused, since
-no reference is defined there. One that isn't fails the checker, and Lo shows the overview all the
-same.
+no reference is defined there, and so are a mention, `@octocat`, and a reference to an issue or a
+pull request, `#123`, since GitHub makes links of them: write them as inline code to keep them as
+text. A marked definition that breaks these rules fails the checker, and Lo shows the overview all
+the same.
 
 ## The repository's definitions
 
@@ -389,8 +391,9 @@ case, with each run of white space as one space. Each term holds:
   no tab, line break or other control or invisible character, and no space at either end.
 - **`definition`:** one or two sentences of Markdown on one line, read as part of a paragraph, as a
   glossary entry's is: only text, inline code, links into the code and links to other terms. No
-  bold, emphasis, HTML, images, links elsewhere or reference-style links, `[label][ref]`,
-  `[label][]` or `[label]`: put a backslash before brackets meant as text.
+  bold, emphasis, HTML, images, links elsewhere, mentions, `@octocat`, references to issues and pull
+  requests, `#123`, or reference-style links, `[label][ref]`, `[label][]` or `[label]`: put a
+  backslash before brackets meant as text.
 - **`aliases`:** other forms that name it, such as `"buckets"`, each as plain as a term. Optional.
 - **`written`:** `"agent"`, from an overview, or `"human"`, edited in Lo.
 - **`by`:** who wrote it: `{ "login": "octocat" }`, a GitHub account, or `{ "name": "A. Writer" }`,
