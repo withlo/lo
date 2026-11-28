@@ -801,19 +801,21 @@ trust.
   line. Several threads on a line share one bubble. A file's threads have theirs in its header's
   row. A click on a bubble pins its popover, or between lines collapses or expands its thread, as
   `za` does. The lane is as wide empty as full, so no mark coming or going moves a line.
-- **Threads.** You can reply, resolve and unresolve, and edit or delete your own comments, from the
-  thread's buttons, its right-click menu or its keys. A key acts on the thread `]t` landed on, or
-  the only thread on screen on the cursor's line, or under the file's header; where there's more
-  than one, Lo says to pick one with `]t`. `r` opens a reply box in the thread's card in its popover
-  beside lines, or right after the card between lines, whose buttons add the reply to your pending
-  review or post it at once. `x` resolves the thread, or unresolves it, here and in the threads
-  panel, where GitHub lets you. `i` opens a box with your newest comment's text, and saving it
-  replaces the comment on GitHub. `dd` asks first, showing the comment's first line, whether it
-  leaves your pending review and whether its thread goes with it: `⏎` deletes it and `Esc` leaves
-  it, and a held or repeated key never confirms. Lo changes only your own comments, even where
-  GitHub would let you change someone else's: theirs are for GitHub's page. Between lines, a reply
-  box and a comment box on the same line can both be open; beside lines the popover holds one box at
-  a time, and the one open closes as another opens, keeping its draft.
+- **Threads.** You can reply, resolve and unresolve from the thread's buttons, and edit or delete
+  your own comments from each one's `⋯`, which shows on the comment under the pointer or the
+  keyboard. A right-click on the thread, or on one of your comments, opens the same menu, and the
+  keys do all of it. A key acts on the thread `]t` landed on, or the only thread on screen on the
+  cursor's line, or under the file's header; where there's more than one, Lo says to pick one with
+  `]t`. `r` opens a reply box in the thread's card in its popover beside lines, or right after the
+  card between lines, whose buttons add the reply to your pending review or post it at once. `x`
+  resolves the thread, or unresolves it, here and in the threads panel, where GitHub lets you. `i`
+  opens a box with your newest comment's text, and saving it replaces the comment on GitHub. `dd`
+  asks first, showing the comment's first line, whether it leaves your pending review and whether
+  its thread goes with it: `⏎` deletes it and `Esc` leaves it, and a held or repeated key never
+  confirms. Lo changes only your own comments, even where GitHub would let you change someone
+  else's: theirs are for GitHub's page. Between lines, a reply box and a comment box on the same
+  line can both be open; beside lines the popover holds one box at a time, and the one open closes
+  as another opens, keeping its draft.
 - **Edits and deletes.** An edit keeps the text it started from with its draft, through a restart.
   GitHub's edit doesn't check what it replaces, so before saving Lo reads the comment again, and
   saves only if GitHub's text is still the one the edit started from. If it was edited elsewhere

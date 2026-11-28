@@ -715,14 +715,27 @@ describe('targets', () => {
     expect(shown.keyState().target).toMatchObject({ across });
   });
 
-  test('a right-click on a thread is its menu', () => {
+  test('a right-click on a thread is its menu, and on one of its comments, that comment’s', () => {
     const on = events();
     const shown = open(on);
-    shown.setThreads([thread('right', at('a', 'new', 10))], plain().render);
+    const render: RenderThread = (host) => {
+      host.innerHTML = '<div data-comment="c1"><button>⋯</button></div>';
+      return { update() {}, destroy() {} };
+    };
+    shown.setThreads([thread('right', at('a', 'new', 10))], render);
     const card = parent!.querySelector('[data-thread-id="right"]')!;
     card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
-    expect(on.menu).toHaveBeenCalledWith(
+    expect(on.menu).toHaveBeenLastCalledWith(
       { kind: 'thread', thread: 'right', collapsed: false },
+      0,
+      0,
+    );
+    // As a comment's own `⋯` asks: the menu whose Edit and Delete act on that comment.
+    card
+      .querySelector('[data-comment] button')!
+      .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    expect(on.menu).toHaveBeenLastCalledWith(
+      { kind: 'thread', thread: 'right', collapsed: false, comment: 'c1' },
       0,
       0,
     );

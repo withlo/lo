@@ -900,7 +900,7 @@ test.describe('writing in a code block’s popover', () => {
   );
 
   withTimeline(
-    'with the Timeline visited first, `i` opens the edit in the popover, and Edit opens it again there in a reply’s place, each taking what’s typed',
+    'with the Timeline visited first, `i` opens the edit in the popover, and its comment’s menu opens it again there in a reply’s place, each taking what’s typed',
     async ({ page }) => {
       test.setTimeout(60_000);
       await open(page, STACK.b);
@@ -923,7 +923,9 @@ test.describe('writing in a code block’s popover', () => {
       await expect(reply.locator('.lo-diffcomposer__head')).toContainText('Reply');
       await page.keyboard.type('A reply');
       await expect(reply.locator('.cm-content')).toHaveText('A reply');
-      await popover.getByRole('button', { name: /^Edit comment from/ }).click();
+      // Its comment's own menu, from its `⋯`, out in the overview's scroll.
+      await popover.getByRole('button', { name: /^More actions for comment from/ }).click();
+      await page.getByRole('menuitem', { name: /^Edit/ }).click();
       edit = await popoverBox(page);
       await expect(edit.locator('.lo-diffcomposer__head')).toContainText('Edit');
       await page.keyboard.type(' y');

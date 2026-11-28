@@ -15,7 +15,7 @@ import { Tooltip } from './Tooltip.tsx';
 
 /** One comment of a thread, as its card shows it. */
 export interface ThreadComment {
-  /** What identifies it, and what `onEdit` and `onDelete` name. */
+  /** What identifies it, as its element's `data-comment` names it to a right-click. */
   id: string;
   /** Who wrote it, by login. */
   author: string;
@@ -23,7 +23,10 @@ export interface ThreadComment {
   image?: string | undefined;
   /** How long ago, as the card says it: "2 d ago". */
   when: string;
-  /** It's yours: it says so, and offers Edit and Delete. No one else's does. */
+  /**
+   * It's yours: it says so, and has its own `⋯`, whose menu edits or deletes it, where the thread
+   * has a menu. No one else's does.
+   */
   mine?: boolean | undefined;
   /** Written by the pull request's author. */
   byAuthor?: boolean | undefined;
@@ -49,10 +52,6 @@ export interface ThreadKeys {
   reply?: readonly string[] | undefined;
   /** Resolve and unresolve. */
   resolve?: readonly string[] | undefined;
-  /** Edit your newest comment in the thread. */
-  edit?: readonly string[] | undefined;
-  /** Delete your newest comment in the thread. */
-  delete?: readonly string[] | undefined;
 }
 
 export interface ThreadProps {
@@ -92,7 +91,9 @@ export interface ThreadProps {
   keys?: ThreadKeys | undefined;
   /**
    * A right-click on the card opens a menu where it's drawn, as in a code view: its head has the
-   * `⋯` button that opens the same menu.
+   * `⋯` button that opens the same menu, and each of your comments has its own, which opens the
+   * menu a right-click on that comment does, whose Edit and Delete act on it. It shows on the
+   * comment under the pointer or with focus in it, and on the one the card's keys act on.
    */
   menu?: boolean | undefined;
   /** An open reply box, in place of the row that offers one. */
@@ -101,9 +102,6 @@ export interface ThreadProps {
   onToggle?: (() => void) | undefined;
   onResolve?: (() => void) | undefined;
   onReply?: (() => void) | undefined;
-  /** Edit or Delete was pressed on one of your comments, by its `id`. */
-  onEdit?: ((id: string) => void) | undefined;
-  onDelete?: ((id: string) => void) | undefined;
   /** More classes for the card, such as the space the code view leaves around it. */
   className?: string | undefined;
   /**
@@ -236,8 +234,8 @@ export function SentPost({ state, author, image, label = 'Sending…', body }: S
 }
 
 /**
- * A comment's own control, Edit or Delete…: its label, or, where its head has given up labels
- * (`give-up`), its icon alone, with the label as its tooltip.
+ * A control's words, as Resolve's in a popover's head: its label, or, where its head has given up
+ * labels (`give-up`), its icon alone, with the label as its tooltip.
  */
 function Face({ icon, children }: { icon: IconName; children: string }) {
   return (
@@ -252,12 +250,12 @@ function Face({ icon, children }: { icon: IconName; children: string }) {
 
 /**
  * What a comment's head gives up, in order, as its card narrows, so it stays one line with its
- * name whole for as long as it can: the key chips, the "Author" tag, Edit's and Delete…'s words
- * for their icons, and the time. Only then is the name cut short.
+ * name whole for as long as it can: the "Author" tag, the words of a delete at work, which keeps
+ * its spinner, and the time. Only then is the name cut short.
  */
-const HEAD_STEPS = ['keys', 'tag', 'labels', 'time'];
+const HEAD_STEPS = ['tag', 'labels', 'time'];
 
-/** A comment's head: who wrote it and when, and the controls you have on your own. */
+/** A comment's head: who wrote it and when, and the `⋯` of your own. */
 function Head({ children }: { children: ReactNode }) {
   const head = useRef<HTMLDivElement | null>(null);
   useGiveUp(head, HEAD_STEPS);
@@ -292,8 +290,8 @@ function PopoverHead({ children }: { children: ReactNode }) {
 /**
  * A review thread: its comments, its state and a way to reply, under its line in the diff or on an
  * overview's code block. Unresolved threads start open and resolved ones collapsed to one line.
- * A comment's text is a slot for what's already drawn; Edit and Delete show only on your own
- * comments, and Resolve and Reply only where GitHub lets you.
+ * A comment's text is a slot for what's already drawn; only your own comments have a `⋯` of their
+ * own, whose menu edits or deletes them, and Resolve and Reply show only where GitHub lets you.
  */
 export function Thread({
   comments,
@@ -314,8 +312,6 @@ export function Thread({
   onToggle,
   onResolve,
   onReply,
-  onEdit,
-  onDelete,
   className = '',
   variant = 'card',
   lines,
@@ -530,6 +526,14 @@ export function Thread({
           <div
             key={comment.id}
             data-comment={comment.id}
+            // Your comment's `⋯` shows under the pointer, with focus in it, and, on a card the
+            // keyboard is on, on the comment its keys act on, your newest.
+            data-shy-scope={comment.mine && menu ? '' : undefined}
+            data-focused={
+              comment.mine && menu && focused && !popover && comment.id === newestMine
+                ? ''
+                : undefined
+            }
             // In a popover, the ring `j` and `k` move goes round a comment, which `i` and `d d` act
             // on: it takes focus, though `Tab` passes it.
             tabIndex={popover ? -1 : undefined}
@@ -553,44 +557,18 @@ export function Thread({
                   )}
                   {comment.pending && !pendingAll && <Tag tone="warning">Pending</Tag>}
                 </span>
-                {comment.mine && (
-                  <span className="flex flex-none items-center gap-4">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      data-squares="labels"
-                      // Named for its comment, as every comment's is the same button.
-                      aria-label={`Edit comment from ${comment.when}`}
-                      hint="Edit"
-                      hintKeys={comment.id === newestMine ? keys.edit : undefined}
-                      onClick={() => onEdit?.(comment.id)}
-                    >
-                      <Face icon="pencil">Edit</Face>
-                      {comment.id === newestMine && keys.edit && (
-                        <Key keys={keys.edit} when="focus" decorative />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      data-squares="labels"
-                      aria-label={`Delete comment from ${comment.when}…`}
-                      busy={comment.id === deleting}
-                      working={<span data-gives="labels">Deleting…</span>}
-                      align="end"
-                      // One change to a thread at a time: while a resolve is at work, it says so.
-                      disabled={resolving}
-                      hint={resolving ? (resolved ? 'Resolving…' : 'Unresolving…') : 'Delete…'}
-                      hintKeys={comment.id === newestMine ? keys.delete : undefined}
-                      onClick={() => onDelete?.(comment.id)}
-                    >
-                      <Face icon="trash">Delete…</Face>
-                      {comment.id === newestMine && keys.delete && (
-                        <Key keys={keys.delete} when="focus" decorative />
-                      )}
-                    </Button>
-                  </span>
-                )}
+                {comment.mine &&
+                  menu &&
+                  (comment.id === deleting ? (
+                    // A delete asked from its menu or by its key is at work, where its `⋯` was.
+                    <span className="inline-flex flex-none items-center gap-6">
+                      <Spinner />
+                      <span data-gives="labels">Deleting…</span>
+                    </span>
+                  ) : (
+                    // Named for its comment, as every comment's is the same button.
+                    <MoreButton label={`More actions for comment from ${comment.when}`} shy />
+                  ))}
               </Head>
               <div className="lo-selectable mt-2 text-fg read-comment">{comment.body}</div>
             </div>

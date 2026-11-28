@@ -1652,11 +1652,13 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
 ### Acting on review threads
 
 On a thread in the diff, `r` replies, `x` resolves or unresolves it, `i` edits your newest comment
-and `dd` deletes it, as do the card's buttons and its right-click menu (`window/acts.ts`). A key
-acts on the thread `]t` landed on, or the only one the view has drawn on the cursor's line or under
-the file's header (`threadsDrawn`), never one placed there that hasn't come on screen yet. `]t`
-stops at each drawn thread, so one of several on a line, or on a file, can be picked. The threads
-panel's `x` resolves the thread the keyboard is on, through the same function.
+and `dd` deletes it, as do the card's Reply and Resolve and its right-click menu (`window/acts.ts`).
+A right-click on one of your comments, or its own `⋯`, opens that menu with the comment on its
+target (`ThreadTarget.comment`, from `commentIn`), so Edit and Delete act on it, or say why not. A
+key acts on the thread `]t` landed on, or the only one the view has drawn on the cursor's line or
+under the file's header (`threadsDrawn`), never one placed there that hasn't come on screen yet.
+`]t` stops at each drawn thread, so one of several on a line, or on a file, can be picked. The
+threads panel's `x` resolves the thread the keyboard is on, through the same function.
 
 - A reply's box and an edit's are comment boxes, kept by their thread (`reply` and `edit` places),
   and drawn right after the thread's card. The code view keeps a box for each place and name, so a
