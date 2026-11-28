@@ -91,7 +91,8 @@ function lane(
   const rows: Record<number, string[]> = {};
   for (const line of lines) {
     const row: Row = { first: line, last: line };
-    rows[line] = drawn(cellOf(ranges, row, marks.includes(line), new Set(lit)));
+    const at = { marked: marks.includes(line), above: marks.includes(line - 1) };
+    rows[line] = drawn(cellOf(ranges, row, at, new Set(lit)));
   }
   return rows;
 }
@@ -138,15 +139,9 @@ describe('stems', () => {
       37: ['a s0 edge-edge', 'b s1 mid-edge', 'tick s1 warn'],
       38: ['a s0 edge-edge', 'b s1 edge-edge', 'c s2 mid-edge', 'tick s2 warn'],
       // C's mark: A's and B's stems skip its row, and go on under it.
-      39: [
-        'a s0 edge-mark',
-        'a s0 mark-edge',
-        'b s1 edge-mark',
-        'b s1 mark-edge',
-        'c s2 edge-mark',
-      ],
-      // A's mark: B's stem skips the row.
-      40: ['a s0 edge-mark', 'b s1 edge-mark', 'b s1 mark-edge'],
+      39: ['a s0 under-edge', 'b s1 under-edge', 'c s2 edge-mark'],
+      // A's mark, right under C's: A's is its mark alone. B's stem skips the row.
+      40: ['b s1 under-edge'],
       // B alone, still in slot 1.
       41: ['b s1 edge-edge'],
       45: ['b s1 edge-mark'],
@@ -169,11 +164,12 @@ describe('stems', () => {
 
   test('a range that starts on the line another ends on starts under its mark', () => {
     const placed = slotted([range('first', 2, 5), range('next', 5, 8)]);
-    expect(lane(placed, [5], [5])[5]).toEqual([
-      'first s0 edge-mark',
-      'next s1 mark-edge',
-      'tick s1 warn under',
-    ]);
+    expect(lane(placed, [5, 6, 8], [5, 8])).toEqual({
+      5: ['first s0 edge-mark', 'next s1 under-edge', 'tick s1 warn under'],
+      // Its stem goes on from its tick, under the other's mark.
+      6: ['next s1 edge-edge'],
+      8: ['next s1 edge-mark'],
+    });
   });
 
   test('a range that runs on from or into the other side’s lines has no tick, or no foot, here', () => {
@@ -192,23 +188,25 @@ describe('stems', () => {
   test('a fold carries the stems past it, and starts and ends those whose lines it holds', () => {
     const placed = slotted([range('in', 12, 20), range('out', 7, 12), range('past', 5, 30)]);
     const fold: Row = { first: 9, last: 17 };
-    expect(drawn(cellOf(placed, fold, true, new Set()))).toEqual([
-      'past s0 edge-mark',
-      'past s0 mark-edge',
+    const marked = { marked: true, above: false };
+    expect(drawn(cellOf(placed, fold, marked, new Set()))).toEqual([
+      'past s0 under-edge',
       'out s1 edge-mark',
-      'in s2 mark-edge',
+      'in s2 under-edge',
       'tick s2 warn under',
     ]);
     // Lines a fold holds alone are its mark alone.
-    expect(drawn(cellOf(slotted([range('inside', 10, 12)]), fold, true, new Set()))).toEqual([]);
+    const inside = slotted([range('inside', 10, 12)]);
+    expect(drawn(cellOf(inside, fold, marked, new Set()))).toEqual([]);
   });
 
   test('a block between lines carries the stems that pass it', () => {
     const placed = slotted([range('one', 4, 6)]);
-    expect(drawn(cellOf(placed, { first: 4.5, last: 4.5 }, false, new Set()))).toEqual([
+    const between = { marked: false, above: false };
+    expect(drawn(cellOf(placed, { first: 4.5, last: 4.5 }, between, new Set()))).toEqual([
       'one s0 edge-edge',
     ]);
-    expect(drawn(cellOf(placed, { first: 6.5, last: 6.5 }, false, new Set()))).toEqual([]);
+    expect(drawn(cellOf(placed, { first: 6.5, last: 6.5 }, between, new Set()))).toEqual([]);
   });
 
   test('the pointer across a cell means the nearest stem, the cell split halfway between two', () => {

@@ -24,7 +24,7 @@ export function drawnCell(cell: Element): string {
     const slot = piece.getAttribute('data-slot');
     if (piece.classList.contains('lo-stem')) {
       const end = (which: 'from' | 'to') =>
-        ['edge', 'mid', 'mark'].find((kind) =>
+        ['edge', 'mid', 'under', 'mark'].find((kind) =>
           piece.classList.contains(`lo-stem--${which}-${kind}`),
         );
       parts.push(`s${slot} ${end('from')}-${end('to')} ${toneOf(piece, 'lo-stem')}${litOf(piece)}`);

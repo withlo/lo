@@ -331,19 +331,17 @@
 /*
  * The lanes ranges are drawn in, as wide with none as with them, so marks that come later move
  * nothing: the threads' lane, between the line numbers and the code, on the line numbers' ground,
- * and the overview's, last before the code on the side an overview marks. A mark's room on its
- * row, which stems stop 2 px short of: a thread's 14 px bubble, and a note's 9 px ball with its 3 px
- * halo, which may reach past the lane's edges.
+ * and the overview's, last before the code on the side an overview marks. Where a mark's top is
+ * on its row, which its stem stops 2 px short of: a thread's 14 px bubble, and a note's 9 px ball
+ * with its 3 px halo, which may reach past the lane's edges.
  */
 .lo-app .cm-editor .cm-gutter.lo-threadlane {
   --mark-top: calc((var(--lo-code-line) - 14px) / 2);
-  --mark-bottom: calc((var(--lo-code-line) + 14px) / 2);
   width: 16px;
   overflow: visible;
 }
 .lo-app .cm-editor .cm-gutter.lo-ovcolumn {
   --mark-top: calc(var(--lo-code-line) / 2 - 7.5px);
-  --mark-bottom: calc(var(--lo-code-line) / 2 + 7.5px);
   width: 14px;
   overflow: visible;
 }
@@ -358,7 +356,8 @@
 /*
  * A range's stem, 2 px wide in its slot, which `ranges.ts` places across the lane: from the middle
  * of its first line's first row, where its tick turns toward the code, to 2 px above its mark on
- * its last, round another range's mark on the way, and on under it. Each keeps its own colour.
+ * its last, skipping the first row of a line that holds another range's mark, and on under it.
+ * Each keeps its own colour.
  */
 .lo-stem {
   position: absolute;
@@ -370,8 +369,8 @@
 .lo-stem--from-mid {
   top: calc(var(--lo-code-line) / 2 - 1px);
 }
-.lo-stem--from-mark {
-  top: calc(var(--mark-bottom) + 2px);
+.lo-stem--from-under {
+  top: var(--lo-code-line);
 }
 .lo-stem--to-mark {
   bottom: auto;
@@ -384,9 +383,9 @@
   height: 2px;
   border-radius: 1px;
 }
-/* Under the row's mark, where a range starts on the line another ends on. */
+/* Under the row's mark, at the foot of its first row, where a range starts on the line another ends on. */
 .lo-tick.is-under {
-  top: calc(var(--mark-bottom) + 2px);
+  top: calc(var(--lo-code-line) - 2px);
 }
 .lo-stem--warn {
   background-color: var(--lo-warning-border);

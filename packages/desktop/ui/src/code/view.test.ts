@@ -3054,8 +3054,8 @@ describe('threads’ lane', () => {
       's0 mid-edge grey, tick s0 grey',
       's0 edge-edge grey',
       's0 edge-edge grey, s1 mid-edge amber, tick s1 amber',
-      // The outer stem goes round the inner's bubble, and on under it.
-      's0 edge-mark grey, s0 mark-edge grey, s1 edge-mark amber, amber Unresolved thread · lines 4–5',
+      // The outer stem skips the inner's bubble's row, and goes on under it.
+      's0 under-edge grey, s1 edge-mark amber, amber Unresolved thread · lines 4–5',
       // Past the thread drawn under line 5, then lines 6 to 8.
       's0 edge-edge grey',
       's0 edge-edge grey',
@@ -3076,16 +3076,15 @@ describe('threads’ lane', () => {
       ],
       plain().render,
     );
-    const round = 'edge-mark amber, s0 mark-edge amber';
     expect(lane('After')).toEqual([
       's0 mid-edge amber, tick s0 amber',
       's0 edge-edge amber, s1 mid-edge amber, tick s1 amber',
       's0 edge-edge amber, s1 edge-edge amber, s2 mid-edge amber, tick s2 amber',
-      `s0 ${round}, s1 edge-mark amber, s1 mark-edge amber, s2 edge-mark amber, amber Unresolved thread · lines 4–5`,
+      's0 under-edge amber, s1 under-edge amber, s2 edge-mark amber, amber Unresolved thread · lines 4–5',
       // Past the thread drawn under line 5.
       's0 edge-edge amber, s1 edge-edge amber',
       's0 edge-edge amber, s1 edge-edge amber',
-      's0 edge-mark amber, s1 edge-mark amber, s1 mark-edge amber, amber Unresolved thread · lines 2–7',
+      's0 edge-mark amber, s1 under-edge amber, amber Unresolved thread · lines 2–7',
       // Past the thread drawn under line 7, then line 8.
       's1 edge-edge amber',
       's1 edge-edge amber',
@@ -4018,7 +4017,7 @@ describe('overview marks', () => {
     expect(markers('After')).toEqual([
       's0 mid-edge powder, tick s0 powder',
       's0 edge-edge powder, s1 mid-edge powder, tick s1 powder',
-      's0 edge-mark powder, s1 edge-mark powder, s1 mark-edge powder, ball',
+      's0 edge-mark powder, s1 under-edge powder, ball',
       's1 edge-edge powder',
       's1 edge-mark powder, ball',
     ]);
@@ -4030,7 +4029,7 @@ describe('overview marks', () => {
     expect(markers('After')).toEqual([
       's0 mid-edge powder, tick s0 powder',
       's0 edge-edge powder, s1 mid-edge powder, s2 mid-edge powder, tick s1 powder',
-      's0 edge-mark powder, s0 mark-edge powder, s1 edge-mark powder, s1 mark-edge powder, s2 edge-mark powder, ball',
+      's0 under-edge powder, s1 under-edge powder, s2 edge-mark powder, ball',
       's0 edge-edge powder, s1 edge-edge powder',
       's0 edge-mark powder, s1 edge-mark powder, ball',
     ]);

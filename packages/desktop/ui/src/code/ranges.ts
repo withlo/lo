@@ -9,9 +9,9 @@
 // Ranges that overlap in a lane nest. Ordered by first line, then longest first, then as they came,
 // each takes the first of three slots 4 px apart that's free over all its lines, and keeps it for
 // its whole length, so the earliest start is outermost; a fourth over the same lines, and any
-// deeper, shares the last. Each stem keeps its own colour, and goes round another range's mark,
-// on under it. Ranges that end on one line share its mark, and the ticks of those that start on
-// one line are drawn once, at the outermost's width.
+// deeper, shares the last. Each stem keeps its own colour, and skips the first row of a line that
+// holds another range's mark, going on under it. Ranges that end on one line share its mark, and
+// the ticks of those that start on one line are drawn once, at the outermost's width.
 //
 // A lane is as wide with no ranges as with them, and draws in no room of its own, so nothing that
 // comes or goes in it moves a line. Each editor keeps a lane's cells in its state (`defineLane`),
@@ -133,10 +133,11 @@ export function slotted(ranges: readonly LaneRange[]): Slotted[] {
 }
 
 /**
- * Where a stem's piece beside a row starts and ends: the cell's edge, the middle of its first row
- * (a range's own first line, with its tick), or 2 px from the row's mark, above it or under it.
+ * Where a stem's piece beside a row starts and ends: the cell's edge; the middle of its first row,
+ * a range's own first line, with its tick; under its first row, past another range's mark there;
+ * or 2 px above the row's own mark.
  */
-export type End = 'edge' | 'mid' | 'mark';
+export type End = 'edge' | 'mid' | 'under' | 'mark';
 
 /** One piece of a range's stem beside a row, top to bottom, and whether it's lit. */
 export interface Stem {
@@ -151,7 +152,8 @@ export interface Stem {
 /**
  * The tick where ranges start on a row: from the outermost's stem to 2 px short of the lane's
  * edge, in the lit one's colour where one of them is lit, else the outermost's. `under` the row's
- * mark where it has one, as a range starts on the line another ends on.
+ * mark, at the foot of its first row, where it has one, as a range starts on the line another
+ * ends on.
  */
 export interface Tick {
   readonly slot: number;
@@ -177,12 +179,13 @@ export interface Row {
 
 /**
  * What a lane draws beside `row`, from the `ranges` that cover it, `marked` where the row holds a
- * mark, with the ranges `lit` names in their lit colours.
+ * mark, and `above` where the line just above it does, with the ranges `lit` names in their lit
+ * colours.
  */
 export function cellOf(
   ranges: Iterable<Slotted>,
   row: Row,
-  marked: boolean,
+  { marked, above }: { readonly marked: boolean; readonly above: boolean },
   lit: ReadonlySet<string>,
 ): Cell {
   const stems: Stem[] = [];
@@ -196,13 +199,15 @@ export function cellOf(
     const stem = { key: range.key, slot: range.slot, tone: range.tone, lit: lit.has(range.key) };
     const ticked = starts && range.tick;
     if (ticked) ticks.push({ slot: stem.slot, tone: stem.tone, lit: stem.lit });
-    if (ends && range.foot) stems.push({ ...stem, from: 'edge', to: 'mark' });
-    else if (!marked) stems.push({ ...stem, from: ticked ? 'mid' : 'edge', to: 'edge' });
-    else {
-      // Round another range's mark, and on under it; one that starts here starts under it.
-      if (!ticked) stems.push({ ...stem, from: 'edge', to: 'mark' });
-      stems.push({ ...stem, from: 'mark', to: 'edge' });
-    }
+    if (ends && range.foot) {
+      // Down to 2 px above its mark, unless it skipped the row above, past another's mark: there
+      // it would be a stub of a pixel, alone.
+      const skipped = above && !(range.tick && range.from === row.first - 1);
+      if (!skipped) stems.push({ ...stem, from: 'edge', to: 'mark' });
+    } else if (marked) {
+      // Past another range's mark, or from a tick under it: on under the row it's on.
+      stems.push({ ...stem, from: 'under', to: 'edge' });
+    } else stems.push({ ...stem, from: ticked ? 'mid' : 'edge', to: 'edge' });
   }
   const outer = ticks.reduce<(typeof ticks)[number] | undefined>(
     (best, each) => (best && best.slot <= each.slot ? best : each),
@@ -480,7 +485,12 @@ export function laneUpdate(
   for (const line of [...lines].toSorted((a, b) => a - b)) {
     const mark = marks.get(line);
     const over = placed.filter((range) => range.from <= line && range.to >= line);
-    const cell = cellOf(over, { first: line, last: line }, mark !== undefined, lit);
+    const cell = cellOf(
+      over,
+      { first: line, last: line },
+      { marked: mark !== undefined, above: marks.has(line - 1) },
+      lit,
+    );
     const markLit = mark?.keys.some((key) => lit.has(key)) ?? false;
     if (cell.stems.length === 0 && !cell.tick && !mark) continue;
     const at = doc.line(line).from;
@@ -601,7 +611,15 @@ export function defineLane(kind: LaneKind, options: LaneOptions = {}): Lane {
       });
       mark = held.length > 0 ? options.foldMark(held) : undefined;
     }
-    const cell = cellOf(over, row, mark !== undefined, lit);
+    // Whether the line above a fold holds a mark, which the stems that end in the fold skipped.
+    let above = false;
+    if (fold && row.first > 1) {
+      const at = doc.line(row.first - 1).from;
+      lane.marks.between(at, at, (start) => {
+        if (start === at) above = true;
+      });
+    }
+    const cell = cellOf(over, row, { marked: mark !== undefined, above }, lit);
     if (cell.stems.length === 0 && !cell.tick && !mark) return null;
     return new RangeMarker(kind, cell, mark, {
       lit: markLit,
