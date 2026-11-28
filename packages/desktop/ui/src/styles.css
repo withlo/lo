@@ -330,6 +330,10 @@
     0 0 / 200% 100%;
   animation: lo-shimmer 1.4s var(--lo-ease-in-out) infinite;
 }
+/* A term's byline while the store is read: a skeleton 120 px wide, about the byline's own. */
+@utility term-byline-wait {
+  width: calc(var(--lo-sp-64) + var(--lo-sp-48) + var(--lo-sp-8));
+}
 
 /* Motion: the seven moves of design/README.md, each written once. A component takes a move by its
    class and never writes a duration or a curve of its own. Exits are faster than entrances, what
@@ -1365,7 +1369,12 @@
 
 /* The stack tree's rows. A layer is a grid: the rail's column, then its title and meta. The rail,
    its balls and a branch's elbow are drawn from the numbers set here, so a line always meets the
-   center of a ball and an elbow meets the trunk. The ball sits at the middle of the title's line. */
+   center of a ball and an elbow meets the trunk. The ball sits at the middle of the title's line.
+   What draws the rows sets their measures on what holds them, or takes the tree's: the rail's
+   column (`--stack-col`), the rows' room above and below (`--stack-pad`) and either side
+   (`--stack-inset`), and what a hollow ball is filled with, the ground the rows are on
+   (`--stack-ground`). A branch is one step in, so its trunk runs down the middle of the rail's
+   column of the row it comes off. */
 @utility stack-layer {
   --stack-line: 1.5px;
   --stack-ball: calc(var(--lo-sp-12) - var(--lo-sp-2));
@@ -1373,14 +1382,17 @@
   --stack-ball-mid: calc(var(--stack-ball-top) + var(--stack-ball) / 2);
   position: relative;
   display: grid;
-  grid-template-columns: var(--lo-sp-16) minmax(0, 1fr);
+  grid-template-columns: var(--stack-col, var(--lo-sp-16)) minmax(0, 1fr);
   column-gap: var(--lo-sp-8);
-  padding: var(--lo-sp-6) var(--lo-sp-8);
+  padding: var(--stack-pad, var(--lo-sp-6)) var(--stack-inset, var(--lo-sp-8));
 }
 
-/* A layer on a branch's own rail sits one step in, the width of the rail's column. */
+/* A layer on a branch's own rail sits one step in: its rail's column lines up with the middle of
+   the one it comes off. */
 @utility stack-branch {
-  margin-inline-start: var(--lo-sp-16);
+  margin-inline-start: calc(
+    var(--stack-inset, var(--lo-sp-8)) + var(--stack-col, var(--lo-sp-16)) / 2
+  );
 }
 
 /* The layer that starts a branch has the rail bend off the trunk, one step out, to its ball. */
@@ -1389,9 +1401,14 @@
     content: '';
     position: absolute;
     inset-inline-start: calc(var(--stack-line) / -2);
-    top: calc(var(--lo-sp-6) * -1);
-    width: calc(var(--lo-sp-8) + (var(--lo-sp-16) - var(--stack-ball)) / 2 + var(--stack-line) / 2);
-    height: calc(var(--lo-sp-6) * 2 + var(--stack-ball-mid) + var(--stack-line) / 2);
+    top: calc(var(--stack-pad, var(--lo-sp-6)) * -1);
+    width: calc(
+      var(--stack-inset, var(--lo-sp-8)) + (var(--stack-col, var(--lo-sp-16)) - var(--stack-ball)) /
+        2 + var(--stack-line) / 2
+    );
+    height: calc(
+      var(--stack-pad, var(--lo-sp-6)) * 2 + var(--stack-ball-mid) + var(--stack-line) / 2
+    );
     border-inline-start: var(--stack-line) solid var(--lo-border-strong);
     border-block-end: var(--stack-line) solid var(--lo-border-strong);
     border-end-start-radius: var(--lo-sp-8);
@@ -1421,21 +1438,21 @@
   &::before {
     content: '';
     position: absolute;
-    inset-inline-start: calc((var(--lo-sp-16) - var(--stack-line)) / 2);
-    top: var(--stack-rail-top, calc(var(--lo-sp-6) * -1));
-    bottom: var(--stack-rail-bottom, calc(var(--lo-sp-6) * -1));
+    inset-inline-start: calc((var(--stack-col, var(--lo-sp-16)) - var(--stack-line)) / 2);
+    top: var(--stack-rail-top, calc(var(--stack-pad, var(--lo-sp-6)) * -1));
+    bottom: var(--stack-rail-bottom, calc(var(--stack-pad, var(--lo-sp-6)) * -1));
     width: var(--stack-line);
     background: var(--lo-border-strong);
   }
   &::after {
     content: '';
     position: absolute;
-    inset-inline-start: calc((var(--lo-sp-16) - var(--stack-ball)) / 2);
+    inset-inline-start: calc((var(--stack-col, var(--lo-sp-16)) - var(--stack-ball)) / 2);
     top: var(--stack-ball-top);
     width: var(--stack-ball);
     height: var(--stack-ball);
     border-radius: 50%;
-    background: var(--stack-ball-fill, var(--lo-bg-chrome));
+    background: var(--stack-ball-fill, var(--stack-ground, var(--lo-bg-chrome)));
     box-shadow: var(--stack-ball-edge, inset 0 0 0 1.5px var(--lo-fg-dim));
   }
 }
@@ -1460,6 +1477,57 @@
 @utility stack-ball-closed {
   --stack-ball-fill: var(--lo-state-closed);
   --stack-ball-edge: none;
+}
+
+/* A stack overview's list of layers (`StackLayers`), at the measure on the sheet: the tree's rails
+   and balls in a 20 px column, 10 px of room above and below each row, a `lo-border` hairline over
+   the list and `lo-border-subtle` ones between its rows. Each row's hairline is its own, drawn as a
+   shadow its rail runs over unbroken, and its focus ring takes its place. The list is the box its
+   rows fit (`@container`): under 420 px, a layer's state goes under its title. */
+@utility stack-layers {
+  --stack-col: var(--lo-sp-20);
+  --stack-pad: calc(var(--lo-sp-8) + var(--lo-sp-2));
+  --stack-inset: calc(var(--stack-col) / 2);
+  --stack-ground: var(--lo-bg);
+  container-type: inline-size;
+  max-width: var(--lo-read-measure);
+  & > * > * {
+    box-shadow: inset 0 1px 0 var(--lo-border-subtle);
+  }
+  & > :first-child > * {
+    box-shadow: inset 0 1px 0 var(--lo-border);
+  }
+}
+@utility stack-layers-state {
+  margin-inline-start: var(--lo-sp-8);
+  @container (width < 420px) {
+    display: block;
+    margin-inline-start: 0;
+  }
+}
+
+/* A list Settings keeps per repo (`ScopedList`), in a `SettingsList`'s box: a head row of 30 px for
+   each scope, with a hairline over each but the first. The list is its items' box (`@container`). */
+@utility scoped-list {
+  container-type: inline-size;
+  & > * + * > :first-child {
+    border-top: 1px solid var(--lo-border-subtle);
+  }
+}
+@utility scoped-head {
+  min-height: calc(var(--lo-sp-24) + var(--lo-sp-6));
+}
+
+/* A `SettingsListItem` whose buttons are words that need the room (`stacks`): under 420 px of its
+   list's box, they go under its name, from its start. */
+@utility settings-item-stacks {
+  @container (width < 420px) {
+    flex-wrap: wrap;
+    row-gap: var(--lo-sp-4);
+    & > :last-child {
+      flex-basis: 100%;
+    }
+  }
 }
 
 /* A note under the stack's rows: the layers it names stand out from the rest. */

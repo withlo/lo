@@ -295,6 +295,11 @@ export interface SettingsListItemProps {
   children?: ReactNode;
   /** Any attributes its list finds it by, such as `data-key`. */
   data?: Readonly<Record<`data-${string}`, string>>;
+  /**
+   * Under 420 px of its list's own box (`@container`), its controls go under its name, from its
+   * start: for a list whose items' buttons are words that need the room, as `ScopedList`'s are.
+   */
+  stacks?: boolean | undefined;
 }
 
 /** One item of a `SettingsList`: its name, a line under it, and its controls at the end. */
@@ -305,12 +310,13 @@ export function SettingsListItem({
   note,
   children,
   data,
+  stacks = false,
 }: SettingsListItemProps) {
   return (
     <div
       role="listitem"
       {...data}
-      className="flex min-h-row-h items-center gap-12 border-t border-border-subtle px-12 py-8 first:border-t-0"
+      className={`flex min-h-row-h items-center gap-12 border-t border-border-subtle px-12 py-8 first:border-t-0 ${stacks ? 'settings-item-stacks' : ''}`}
     >
       {lead}
       <div className="flex min-w-0 flex-1 flex-col gap-2">
