@@ -529,6 +529,8 @@ export function draw(options: DrawOptions): Drawing {
       arrived() {
         threader()?.arrived?.(tab.id);
       },
+      // Which lines take a comment, for a drag from the `+`: the comments' to say.
+      commentLines: (file) => threader()?.commentLines?.(tab.id, file),
       // "Show in overview": a jump, from the line the note is under.
       explained(block, line) {
         // Beside a reading view, the overview takes its place, and `⌃o` back to the line puts

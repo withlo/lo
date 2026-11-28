@@ -6,7 +6,13 @@
 // reader is looking at moves: a diff waits a moment for its tab's threads before it's first drawn,
 // so those on its first screen come with it.
 
-import type { RenderPopover, RenderThread, ThreadsMode, ThreadView } from '@lo/ui/code';
+import type {
+  CommentLines,
+  RenderPopover,
+  RenderThread,
+  ThreadsMode,
+  ThreadView,
+} from '@lo/ui/code';
 
 import type { PullTab } from '../../tab/window/shared.ts';
 
@@ -74,6 +80,11 @@ export interface Threader {
    * the reader's next input, its line marked: said to a screen reader.
    */
   arrived?(tab: string): void;
+  /**
+   * Which lines of file `file` of tab `tab`'s diff take a comment, for a drag from the `+` over
+   * them: nothing while that isn't known yet (the code view's `commentLines`).
+   */
+  commentLines?(tab: string, file: string): CommentLines | undefined;
 }
 
 /**

@@ -62,10 +62,15 @@ const panel: When = { scope: 'threads' };
 export default defineCommands(
   'comments',
   {
-    /** A comment box on the cursor's line, the lines `v` selected, or, on a header, on the file. */
+    /**
+     * A comment box on the cursor's line, the lines `v` selected, or, on a header, on the file. By
+     * the mouse, the `+` beside a line: a click on that line, a drag from it on the lines it
+     * crosses, and a click with Shift on the lines from the cursor's; or the right-click menu, on
+     * the lines selected where it's inside them.
+     */
     comment: {
       label: 'Comment',
-      control: 'the + beside a line, in the gutter',
+      control: 'the + beside a line, in the gutter, or a drag from it',
       group: 'Comments',
       keys: ['c'],
       targets: ['line', 'header'],

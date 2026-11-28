@@ -50,6 +50,11 @@ export interface LineTarget {
   note?: true;
   /** The comment box the key is in, by its caller's name for it. */
   box?: string;
+  /**
+   * A right-click inside lines selected, more than one of one file on one side: those lines, which
+   * the commands that comment take. `at` is the line and column clicked, for the rest.
+   */
+  selected?: Span;
 }
 
 /** A draft's mark beside lines, by the line it's on: what `⏎` there opens. */
