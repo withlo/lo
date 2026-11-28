@@ -448,6 +448,57 @@ describe('Timeline', () => {
     expect(asked).toEqual([mine]);
   });
 
+  it('gives every event the same `⋯` at its line’s end, after its time, which opens its row’s menu', () => {
+    const host = render(
+      <Timeline>
+        <TimelineEvent glyph="merged" tone="merged" when="now" menu>
+          merged
+        </TimelineEvent>
+        <TimelinePush actor="a" when="now" commits={[{ oid: 'abcdef0', headline: 'h' }]} menu />
+        <TimelineForcePush
+          actor="a"
+          when="now"
+          before="1111111"
+          after="2222222"
+          compare={{ from: 'r1', to: 'r2' }}
+          menu
+        />
+        <TimelineChecks state="failed" revision="r2" menu />
+        <TimelineOlder count={3} menu />
+        <TimelineEvent glyph="tag" when="now">
+          No menu.
+        </TimelineEvent>
+      </Timeline>,
+    );
+    const at = [0, 1, 2, 3, 4, 5];
+    const mores = at.map((each) =>
+      row(host, each).querySelector('button[aria-label="More actions"]'),
+    );
+    expect(mores.map((each) => each !== null)).toEqual([true, true, true, true, true, false]);
+    expect(at.map((each) => row(host, each).hasAttribute('data-shy-scope'))).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+    ]);
+    // It's the last of its line, after the time where the row has one, and after a force-push's
+    // Compare.
+    for (const more of mores.slice(0, 5)) {
+      const buttons = [...more!.closest('div')!.querySelectorAll('button')];
+      expect(buttons.at(-1)).toBe(more);
+    }
+    expect(mores[0]!.closest('span:not(.shy)')?.querySelector('time')?.textContent).toBe('now');
+    expect(row(host, 1).querySelector('ul')?.contains(mores[1]!)).toBe(false);
+    const asked: (Element | null)[] = [];
+    host.addEventListener('contextmenu', (event) => {
+      if (event.target instanceof Element) asked.push(event.target.closest('li'));
+    });
+    click(mores[2]!);
+    expect(asked).toEqual([row(host, 2)]);
+  });
+
   it('shows an edit box in place of the text while a comment is edited, as no option, and holds back its buttons', () => {
     const host = render(
       <Timeline>
@@ -530,13 +581,13 @@ describe('Timeline', () => {
           comments={{ count: 1 }}
           menu
         />
-        <TimelinePush actor="a" when="now" commits={[{ oid: 'abcdef0', headline: 'h' }]} />
-        <TimelineForcePush actor="a" when="now" compare={{ from: 'r1', to: 'r2' }} />
-        <TimelineChecks state="passed" />
-        <TimelineEvent glyph="merged" tone="merged" when="now" focused>
+        <TimelinePush actor="a" when="now" commits={[{ oid: 'abcdef0', headline: 'h' }]} menu />
+        <TimelineForcePush actor="a" when="now" compare={{ from: 'r1', to: 'r2' }} menu />
+        <TimelineChecks state="passed" menu />
+        <TimelineEvent glyph="merged" tone="merged" when="now" focused menu>
           merged
         </TimelineEvent>
-        <TimelineOlder count={3} />
+        <TimelineOlder count={3} menu />
       </Timeline>,
     );
     expect(await missingRules(host, ['group-focus-visible/timeline:shadow-ring-inset'])).toEqual(

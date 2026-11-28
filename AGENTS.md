@@ -1503,7 +1503,9 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
   `⇧Tab` go through the links and buttons of that row, round through the list, and `Esc` gives focus
   back to the list. A row is a `row` target, the keys' from the scope and a right-click's from the
   row clicked: its menu, and the palette for the row the keyboard is on, offer what its buttons do,
-  each listed only for rows that have it.
+  each listed only for rows that have it. Every row has a `shy` `⋯` that opens its menu, at the end
+  of a post's head or of an event's line (`menu` on each of `@lo/ui`'s timeline rows), except on a
+  comment of yours while it's being sent, saved or edited.
 - What main sends while the timeline is on screen waits for the reader's next key, click or scroll
   (`window/holding.ts`, `window/store.ts`), except what their own write changed, which the comments
   feature tells it of (`onCommentWritten`) and which shows as it comes, for a minute at most. As it

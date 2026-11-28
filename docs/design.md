@@ -978,8 +978,9 @@ It's the third middle view, after the overview and the diff. Lo reads it from Gi
 show it, before what it reads in the background, and keeps it current from then on. A long one shows
 its newest events while the older ones are read. `j` and `k` move between its events, `⇥` goes
 through the links and buttons of the one you're on, `Esc` goes back to the list, and `gx` opens it
-on GitHub. What an event's buttons do is also on its right-click menu. A tab acting as nobody asks
-you to sign in to see it, and a run of a stack's layers has none of its own.
+on GitHub. What an event's buttons do is also in its menu, from a right-click or the `⋯` that shows
+on the event under the pointer or the keyboard. A tab acting as nobody asks you to sign in to see
+it, and a run of a stack's layers has none of its own.
 
 What changes on GitHub while you read the timeline waits for your next key, click or scroll, and
 when it comes, what you were reading stays where it is. What your own comment, edit or delete
@@ -996,10 +997,10 @@ changes shows as it comes.
   open, with your focus, whatever the overview does. It goes back to its block, if the overview has
   it, only once the timeline goes, as after a restart.
 - **Your comments.** Your own comments on the PR say so and have Edit and Delete in their menu, from
-  a right-click or the `⋯` that shows on the row under the pointer or the keyboard, as each post's
-  does. `i` on one opens a box with its text in its card, and `dd` asks first, as a review comment's
-  delete does. Each reads the comment again first and goes only if GitHub still has it as it was, as
-  in the diff. Lo changes only your own comments, never a review or the description.
+  a right-click or their `⋯`. `i` on one opens a box with its text in its card, and `dd` asks first,
+  as a review comment's delete does. Each reads the comment again first and goes only if GitHub
+  still has it as it was, as in the diff. Lo changes only your own comments, never a review or the
+  description.
 
 ## 11. Merging and the merge queue
 
