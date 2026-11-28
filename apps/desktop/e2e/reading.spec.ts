@@ -6,9 +6,10 @@
 // read; opens its links to web pages in the browser; fills in its code blocks and walkthrough from
 // the local copy; and never moves what's on screen without the reader: not as banners come and
 // go, as it's checked again, as its code fills in, as a newer one is offered at any width, or as
-// what's above the line being read changes size. A
-// server in front of the replay server answers for the overview's ref as each test says: with the
-// overview `testing/fixtures/app.sh` wrote, none, one made here, or a failure. It fails the
+// what's above the line being read changes size; and shows its terms with the repo's definitions,
+// or says why it can't. A server in front of the replay server answers for the overview's ref as
+// each test says: with the overview `testing/fixtures/app.sh` wrote, none, one made here, or a
+// failure; and for the repo's definitions with none, or with those made here. It fails the
 // timeline's reads itself, which the cassette doesn't hold: these tests need only that a tab is on
 // the timeline, not what it shows. The local copy comes from a folder, or from a git server that
 // holds it until the test lets it come.
@@ -77,6 +78,9 @@ const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
 /** Where #80's overview's ref is read, past GitHub's origin. */
 const REFS = `/repos/rozed-dev/e2e/git/matching-refs/lo/pr/${APP_PULL.number}`;
 
+/** Where the repo's definitions' ref is read, past GitHub's origin. */
+const TERMS = '/repos/rozed-dev/e2e/git/matching-refs/lo/terms';
+
 /** The timeline's reads, which the cassettes here don't hold. */
 const TIMELINE = /\bquery (Timeline|PullRequestSidebar)\b/;
 
@@ -115,7 +119,8 @@ const SPOOF: Writer = {
 
 /**
  * What the ref holds as the test goes: the overview the cassette recorded, none, one made here, or
- * a failure GitHub answers; and how long it takes to answer.
+ * a failure GitHub answers; and how long it takes to answer. And the repo's definitions, `terms`: a
+ * commit made here that holds `terms.json`, else none, as the cassette recorded.
  */
 interface Ref {
   holds:
@@ -124,6 +129,7 @@ interface Ref {
     | { kind: 'failing' }
     | { kind: 'made'; overview: Overview };
   delay: number;
+  terms?: Overview | undefined;
 }
 
 /** A blob's ID: what git names its bytes by. */
@@ -275,9 +281,15 @@ async function frontOf(
       const body = await buffer(incoming);
       // The replay server serves GitHub's REST API under /api.
       const path = new URL(incoming.url ?? '/', origin).pathname.replace(/^\/api\//, '/');
-      const { holds } = ref;
+      const { holds, terms } = ref;
       if (holds.kind === 'made' && !overviews.includes(holds.overview)) {
         overviews.push(holds.overview);
+      }
+      if (terms && !overviews.includes(terms)) overviews.push(terms);
+      if (path === TERMS && terms) {
+        return json(outgoing, 200, [
+          { ref: 'refs/lo/terms', object: { sha: terms.sha, type: 'commit' } },
+        ]);
       }
       if (path === REFS) {
         if (ref.delay > 0) await new Promise((resolve) => setTimeout(resolve, ref.delay));
@@ -1043,6 +1055,135 @@ test('offers a newer overview pushed while one is read, and loads it only when a
     await page.keyboard.press(']');
     await page.keyboard.press('b');
     await expect(shown.locator('details > summary')).toBeFocused();
+  });
+});
+
+/** Paragraphs enough to scroll. */
+const FILLER = Array.from(
+  { length: 30 },
+  (_, index) => `Paragraph ${index + 1} says what one part of the change does, at some length.`,
+).join('\n\n');
+
+/**
+ * An overview of #80 whose glossary, between two long sections, adds Bucket and Lease, changes
+ * Credit, and defines Tenant, which the repo's definitions ({@link DEFINED}) hold as it does.
+ */
+const DEFINING = textOf(
+  [
+    '## tl;dr',
+    '',
+    'A request takes a [credit](term:credit) from its [bucket](term:bucket), which a [lease](term:lease) holds for the [tenant](term:tenant).',
+    '',
+    '## How it works',
+    '',
+    FILLER,
+    '',
+    '## Glossary',
+    '',
+    '- **Tenant**: the accounts a quota is counted for.',
+    '- **Credit** (changed): what a request spends to go through, one each.',
+    '- **Lease** (new): how long a bucket is held.',
+    '- **Bucket** (new): the credits a tenant has to spend.',
+    '',
+    '## After',
+    '',
+    FILLER,
+    '',
+  ].join('\n'),
+);
+
+/** The repo's definitions as `terms.json` holds them: Credit, as it was, and Tenant. */
+const DEFINED = JSON.stringify({
+  format: 1,
+  terms: {
+    credit: {
+      term: 'Credit',
+      definition: 'what a request spends.',
+      written: 'agent',
+      by: { login: 'octocat' },
+      from: '#64',
+      at: '2026-11-20T09:00:00Z',
+    },
+    tenant: {
+      term: 'Tenant',
+      definition: 'the accounts a quota is counted for.',
+      written: 'human',
+      by: { login: 'mona' },
+      from: 'lo',
+      at: '2026-11-20T09:00:00Z',
+    },
+  },
+});
+
+test('shows what the pull request does to the repo’s definitions at the top, its terms first, a changed one with what it replaces, and says why they can’t be used when they can’t', async ({
+  page,
+  ref,
+}) => {
+  ref.holds = { kind: 'made', overview: overviewOf({ 'artifact.md': DEFINING }) };
+  ref.terms = overviewOf({ 'terms.json': DEFINED });
+  const id = await open(page);
+  await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
+  await overviewTab(page).click();
+  const shown = overview(page, 'shown');
+  const glossary = shown.locator('[data-lo-glossary]');
+  const rows = glossary.locator('[data-lo-term-row]');
+  const row = (name: string) =>
+    rows.filter({ has: page.locator('.lo-term-row__term', { hasText: name }) });
+
+  await test.step('says what it adds and changes, and lists those terms first', async () => {
+    const line = shown.getByRole('note').filter({ hasText: 'definitions' });
+    await expect(line).toContainText('Adds 2 definitions · changes 1', { timeout: 20_000 });
+    await expect(rows.locator('.lo-term-row__term')).toHaveText([
+      'Bucket',
+      'Credit',
+      'Lease',
+      'Tenant',
+    ]);
+    await expect(glossary.locator('[data-lo-marked]')).toHaveCount(3);
+    await expect(row('Bucket')).toContainText('New');
+    await expect(row('Credit')).toContainText('Changed');
+    await expect(row('Credit').locator('[data-lo-before]')).toHaveText(
+      'Before what a request spends.',
+    );
+    await expect(row('Tenant').locator('.lo-term-row__head')).not.toContainText('New');
+
+    // Go to glossary brings its heading to the top and lands on its first term.
+    await line.getByRole('button', { name: 'Go to glossary' }).click();
+    await expect(row('Bucket').locator('.lo-term-row__term')).toBeFocused();
+    const heading = shown.getByRole('heading', { name: 'Glossary', exact: true });
+    const view = await middleView(page, 'overview.view').boundingBox();
+    await expect
+      .poll(async () => ((await heading.boundingBox())?.y ?? 0) - (view?.y ?? 0))
+      .toBeLessThan(120);
+    await expect
+      .poll(async () => ((await heading.boundingBox())?.y ?? -1) - (view?.y ?? 0))
+      .toBeGreaterThanOrEqual(0);
+  });
+
+  await test.step('shows who wrote the repo’s definition in a term’s card', async () => {
+    await shown.locator('.lo-term', { hasText: 'tenant' }).first().hover();
+    const card = page.locator('.lo-hovercard');
+    await expect(card).toContainText('the accounts a quota is counted for.');
+    await expect(card).toContainText('mona · human-written ·');
+    await page.mouse.move(0, 0);
+    await expect(card).toHaveCount(0);
+  });
+
+  await test.step('says why they can’t be used, and shows the overview’s own', async () => {
+    ref.terms = overviewOf({ 'terms.json': { size: 3 * 1024 * 1024 } });
+    await page.evaluate((tab) => window.lo.invoke('overview.retryStore', { id: tab }), id);
+    const note = glossary.locator('.lo-glossary__note');
+    await expect(note).toContainText('Can’t read the repo’s glossary', { timeout: 20_000 });
+    await expect(note).toContainText(
+      'It’s larger than 2 MB. These definitions are this overview’s own.',
+    );
+    await expect(note.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+    // Its own marks tag its terms.
+    await expect(shown.getByRole('note').filter({ hasText: 'definitions' })).toContainText(
+      'Adds 2 definitions · changes 1',
+    );
+    await expect(row('Credit').locator('[data-lo-before]')).toHaveCount(0);
+    await expect(row('Tenant')).toContainText('the accounts a quota is counted for.');
   });
 });
 

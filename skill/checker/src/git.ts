@@ -115,28 +115,47 @@ function startFailure(error: unknown): GitError {
  * Runs git with `args`, giving it `input`, and returns what it writes. Rejects with git's own
  * words when it fails.
  */
-export function run(git: Git, args: readonly string[], input?: Uint8Array): Promise<Buffer> {
+export async function run(git: Git, args: readonly string[], input?: Uint8Array): Promise<Buffer> {
+  const ran = await exec(git, args, input);
+  if (ran.status === 0) return ran.out;
+  throw new GitError(ran.err || `git ${args[0] ?? ''} failed without saying why.`);
+}
+
+/** What git did: its exit status, what it wrote, and what it said on its error output, trimmed. */
+export interface Ran {
+  status: number | null;
+  out: Buffer;
+  err: string;
+}
+
+/**
+ * Runs git with `args`, giving it `input`, and returns what it did, whether it failed or not.
+ * Rejects only when git doesn't start, or writes more than Lo reads.
+ */
+export function exec(git: Git, args: readonly string[], input?: Uint8Array): Promise<Ran> {
   return new Promise((resolve, reject) => {
     const child = start(git, args);
     const out: Buffer[] = [];
     const err: Buffer[] = [];
     let length = 0;
+    let said = 0;
     child.stdout?.on('data', (chunk: Buffer) => {
       length += chunk.length;
       if (length > OUTPUT_LIMIT) child.kill();
       else out.push(chunk);
     });
-    child.stderr?.on('data', (chunk: Buffer) => err.push(chunk));
+    child.stderr?.on('data', (chunk: Buffer) => {
+      // Only so much of what it says is kept.
+      said += chunk.length;
+      if (said <= OUTPUT_LIMIT) err.push(chunk);
+    });
     child.on('error', (error) => reject(startFailure(error)));
-    child.on('close', (code) => {
+    child.on('close', (status) => {
       if (length > OUTPUT_LIMIT) {
         reject(new GitError(`git ${args[0] ?? ''} wrote more than Lo reads.`));
-      } else if (code === 0) {
-        resolve(Buffer.concat(out));
-      } else {
-        const said = Buffer.concat(err).toString('utf8').trim();
-        reject(new GitError(said || `git ${args[0] ?? ''} failed without saying why.`));
+        return;
       }
+      resolve({ status, out: Buffer.concat(out), err: Buffer.concat(err).toString('utf8').trim() });
     });
     // A git that exits before reading it all closes its input early: that's its exit to report.
     child.stdin?.on('error', () => {});

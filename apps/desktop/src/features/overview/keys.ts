@@ -1,9 +1,10 @@
 // The overview feature's keys: copying a prompt for a coding agent, anywhere in a pull request's
 // tab; installing the overview skill, which has none; and, in Settings, copying the command that
 // installs it from a terminal. In the overview's own view, the `overview` scope: moving between its
-// blocks and within one, following a block to its code, scrolling, and folding its sections; on a
-// block's menu, showing the latest overview or reading it again, which have none; and on a section
-// heading's menu, the switches that collapse a section in this repo or every repo, which have none.
+// blocks and within one, following a block to its code, scrolling, going to its glossary, which
+// has none, and folding its sections; on a block's menu, showing the latest overview or reading it
+// again, which have none; and on a section heading's menu, the switches that collapse a section in
+// this repo or every repo, which have none.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -146,6 +147,17 @@ export default defineCommands(
       keys: [],
       targets: ['block', 'none'],
       menu: { on: 'block', order: 40 },
+    },
+    /**
+     * Brings the overview's Glossary section to the top, and lands on the first term the pull
+     * request adds or changes: from the line under the byline that counts them.
+     */
+    goGlossary: {
+      label: 'Go to glossary',
+      group: 'Review',
+      keys: [],
+      when: overview,
+      control: 'Go to glossary on the line under the overview’s byline',
     },
     /** Reads the overview's ref again now: after a read that failed, or one made only once. */
     retry: {
