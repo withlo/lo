@@ -7,7 +7,8 @@
 //
 // Each cassette gets its own answer, in a file after its others. Every other request stays as it
 // was recorded. With --rest, it records a REST read instead: GitHub's first answer, and the `304`
-// to the same read asked again with that answer's ETag, as Lo asks a read it keeps:
+// to the same read asked again with that answer's ETag, as Lo asks a read it keeps, or only that
+// `304`, to the last answer's ETag, for a read the cassette holds but never asked again:
 //
 //   LO_FIXTURE_TOKEN_FILE=<file holding the bot's token> \
 //     node testing/scripts/add-answers.ts --rest <path on GitHub's API, with its query> <cassette> ...

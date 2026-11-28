@@ -10,7 +10,13 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
-import { ARTIFACT_READ, checkArtifact, parseArtifact, type CheckedArtifact } from '@lo/artifact';
+import {
+  ARTIFACT_READ,
+  checkArtifact,
+  parseArtifact,
+  type CheckedArtifact,
+  type OnRef,
+} from '@lo/artifact';
 
 import {
   CODE_COMMIT,
@@ -68,15 +74,15 @@ function asExpected(findings: Printed['findings']): Expected['findings'] {
   }));
 }
 
-/** `artifact`'s check of the folder `dir`, read as Lo reads an overview's commit. */
-async function reference(dir: string, pr: number): Promise<CheckedArtifact> {
+/** `artifact`'s check of the folder `dir`, read as Lo reads an overview's commit on `on`. */
+async function reference(dir: string, on: OnRef): Promise<CheckedArtifact> {
   const files = referenceFolder(dir);
   const artifact = await files
     .read('artifact.md', ARTIFACT_READ, new AbortController().signal)
     .catch(() => undefined);
   const whole = artifact?.kind === 'file' && artifact.bytes.length === artifact.size;
   const parsed = whole ? parseArtifact(artifact.bytes) : undefined;
-  return checkArtifact(parsed, files, referenceCode(repo.dir), { pr });
+  return checkArtifact(parsed, files, referenceCode(repo.dir), on);
 }
 
 describe.each(fixtures)('$group/$name', ({ group, name, dir }) => {
@@ -88,11 +94,12 @@ describe.each(fixtures)('$group/$name', ({ group, name, dir }) => {
     // A file no one may read is read all the same by root.
     const whole = materialize(dir, input, folder) && process.getuid?.() !== 0;
     if (!whole) partial.push(`${group}/${name}`);
-    const pr = input.ref ?? PR;
-    const ran = runJson(['check', folder, '--pr', String(pr)], repo.dir);
+    const on = input.stack === undefined ? { pr: input.ref ?? PR } : { stack: input.stack };
+    const ref = 'stack' in on ? ['--stack', String(on.stack)] : ['--pr', String(on.pr)];
+    const ran = runJson(['check', folder, ...ref], repo.dir);
 
     // Through artifact, on the same folder and repository.
-    const lo = await reference(folder, pr);
+    const lo = await reference(folder, on);
     expect(ran.findings).toEqual(lo.findings);
     expect(ran.outcome).toBe(lo.outcome.kind);
     const errors = ran.findings.some(({ severity }) => severity === 'error');

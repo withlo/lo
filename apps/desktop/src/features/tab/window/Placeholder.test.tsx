@@ -158,6 +158,34 @@ describe('a tab’s placeholder', () => {
     }
   });
 
+  it('waits as a view’s skeleton where it gives one, carrying the wait on, its line said to a screen reader', () => {
+    const first = draw('fd');
+    wait(500);
+    first.gone();
+    const box = document.createElement('div');
+    document.body.append(box);
+    const root = createRoot(box);
+    act(() =>
+      root.render(
+        <Placeholder
+          tab="fd"
+          status="Reading timeline…"
+          skeleton={<span className="skeleton" data-testid="rows" />}
+        />,
+      ),
+    );
+    drawn.push(() => {
+      act(() => root.unmount());
+      box.remove();
+    });
+    // The wait has run its first moments: the skeleton shows at once, in place of the mark.
+    const status = box.querySelector('[data-lo-placeholder] [role="status"]');
+    expect(status?.getAttribute('aria-busy')).toBe('true');
+    expect(status?.textContent).toBe('Reading timeline…');
+    expect(status?.querySelector('[data-testid="rows"]')).not.toBeNull();
+    expect(box.querySelector('svg')).toBeNull();
+  });
+
   it('keeps each tab’s wait to itself', () => {
     draw('fd');
     wait(500);

@@ -939,6 +939,21 @@ status bar.
   after the first reads of the view on screen.
 - The head on screen is GitHub's when the tab opened. A newer push says so in a banner, and moves
   nothing until it's loaded.
+- `⌘R`, and `F5` on both systems (Ctrl+R stays Vim's `⌃r` on Linux), reads the tab on screen again
+  at once (`tab.refresh`), whatever its interval, and never reloads the window. Main asks each part
+  of the tab through `TabService.onRefresh`: a pull request's tab reads its pull request
+  (`Poller.refresh`, whose poll goes ahead of every poll that's merely due and the offline backoff,
+  fetches the details whatever the check says, and runs every read kept again with what it has, as
+  the 5-minute refresh does), then shows the newer push, if there is one; the overview reads its ref
+  as Try again does; a merge queue's tab reads its queue as Check again does. What the middle views
+  on screen show goes first: the window names them (`front`), the parts that draw them read before
+  the rest (`shows` in `onRefresh`), and the poller runs their reads ahead of the others (`first`).
+  A tab whose stack's tree is drawn reads its repository's open pull requests last (`list`). Its
+  requests take their turns in the account's queue, and the rate limit holds them as it holds polls.
+  A refresh that fails while GitHub is out of reach leaves the backoff as it was, and the reads it
+  runs again go at once, whatever a run already under way or the cache says. The tab's mark in the
+  strip turns until every part is in or has failed, and a press meanwhile asks nothing more. Recent
+  and Settings read nothing from GitHub, so it does nothing there.
 - The `tab.open` setting says which middle view a pull request's tab opens on: the overview, the
   timeline or the diff. A tab that opens on the overview waits for it, up to `HOLD_LIMIT`, and goes
   to the timeline, where the description is first, when there's none or it's late, drawing nothing
@@ -997,9 +1012,11 @@ status bar.
   at once, and so does a switch from views that only wait, drawing the tab's placeholder
   (`useWaiting`): there's nothing drawn to keep, and the view coming takes the wait over. A middle
   view with nothing to draw yet draws `Loading` or `MiddlePlaceholder`, never nothing, or a switch
-  to it shows it empty; and one that draws something else as it leaves draws it under the view
-  coming, so a view that gives the middle up as it opens, as the overview does to the timeline,
-  draws its placeholder until it's gone from the screen.
+  to it shows it empty; one whose shape is known gives `MiddlePlaceholder` its `skeleton`, as the
+  timeline does (`TimelineSkeleton`), which waits the same way with that in place of the mark; and
+  one that draws something else as it leaves draws it under the view coming, so a view that gives
+  the middle up as it opens, as the overview does to the timeline, draws its placeholder until it's
+  gone from the screen.
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.

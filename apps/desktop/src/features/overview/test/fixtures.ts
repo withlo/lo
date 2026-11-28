@@ -224,6 +224,8 @@ export function gitReader(gitDir: string): CodeReader {
 export interface FixtureInput {
   /** The pull request whose ref the overview is on. */
   ref?: number;
+  /** The stack whose ref the overview is on, in place of a pull request's. */
+  stack?: number;
   /**
    * Entries the folder can't hold, added to its listing. A file is that many bytes of zeros, or
    * with `fails`, a file its reader fails to read.

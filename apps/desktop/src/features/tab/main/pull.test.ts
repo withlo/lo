@@ -547,6 +547,59 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     tab.close();
   });
 
+  it('reads its pull request again at once as the reader asks, then shows the newer push', async () => {
+    const replayed = replayFetch('app_e2e');
+    const asked: string[] = [];
+    // Each request, by its GraphQL operation's name or its method and path.
+    const fetch: typeof globalThis.fetch = (input, init) => {
+      const request = new Request(input, init);
+      const { pathname } = new URL(request.url);
+      const body: unknown =
+        pathname.endsWith('/graphql') && typeof init?.body === 'string'
+          ? JSON.parse(init.body)
+          : undefined;
+      const operation =
+        typeof body === 'object' && body !== null ? Reflect.get(body, 'operationName') : undefined;
+      asked.push(typeof operation === 'string' ? operation : `${request.method} ${pathname}`);
+      return replayed(input, init);
+    };
+    const replay = replayGithub('app_e2e', { fetch });
+    const git = await testGit();
+    const { tab, sent } = tabFor({ github: replay.github, git });
+    tab.show();
+    await expect.poll(() => sent.local, { timeout: 40_000 }).toMatchObject({ kind: 'ready' });
+    // Its first poll is over: the details it read are in.
+    const poller = await replay.github.poller('rozed-bot');
+    await expect.poll(() => poller.pullRequest(tab.pull), { timeout: 20_000 }).toBeDefined();
+
+    // A newer push heard, here the first push's: it's offered, not shown.
+    const summary: PullSummary = {
+      number: APP_PULL.number,
+      title: TITLE,
+      state: 'open',
+      draft: false,
+      updated_at: '2026-11-11T14:00:00Z',
+      head: { ref: 'app/feature', sha: APP_PULL.firstHead },
+      base: { ref: 'app/base', sha: APP_PULL.firstBase },
+    };
+    replay.pollEvent('rozed-bot', { kind: 'summary', pull: tab.pull, summary });
+    await expect.poll(() => sent.pull?.newer).toBe(APP_PULL.firstHead);
+
+    asked.length = 0;
+    await tab.refresh();
+    // Its poll, then its details whatever its check says.
+    expect(asked).toEqual(
+      expect.arrayContaining([
+        `GET /repos/rozed-dev/e2e/pulls/${APP_PULL.number}`,
+        'PullRequestCheck',
+        'PullRequest',
+      ]),
+    );
+    expect(sent.pull?.shown).toBe(APP_PULL.firstHead);
+    expect(sent.pull?.newer).toBe(null);
+    tab.close();
+  });
+
   it('keeps a head from the cache on screen once its diff is drawn, and offers GitHub’s as a newer push', async () => {
     const { cache, git } = await saved(true);
     const gate = gated('app_e2e');

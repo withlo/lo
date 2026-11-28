@@ -406,7 +406,17 @@ export function walk(tree: unknown, options: WalkOptions = {}): Walked {
         if (!isList(held)) return problem(at, 'is not a list');
         for (const [i, item] of held.entries()) {
           const where = `${at}[${i}]`;
-          const kept = record(item, where, { name: isString, key: isKey, children: isList });
+          const kept = record(
+            item,
+            where,
+            {
+              name: isString,
+              key: isKey,
+              mark: (mark) => mark === 'new' || mark === 'changed',
+              children: isList,
+            },
+            ['mark'],
+          );
           part(where, level + 1);
           if (!kept) continue;
           const key = String(kept['key']);
