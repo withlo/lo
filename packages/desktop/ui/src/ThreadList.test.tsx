@@ -10,6 +10,7 @@ import { cleanUp, click, render, rerender } from '../test/dom.ts';
 import {
   ThreadFilter,
   ThreadList,
+  ThreadListSkeleton,
   type ThreadsFilter,
   type ThreadListGroup,
   type ThreadListRow,
@@ -220,5 +221,6 @@ describe('ThreadList', () => {
       </>,
     );
     expect(await missingRules(host, ['group-focus-visible/list:shadow-ring-inset'])).toEqual([]);
+    expect(await missingRules(render(<ThreadListSkeleton />))).toEqual([]);
   });
 });

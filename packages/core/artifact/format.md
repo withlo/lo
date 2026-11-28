@@ -2,7 +2,9 @@
 
 An overview explains a pull request in Lo. Its writer, usually a coding agent, writes `artifact.md`
 and any figures in `figures/`, commits them, and pushes the commit to `refs/lo/pr/<number>` in the
-pull request's repository. Lo reads them from there and shows the overview beside the diff.
+pull request's repository. Lo reads them from there and shows the overview beside the diff. A stack
+of pull requests can have an overview of its own too, at `refs/lo/stack/<number>` (see
+[Stack overviews](#stack-overviews)).
 
 `artifact.md` is GitHub's Markdown with a header, required sections and a few blocks of its own. Lo
 shows code from the repository itself, so an overview names a file and its lines and never copies
@@ -90,8 +92,8 @@ Nothing else may be in the commit: no other file, folder, link or submodule. Nam
 
 ## The header
 
-`artifact.md` starts with its header: a line of `---`, three lines of `key: value` in any order, and
-another line of `---`.
+`artifact.md` starts with its header: a line of `---`, its keys, each a line of `key: value`, in any
+order, and another line of `---`.
 
 ```text
 ---
@@ -107,12 +109,43 @@ The smallest overview: a header and a tl;dr.
 
 - **`format`** is the format the overview is written in: `1`.
 - **`pr`** is the pull request's number. An overview found on another pull request's ref is invalid.
+- **`stack`**, for a pull request that's a layer of a stack, is the stack's number, which names the
+  stack's overview. A stack's overview has `stack` in place of `pr`.
 - **`commit`** is the full id of the commit the overview describes, as `git rev-parse` prints it: 40
   lowercase hexadecimal digits, or 64 in a SHA-256 repository. Lo shows code at this commit.
 
-Each key appears once, and nothing else may appear: no blank lines, comments or other keys. It isn't
-YAML, so quotes, anchors and tags aren't read either. Numbers are plain: no sign, no leading zero,
-no decimal point.
+`format` and `commit` appear once, and `pr` or `stack` or both, each at most once. Nothing else may
+appear: no blank lines, comments or other keys. It isn't YAML, so quotes, anchors and tags aren't
+read either. Numbers are plain: no sign, no leading zero, no decimal point.
+
+## Stack overviews
+
+A stack's overview explains what its pull requests do together. It's in the same format as a pull
+request's, in the commit at `refs/lo/stack/<number>` in the base repository, and its header has
+`stack` in place of `pr`:
+
+```text
+---
+format: 1
+stack: 4790
+commit: 3f9c2e1d8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e
+---
+
+## tl;dr
+
+Requests over a quota wait for a token instead of failing. The bottom layer adds the limiter, and
+the layers above it use it.
+```
+
+- **The number** is GitHub's, for a GitHub stack. For a stack of branches, it's the number of its
+  bottom layer when its overview is first written, kept after that layer merges.
+- **`commit`** is the top layer's head when it's written.
+- **Its tl;dr** says what the stack is for. A section such as "How the layers fit" may follow, and a
+  glossary, as in a pull request's overview.
+- **Its layers** are listed by Lo, from the stack as it is, so the overview doesn't list them.
+- **Each layer's overview** names it, with `stack: <number>` in its header beside `pr`.
+
+An overview found on another stack's ref, or a pull request's overview on a stack's ref, is invalid.
 
 ## Sections
 
@@ -276,11 +309,119 @@ Each tenant gets a [bucket](term:bucket), and its [buckets](term:bucket) refill 
 - **Matching** ignores case and runs of spaces: `[maps](<term:Hash  Map>)` names `**hash map**`. A
   term holds no control or invisible character.
 - **The glossary** is a list whose items each start with the term in bold, then a colon and the
-  definition: `- **Term**: definition`. The term is plain text, without links or formatting.
+  definition: `- **Term**: definition`. The term is plain text, without links or formatting, tabs,
+  or spaces at either end.
 - **Every term linked is defined,** and two definitions can't differ only in case or spaces. A term
   defined but never linked is a warning.
 
 Only `term:` links mark a term. Other uses of the word are left alone.
+
+### Marks
+
+An entry may carry a mark between its term and its colon, which says how it stands to the
+[repository's definitions](#the-repositorys-definitions):
+
+```text
+## How it works
+
+A [tenant](term:tenant) spends [tokens](term:token) from its [bucket](term:bucket).
+
+## Glossary
+
+- **Bucket** (new): the tokens a tenant has to spend.
+- **Token** (changed): what a request spends to go through, one each.
+- **Tenant**: an account the quota is counted for.
+```
+
+- **`(new)`** is a term the repository's definitions don't have. The pull request adds it.
+- **`(changed)`** is one whose definition the pull request changes. Its entry holds the new one.
+- **No mark** is the repository's definition, copied as it is. An unmarked entry changes nothing
+  there.
+
+A mark is written exactly so: one space after the term, then `(new)` or `(changed)` in lower case,
+then the colon, with no escape or entity in place of any of them.
+
+A marked entry's definition goes into the repository's definitions when the pull request merges, so
+it's held to their rules: one paragraph of at most 2,048 bytes, with no control or invisible
+character, holding only text, inline code, links into the code and links to terms, as Markdown reads
+it on its own. A reference-style link, `[label][ref]`, `[label][]` or `[label]`, is refused, since
+no reference is defined there, and so are a mention, `@octocat`, and a reference to an issue or a
+pull request, `#123`, since GitHub makes links of them: write them as inline code to keep them as
+text. A marked definition that breaks these rules fails the checker, and Lo shows the overview all
+the same.
+
+## The repository's definitions
+
+A repository keeps the definitions of its terms in one place, so a term reads the same in every
+overview: `terms.json`, the one file in the commit at `refs/lo/terms` in the base repository. When a
+pull request merges, the repository's workflow adds each term its overview marks `(new)` and
+replaces the definition of each it marks `(changed)`. People with push access edit them in Lo. A
+writer only reads it.
+
+```json
+{
+  "format": 1,
+  "terms": {
+    "bucket": {
+      "term": "Bucket",
+      "definition": "The tokens a tenant has to spend. Each request takes one.",
+      "aliases": ["buckets"],
+      "written": "agent",
+      "by": { "login": "octocat" },
+      "from": "#4797",
+      "at": "2026-11-27T10:30:00Z",
+      "changes": [
+        {
+          "definition": "The tokens a tenant has.",
+          "written": "human",
+          "by": { "login": "mona" },
+          "from": "lo",
+          "at": "2026-11-20T09:00:00Z"
+        }
+      ]
+    }
+  }
+}
+```
+
+`format` is `1`, and `terms` holds each term, keyed by its name as `term:` links name it: in lower
+case, with each run of white space as one space. Each term holds:
+
+- **`term`:** the term as written, such as `"Bucket"`, as a glossary may name it: plain text, with
+  no tab, line break or other control or invisible character, and no space at either end.
+- **`definition`:** one or two sentences of Markdown on one line, read as part of a paragraph, as a
+  glossary entry's is: only text, inline code, links into the code and links to other terms. No
+  bold, emphasis, HTML, images, links elsewhere, mentions, `@octocat`, references to issues and pull
+  requests, `#123`, or reference-style links, `[label][ref]`, `[label][]` or `[label]`: put a
+  backslash before brackets meant as text.
+- **`aliases`:** other forms that name it, such as `"buckets"`, each as plain as a term. Optional.
+- **`written`:** `"agent"`, from an overview, or `"human"`, edited in Lo.
+- **`by`:** who wrote it: `{ "login": "octocat" }`, a GitHub account, or `{ "name": "A. Writer" }`,
+  the git name of a commit GitHub couldn't map to an account, which isn't verified.
+- **`from`:** `"#<number>"`, the pull request whose overview it came from, or `"lo"`, edited in Lo.
+- **`at`:** when, in UTC, to the second or finer: `"2026-11-27T10:30:00Z"`.
+- **`locked`:** who locked it and when, as `by` and `at`. Optional. A merged pull request then
+  suggests a change rather than making it.
+- **`suggestions`:** for a locked term, the changes merged pull requests proposed, newest first,
+  each with its `definition`, `by`, `from` (a pull request) and `at`. Optional. A term that isn't
+  locked has none: unlocking it settles them.
+- **`changes`:** its earlier definitions, newest first, each with its `definition`, `written`, `by`,
+  `from` and `at`. Optional. Older ones are in the ref's history.
+
+No two terms go by the same name, their own or an alias's, no object has a key twice, and nothing
+else may be in the file. A `terms.json` that breaks a rule here, or is past a limit, is refused
+whole: Lo then shows each overview's own glossary.
+
+| What                 | At most        |
+| -------------------- | -------------- |
+| `terms.json`         | 2 MiB of UTF-8 |
+| Terms                | 5,000          |
+| A term's aliases     | 20             |
+| A term's suggestions | 50             |
+| A term's changes     | 50             |
+| A definition         | 2,048 bytes    |
+| A term or an alias   | 1,024 bytes    |
+| A git name           | 256 bytes      |
 
 ## Figures
 
@@ -355,8 +496,9 @@ width or wider than 32 times its height, and what it draws is capped.
 
 ## Versions
 
-The header's `format` says which version of this format the overview is written in. A change that an
-earlier version of Lo would read wrongly makes a new format. Each version of Lo reads every format
-up to its own, and says it needs an update for a newer one. Of an overview in a newer format, Lo
-reads only the header: a newer format may allow files, or limits, that this one doesn't, so its
-commit isn't held to this format's rules either.
+The header's `format` says which version of this format the overview is written in, and
+`terms.json`'s `format` which version of its own. A change that an earlier version of Lo would read
+wrongly makes a new format. Each version of Lo reads every format up to its own, and says it needs
+an update for a newer one. Of an overview in a newer format, Lo reads only the header: a newer
+format may allow files, or limits, that this one doesn't, so its commit isn't held to this format's
+rules either.

@@ -8,7 +8,8 @@
  *   names and dates, so the commit's id, which every fixture's header names, never changes.
  * - `valid/`, `invalid/` and `hostile/` hold one overview a folder: `artifact.md` and `figures/`,
  *   as its commit holds them, and `expected.json`, what checking it finds. An optional
- *   `fixture.json` gives the pull request whose ref it's on and entries a folder can't hold.
+ *   `fixture.json` gives the pull request or the stack whose ref it's on, and entries a folder
+ *   can't hold.
  */
 
 import { lstatSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
@@ -230,6 +231,8 @@ export function gitReader(gitDir: string): CodeReader {
 export interface FixtureInput {
   /** The pull request whose ref the overview is on. */
   ref?: number;
+  /** The stack whose ref the overview is on, in place of a pull request's. */
+  stack?: number;
   /**
    * Entries the folder can't hold, added to its listing. A file is that many bytes of zeros, or
    * with `fails`, a file its reader fails to read.
