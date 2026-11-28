@@ -54,7 +54,7 @@ const test = base.extend<{ github: ReplayServer; remote: string; tokenFile: stri
  * #80's overview's blocks the block keys stop at, by their numbers: the tl;dr, with a term; the
  * paragraph linking to the parser; its code blocks; the paragraph with a term between them; the
  * figure; the walkthrough; the tabs; the code blocks on README.md and on the missing src/cache.ts;
- * and the fold.
+ * the fold; and the glossary.
  */
 const BLOCK = {
   tldr: 1,
@@ -69,6 +69,7 @@ const BLOCK = {
   readme: 16,
   cache: 18,
   fold: 19,
+  glossary: 23,
 } as const;
 
 /** Opens #80 on its overview, waits for its code from the local copy, and returns the tab's id. */
@@ -312,10 +313,14 @@ test(']b and [b go between the blocks, Tab between a block’s links, and ← an
   await press(page, 'Enter');
   await expect(fold).not.toHaveAttribute('open');
 
-  // At the last block, ]b says so.
+  // The glossary comes last, and Tab goes to its rows' terms. At it, ]b says it's the last.
+  await press(page, ']', 'b');
+  expect((await focused(page)).block).toBe(BLOCK.glossary);
+  await press(page, 'Tab');
+  expect(await focused(page)).toEqual({ block: BLOCK.glossary, own: false, text: 'Line' });
   await press(page, ']', 'b');
   await expect(said(page, /\bLast\b/)).toBeVisible();
-  expect((await focused(page)).block).toBe(BLOCK.fold);
+  expect((await focused(page)).block).toBe(BLOCK.glossary);
 });
 
 test('from the overview itself, Tab goes through the outline to the first block, and ⇧Tab back; a block’s menu goes to its code and copies the prompt, and gives focus back to what had it', async ({

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// Settings' Collapsed sections row: every repo's list and each repo's own, and what its field and
-// buttons write.
+// Settings' Collapsed sections and Ignored terms rows: every repo's list and each repo's own, and
+// what their fields and buttons write.
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { beforeAll, describe, expect, it, onTestFinished } from 'vitest';
@@ -9,7 +9,13 @@ import { Slot, Slots } from '../../../window/slots.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
 import { rows } from '../../settings/window/shared.ts';
 import type { ScopedValue } from '../settings.ts';
-import CollapsedRow, { Add, Lists } from './Collapsed.tsx';
+import {
+  CollapsedAdd as Add,
+  CollapsedLists as Lists,
+  CollapsedRow,
+  IgnoredLists,
+  IgnoredRow,
+} from './Lists.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -32,10 +38,10 @@ function draw(element: ReactNode): HTMLElement {
  * The row, drawn in Settings' slot, with what it asks main to write. Main hasn't said what the file
  * holds, so the row shows the setting's default: no collapsed sections.
  */
-function drawn() {
+function drawn(row = CollapsedRow) {
   const bridge = installBridge({ 'settings.set': () => undefined });
   const container = draw(
-    <Slots views={[CollapsedRow]}>
+    <Slots views={[row]}>
       <Slot slot={rows} props={{}} />
     </Slots>,
   );
@@ -186,6 +192,59 @@ describe('the Collapsed sections row', () => {
       { '*': [], 'rozed-dev/lo': ['Rollout'] },
       { '*': ['Testing', 'Rollout'], 'rozed-dev/lo': ['Rollout'] },
       { '*': ['Testing'] },
+    ]);
+  });
+});
+
+describe('the Ignored terms row', () => {
+  it('says what it holds, and that there are none with nothing listed', () => {
+    const { container } = drawn(IgnoredRow);
+    expect(container.textContent).toContain('Ignored terms');
+    expect(container.textContent).toContain(
+      'Glossary terms that show as plain text, without their definitions.',
+    );
+    expect(container.textContent).toContain('No ignored terms');
+  });
+
+  it('adds a term typed in its field to every repo’s list, the tl;dr among them', async () => {
+    const { container, writes } = drawn(IgnoredRow);
+    const field = container.querySelector<HTMLInputElement>('input')!;
+    expect(field.placeholder).toBe('Term');
+    expect(field.getAttribute('aria-label')).toBe('Term to ignore');
+    type(field, ' token   bucket ');
+    enter(field);
+    await settle();
+    type(field, 'tl;dr');
+    enter(field);
+    await settle();
+    expect(writes()).toEqual([
+      { key: 'overview.ignored', value: { '*': ['token bucket'] } },
+      { key: 'overview.ignored', value: { '*': ['tl;dr'] } },
+    ]);
+  });
+
+  it('lists every repo’s terms, then each repo’s own, with Stop ignoring and Ignore in every repo', () => {
+    const { container, changes } = control(IgnoredLists, {
+      '*': ['bucket'],
+      'rozed-dev/lo': ['bucket', 'lease'],
+    });
+    expect(scopes(container)).toEqual([
+      ['Every repo', 'bucketStop ignoring'],
+      [
+        'rozed-dev/lo · replaces every repo’s list',
+        'bucketStop ignoring',
+        'leaseIgnore in every repoStop ignoring',
+      ],
+    ]);
+    const button = (name: string) =>
+      [...container.querySelectorAll('button')].find(
+        (each) => each.getAttribute('aria-label') === name,
+      );
+    click(button('Stop ignoring bucket'));
+    click(button('Ignore lease in every repo'));
+    expect(changes).toEqual([
+      { 'rozed-dev/lo': ['bucket', 'lease'], '*': [] },
+      { '*': ['bucket', 'lease'], 'rozed-dev/lo': ['bucket', 'lease'] },
     ]);
   });
 });

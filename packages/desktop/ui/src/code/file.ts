@@ -313,6 +313,7 @@ class WholeFile implements FileView {
       case 'thread':
       case 'layer':
       case 'block':
+      case 'term':
       case 'tab':
       case 'row':
       case 'box':

@@ -146,6 +146,10 @@ function drawn(folds?: (tree: OverviewTree) => OverviewFolds): {
 const kindOf = (tree: OverviewTree, block: HTMLElement | string) =>
   typeof block === 'string' ? block : tree.blocks[blockNumber(block)!]?.kind;
 
+/** The last of the example's prose, which links to code and to a section, before its glossary. */
+const lastProse = (tree: OverviewTree, stops: readonly HTMLElement[]) =>
+  stops.findLast((stop) => kindOf(tree, stop) === 'paragraph')!;
+
 describe('the block keys', () => {
   it('go from the block with focus to the next and previous, and say so at the ends', () => {
     const { overview, stops, tree } = drawn();
@@ -153,9 +157,11 @@ describe('the block keys', () => {
     expect(focusedBlock(overview)).toBe(stops[0]);
     expect(kindOf(tree, nextBlock(overview, 1))).toBe('excerpt');
     expect(nextBlock(overview, -1)).toBe('First block');
+    // The glossary is the last: its terms' rows are stops for Tab.
     stops.at(-1)!.focus();
+    expect(kindOf(tree, stops.at(-1)!)).toBe('glossary');
     expect(nextBlock(overview, 1)).toBe('Last block');
-    expect(kindOf(tree, nextBlock(overview, -1))).toBe('details');
+    expect(kindOf(tree, nextBlock(overview, -1))).toBe('paragraph');
   });
 
   it('do nothing and say nothing while the overview draws unseen, under its placeholder', () => {
@@ -179,11 +185,11 @@ describe('the block keys', () => {
 
 describe('a control outside the blocks', () => {
   it('is one with focus, such as a section in the outline, and none in a block', () => {
-    const { overview, stops } = drawn();
+    const { overview, stops, tree } = drawn();
     const section = overview.root.querySelector<HTMLElement>('.lo-toc__item')!;
     section.focus();
     expect(looseControl(overview)).toBe(section);
-    stops.at(-1)!.querySelector<HTMLElement>('[role="link"]')!.focus();
+    lastProse(tree, stops).querySelector<HTMLElement>('[role="link"]')!.focus();
     expect(looseControl(overview)).toBeUndefined();
     stops[0]!.focus();
     expect(looseControl(overview)).toBeUndefined();
@@ -211,8 +217,8 @@ describe('a control outside the blocks', () => {
 
 describe('Tab', () => {
   it('goes round the links in the block with focus and back to the block, never leaving it', () => {
-    const { overview, stops } = drawn();
-    const last = stops.at(-1)!;
+    const { overview, stops, tree } = drawn();
+    const last = lastProse(tree, stops);
     last.focus();
     const first = nextLink(overview, 1);
     if (typeof first === 'string') throw new Error(first);
@@ -226,6 +232,21 @@ describe('Tab', () => {
     expect(nextLink(overview, -1)).toBe(first);
     last.focus();
     expect(nextLink(overview, -1)).toBe(second);
+  });
+
+  it('goes from a glossary to its terms’ rows, and back', () => {
+    const { overview, stops } = drawn();
+    const glossary = stops.at(-1)!;
+    glossary.focus();
+    const term = nextLink(overview, 1);
+    if (typeof term === 'string') throw new Error(term);
+    expect(term.textContent).toBe('Bucket');
+    expect(term.classList.contains('lo-term-row__term')).toBe(true);
+    term.focus();
+    // It opens nothing.
+    expect(followOf(overview, glossary)).toBe('Nothing to open on a term');
+    expect(followName(overview, glossary)).toBeUndefined();
+    expect(nextLink(overview, 1)).toBe(glossary);
   });
 
   it('says so in a block with nothing in it to go to', () => {
@@ -261,7 +282,7 @@ describe('following a block', () => {
       block: code,
       code: { path: 'src/limiter.ts', lines: { start: 46, end: 61 } },
     });
-    const last = stops.at(-1)!;
+    const last = lastProse(tree, stops);
     expect(followOf(overview, last)).toMatchObject({
       kind: 'code',
       code: { path: 'src/limiter.test.ts' },
@@ -270,7 +291,7 @@ describe('following a block', () => {
 
   it('follows the link in it that has focus, and opens or closes a fold', () => {
     const { overview, stops, tree } = drawn();
-    const last = stops.at(-1)!;
+    const last = lastProse(tree, stops);
     const link = nextLink(overview, 1);
     last.focus();
     const rest = [...last.querySelectorAll<HTMLElement>('[role="link"]')].at(-1)!;
@@ -289,7 +310,7 @@ describe('following a block', () => {
     const code = stops.find((stop) => kindOf(tree, stop) === 'excerpt')!;
     expect(followName(overview, code)).toBeUndefined();
     // Prose whose first link is to code goes there; one with focus on a link opens it.
-    const last = stops.at(-1)!;
+    const last = lastProse(tree, stops);
     expect(followName(overview, last)).toBeUndefined();
     last.focus();
     [...last.querySelectorAll<HTMLElement>('[role="link"]')].at(-1)!.focus();
@@ -329,7 +350,7 @@ function headOf(overview: DrawnOverview, name: string): HTMLElement {
 
 describe('a section’s heading', () => {
   it('collapsed, is the block the keys stop at for its section, which ⏎ expands', () => {
-    const { overview, stops } = drawn(foldsOf('Where to look'));
+    const { overview, stops, tree } = drawn(foldsOf('Where to look'));
     const head = headOf(overview, 'Where to look');
     expect(stops).toContain(head);
     const before = stops[stops.indexOf(head) - 1]!;
@@ -337,8 +358,8 @@ describe('a section’s heading', () => {
     expect(nextBlock(overview, 1)).toBe(head);
     head.querySelector<HTMLElement>('h2')!.focus();
     expect(focusedBlock(overview)).toBe(head);
-    // What's under it isn't there: it's the last block, as the glossary after it has none.
-    expect(nextBlock(overview, 1)).toBe('Last block');
+    // What's under it isn't there: the glossary after it is next.
+    expect(kindOf(tree, nextBlock(overview, 1))).toBe('glossary');
     expect(nextBlock(overview, -1)).toBe(before);
     expect(followOf(overview, head)).toEqual({ kind: 'section', block: head });
     expect(followName(overview, head)).toBe('Expand');

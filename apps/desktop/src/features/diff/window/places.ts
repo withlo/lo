@@ -328,6 +328,7 @@ function placeOf(target: Target): { file: string; side: Side } | undefined {
     case 'thread':
     case 'layer':
     case 'block':
+    case 'term':
     case 'tab':
     case 'row':
     case 'box':

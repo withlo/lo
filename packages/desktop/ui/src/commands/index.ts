@@ -170,6 +170,7 @@ export {
   targetKinds,
   together,
   type BlockTarget,
+  type TermTarget,
   type DraftTarget,
   type NoteTarget,
   type FileTarget,

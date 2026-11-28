@@ -25,7 +25,15 @@ export {
   TLDR_ANCHOR,
   type OverviewSection,
 } from './sections.ts';
-export { alphabetical, type OverviewTerms, type TermShown } from './terms.ts';
+export {
+  alphabetical,
+  TERM_ATTRIBUTE,
+  termAt,
+  type OverviewTerms,
+  type TermAt,
+  type TermMenu,
+  type TermShown,
+} from './terms.ts';
 export { glossaryIn, type GlossaryParts } from './Glossary.tsx';
 export { cardsOpen, closeCards, HOVER_CLOSE_MS, HOVER_OPEN_MS } from './Term.tsx';
 export { lineRange } from './placeholders.tsx';

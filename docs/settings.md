@@ -70,6 +70,7 @@ and keeps it across a restart.
 | `overview.on`         | true or false                             | `true`       | Whether Lo has overviews. Off, there's no Overview view, no overview notes, marks, prompts or skill, and Lo reads no overview.                                                                                                                                                             |
 | `overview.auto`       | true or false                             | `true`       | Whether coding agents write an overview by themselves, after they open a pull request or push to one. The overview skill's hook reads it, and Lo shows it in Settings whether there are overviews or not.                                                                                  |
 | `overview.collapsed`  | lists of headings, by repo or "*"         | `{}`         | The overview sections that start collapsed, by heading, as below. The tl;dr always shows.                                                                                                                                                                                                  |
+| `overview.ignored`    | lists of terms, by repo or "*"            | `{}`         | The glossary terms that show as plain text, without their definitions, as below.                                                                                                                                                                                                           |
 | `tab.open`            | overview, timeline or diff                | `"overview"` | What a pull request opens on. Overview, for a pull request with no overview, or with `overview.on` off, opens on the timeline.                                                                                                                                                             |
 | `diff.layout`         | split or inline                           | `"split"`    | The diff's layout: the two sides next to each other, or one column of both. `gi` switches it.                                                                                                                                                                                              |
 | `diff.whitespace`     | show or hide                              | `"show"`     | Whether the diff shows changes to whitespace alone. `gw` switches it. GitHub's diff, shown until the local copy is ready, shows them either way.                                                                                                                                           |
@@ -122,6 +123,32 @@ list is every repo's, and a repo's own list, under its name, replaces it there:
 - An entry Lo can't read, as one that isn't text, or a key that's neither `"*"` nor a repo, is
   reported and ignored, and stays in the file. Lo writes the value whole, so a comment inside it
   goes.
+
+## Ignored terms
+
+`overview.ignored` lists the glossary terms you'd rather read as plain text, kept as the collapsed
+sections are: every repo's under `"*"`, and a repo's own, under its name, in its place there.
+
+```json
+{
+  "overview.ignored": {
+    "*": ["request"],
+    "fieldwork/atlas-api": ["request", "bucket"]
+  }
+}
+```
+
+- A term matches by its name or any of its aliases, as plain text, ignoring case and runs of spaces.
+  An ignored term is plain text in every overview: no underline, no card, and no stop for `Tab`. Its
+  row in an overview's Glossary section moves to the Ignored group at the section's end.
+- A term's menu writes the lists, as a section's does: "Ignore in this repo" and "Ignore in every
+  repo". The toast that says so has "Undo", which takes out only what the switch put in, whatever
+  changed since. "Stop ignoring" on a row of the Ignored group takes the term out of every list.
+- Settings adds a term to every repo's list, and removes one from any list. A repo's "Reset" takes
+  its own list out.
+- An entry may be as long as a term may be: 1,024 characters. An entry Lo can't read, as a longer
+  one, is reported and ignored, and stays in the file. Lo writes the value whole, so a comment
+  inside it goes.
 
 ## Trusted repos and pull requests
 

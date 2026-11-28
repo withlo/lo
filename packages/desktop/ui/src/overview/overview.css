@@ -125,6 +125,38 @@
 }
 
 /*
+ * The Glossary section's Ignored group, at its list's end: a fold's row, its chevron, "Ignored" and
+ * how many, which opens and closes the rows of the terms the reader ignores under it.
+ */
+.lo-glossary__fold {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--lo-border-subtle);
+  font: 600 14px/20px var(--lo-font-ui);
+  color: var(--lo-fg);
+  text-align: start;
+}
+.lo-glossary__fold:hover {
+  background-color: var(--lo-hover);
+}
+.lo-glossary__fold:focus-visible {
+  box-shadow: var(--lo-ring-inset);
+}
+
+/* A term the reader ignores, in the text: its words, as those around it, with nothing to point at. */
+.lo-term.is-plain,
+.lo-term.is-plain:hover {
+  color: inherit;
+  text-decoration-color: transparent;
+  background-color: transparent;
+  cursor: inherit;
+}
+
+/*
  * An overview section's heading (`SectionHead`): where an `h2` of the article would be, with its
  * room above and below, its chevron in the article's 20 px of room at its left, and its `⋯` at the
  * measure's right edge, both centred on the heading's first line. Collapsed, the heading is

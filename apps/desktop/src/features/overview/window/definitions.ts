@@ -4,13 +4,15 @@
 // own for every term while the repository has none, or Lo can't read them. Only the overview's
 // marks tag a term: an unmarked one is never new or changed, whatever the repository holds. While
 // the pull request is open, a marked term's tag follows the repository's definitions as they are
-// now. A plain function of the overview, the definitions and the pull request, tested alone; the
-// views draw what it says.
+// now. A term the reader ignores, by its name or an alias, is still listed, and still counts, but is
+// drawn as plain text. A plain function of the overview, the definitions, the pull request and the
+// terms ignored, tested alone; the views draw what it says.
 
 import type { Account, Definition, GlossaryEntry, Origin, OverviewBlock } from '@lo/artifact';
 
 import type { PullState } from '../../tab/contract.ts';
 import type { StoredTerm } from '../jobs.ts';
+import { entryKey } from '../settings.ts';
 import { storedTerm, type RepoTerms } from './terms.ts';
 
 /** Who wrote a definition, where it came from, and when, as the repository's definitions say. */
@@ -52,7 +54,8 @@ export interface Before extends TermByline {
  *   holds that definition: as the definition that shows, as the one a changed term replaces on a
  *   pull request that didn't merge, or as the one a merged pull request's merge brought, while
  *   it's still the current one. None where it would name who wrote a definition nothing shows;
- * - `own`: the overview's own entry, when its glossary defines it.
+ * - `own`: the overview's own entry, when its glossary defines it;
+ * - `ignored`: the reader ignores it, by any name it goes by (`namesOf`): it's plain text.
  */
 export interface ShownTerm {
   key: string;
@@ -64,6 +67,41 @@ export interface ShownTerm {
   stored: StoredTerm | undefined;
   byline: TermByline | undefined;
   own: Definition | undefined;
+  ignored: boolean;
+}
+
+/** The names a term goes by, as a list of the terms the reader ignores names it. */
+export interface TermNames {
+  /**
+   * The name a list writes it by: the repository's for it, where their definitions hold it, so
+   * every overview's use of it matches; else the overview's.
+   */
+  readonly name: string;
+  /** The others it goes by: its aliases, and the overview's own name and key for it. */
+  readonly also: readonly string[];
+}
+
+/** The names `term` goes by: its own, and the others. */
+export function namesOf(term: Pick<ShownTerm, 'key' | 'name' | 'stored'>): TermNames {
+  const name = term.stored?.term ?? term.name;
+  const seen = new Set([entryKey(name)]);
+  const also: string[] = [];
+  for (const each of [
+    term.name,
+    term.key,
+    ...(term.stored ? [term.stored.key, ...term.stored.aliases] : []),
+  ]) {
+    const key = entryKey(each);
+    if (key === '' || seen.has(key)) continue;
+    seen.add(key);
+    also.push(each);
+  }
+  return { name, also };
+}
+
+/** Whether `names` holds a name a list holds, by the list's entries' keys (`entryKey`). */
+export function ignoredBy(keys: ReadonlySet<string>, names: TermNames): boolean {
+  return [names.name, ...names.also].some((name) => keys.has(entryKey(name)));
 }
 
 /**
@@ -92,16 +130,21 @@ export interface Definitions {
  */
 export type Subject = { kind: 'pull'; number: number; state: PullState } | { kind: 'stack' };
 
+/** No term ignored. */
+const NONE: ReadonlySet<string> = new Set();
+
 /**
  * The definitions an overview shows: its glossary's items, `glossary`, as its tree holds them, with
  * `entries`, the same as written, which the repository's definitions are compared with; the
- * repository's definitions, `terms`; and what the overview is of, `subject`.
+ * repository's definitions, `terms`; what the overview is of, `subject`; and the terms the reader
+ * ignores, `ignored`, by the keys (`entryKey`) of the entries of the list that applies in its repo.
  */
 export function definitionsOf(
   glossary: readonly Definition[],
   entries: readonly GlossaryEntry[],
   terms: RepoTerms,
   subject: Subject,
+  ignored: ReadonlySet<string> = NONE,
 ): Definitions {
   const store = terms.kind === 'read' ? terms.terms : undefined;
   // A mark is moot only while the pull request can still change the definitions.
@@ -126,6 +169,7 @@ export function definitionsOf(
       stored,
       byline: stored && (theirs || current(stored, tag, subject)) ? bylineOf(stored) : undefined,
       own,
+      ignored: ignoredBy(ignored, namesOf({ key: own.key, name: own.name, stored })),
     });
   }
 
@@ -153,6 +197,7 @@ export function definitionsOf(
         stored,
         byline: bylineOf(stored),
         own: undefined,
+        ignored: ignoredBy(ignored, namesOf({ key, name: stored.term, stored })),
       };
     },
     marked,
