@@ -112,9 +112,15 @@ export interface ThreadProps {
    * them, so pinning it moves nothing.
    */
   variant?: 'card' | 'popover' | undefined;
-  /** In a popover, what the thread is on, in its head: "Lines 10–35". */
+  /**
+   * What the thread is on, in its head: "Lines 10–35". A popover's always says it; a card's, under
+   * its last line, where it's on more than one.
+   */
   lines?: string | undefined;
-  /** In a popover, its Close, at the head's end: the popover's, on its first thread. */
+  /**
+   * In a popover, its Close, at the head's end: the popover's, on its first thread. The threads
+   * after it keep its room, so their heads' controls line up.
+   */
   onClose?: (() => void) | undefined;
   /** Close's keys, as this system shows them. */
   closeKeys?: readonly string[] | undefined;
@@ -187,6 +193,11 @@ export interface SentPostProps {
    * the thread takes the card's place. A reply's or an edit's has none.
    */
   state?: 'Unresolved' | 'Pending' | undefined;
+  /**
+   * With `state`, what the thread will be on, in that head row, as its card will say it: in a
+   * popover always, and on a card where it's on more than one line.
+   */
+  lines?: string | undefined;
   /** Who it's from: the account that wrote it, where that's known. */
   author?: string | undefined;
   image?: string | undefined;
@@ -217,6 +228,7 @@ export interface SentPostProps {
  */
 export function SentPost({
   state,
+  lines,
   author,
   image,
   label = 'Sending…',
@@ -260,6 +272,7 @@ export function SentPost({
         <div className={HEAD_ROW}>
           <span className={HEAD_WORDS}>
             <Tag tone="warning">{state}</Tag>
+            {lines !== undefined && <span className="min-w-0 truncate">{lines}</span>}
             <span className="whitespace-nowrap">1 comment</span>
           </span>
         </div>
@@ -560,7 +573,10 @@ export function Thread({
           <span className="flex flex-none items-center gap-2">
             {resolve}
             {menu && <MoreButton />}
-            {onClose && (
+            {onClose === undefined ? (
+              // After the first, Close's room, so Resolve and `⋯` line up with the first's.
+              <span aria-hidden="true" className="w-control-h-sm flex-none" />
+            ) : (
               // Only a pinned popover has it, in room a preview keeps, so pinning moves nothing.
               <span
                 aria-hidden={focused ? undefined : true}
@@ -587,6 +603,7 @@ export function Thread({
           {/* The tags and the count wrap in the room the buttons leave, which they never give up. */}
           <span className={HEAD_WORDS}>
             {tagged}
+            {lines !== undefined && <span className="min-w-0 truncate">{lines}</span>}
             {/* A thread only in your review says so once, in its tag: here it's counted as any is. */}
             <span className="whitespace-nowrap">{counted(comments, pendingAll)}</span>
           </span>

@@ -88,12 +88,13 @@ describe('Note', () => {
     expect(ran).toEqual([['diff.comment', LINE]]);
   });
 
-  it('as a card, has no lines in its head, and its collapse closes it', () => {
+  it('as a card, says its lines only when given them, and its collapse closes it', () => {
     held();
     const onClose = vi.fn<() => void>();
     const host = render(<Note {...PROPS} onClose={onClose} />);
     expect(host.querySelector('[data-pop-head]')).toBeNull();
-    expect(host.textContent).not.toContain('Lines 2–15');
+    expect(host.textContent).toContain('Lines 2–15');
+    expect(render(<Note {...PROPS} lines={undefined} />).textContent).not.toContain('Lines 2–15');
     const collapse = host.querySelector<HTMLElement>(`[aria-label="${CLOSE_NOTE}"]`)!;
     expect(collapse.getAttribute('aria-expanded')).toBe('true');
     click(collapse);
@@ -116,6 +117,9 @@ describe('Note', () => {
     expect([...notes].map((note) => note.dataset.noteKey)).toEqual(['n1', 'n2']);
     expect(notes[0]!.className).toBe('');
     expect(notes[1]!.className).toContain('border-t');
+    // With no Close of its own, the second keeps its room, so its "Show in overview" lines up.
+    const room = notes[1]!.querySelector('[data-pop-head] [aria-hidden="true"].w-control-h-sm');
+    expect(room).not.toBeNull();
     expect(host.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe(
       '2 overview notes, lines 2–15',
     );

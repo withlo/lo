@@ -53,6 +53,7 @@
   --lo-warning: #e1a536; /* Warnings, running checks, out-of-date notices, pending comments: text and icons. */
   --lo-warning-bg: #2c210e; /* Warnings, running checks, out-of-date notices, pending comments: fills behind warning text. */
   --lo-warning-border: #543e1a; /* Warnings, running checks, out-of-date notices, pending comments: outlines of warning tags, banners and chips. */
+  --lo-warning-line: #e1a53680; /* Warning hairlines: unresolved and pending threads' stems and ticks at rest. */
   --lo-danger: #ea6a66; /* Errors, failed checks, refusals, destructive buttons: text and icons. */
   --lo-danger-bg: #2f1919; /* Errors, failed checks, refusals, destructive buttons: fills behind danger text. */
   --lo-danger-border: #5d2d2b; /* Errors, failed checks, refusals, destructive buttons: outlines of danger tags, banners and chips. */
@@ -225,6 +226,7 @@
   --lo-warning: #8f5d04;
   --lo-warning-bg: #ffedd8;
   --lo-warning-border: #f2c997;
+  --lo-warning-line: #8f5d0473;
   --lo-danger: #ba3538;
   --lo-danger-bg: #ffebea;
   --lo-danger-border: #fcc0bb;

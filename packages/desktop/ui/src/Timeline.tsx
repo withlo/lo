@@ -853,9 +853,10 @@ function CardSkeleton({ lines }: { lines: readonly string[] }) {
 }
 
 /**
- * The timeline as it lays out while it's read: the description's card, events and a comment's card,
- * each a row on the rail at its usual height, with bars where the words will be. Its rows take its
- * place in one Swap. Put it in `Skeletons`, which says what's read.
+ * The timeline as it lays out while it's read: the description's card, events and comments' cards,
+ * each a row on the rail at its usual height, with bars where the words will be: as many as fill
+ * the pane in a window of the usual height, cut off at its foot. Its rows take its place in one
+ * Swap. Put it in `Skeletons`, which says what's read.
  */
 export function TimelineSkeleton() {
   return (
@@ -867,6 +868,12 @@ export function TimelineSkeleton() {
           <EventSkeleton width="w-2/5" />
           <CardSkeleton lines={['w-full', 'w-1/2']} />
           <EventSkeleton width="w-1/4" />
+          <EventSkeleton width="w-1/3" />
+          <CardSkeleton lines={['w-full', 'w-3/5']} />
+          <EventSkeleton width="w-2/5" />
+          <EventSkeleton width="w-1/4" />
+          <CardSkeleton lines={['w-full', 'w-full', 'w-1/2']} />
+          <EventSkeleton width="w-1/3" />
         </ol>
       </div>
     </div>

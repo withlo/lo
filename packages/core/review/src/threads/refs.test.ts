@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { Line } from '../threads.ts';
-import { lineRefText } from './refs.ts';
+import { lineRefText, onLines } from './refs.ts';
 
 describe('a line reference in words', () => {
   test('names a line, a span, the old side, the file, and the revision last', () => {
@@ -23,4 +23,14 @@ describe('a line reference in words', () => {
     expect(lineRefText({ lines: { end: Line.right(2) } }, true)).toBe('line 2');
     expect(lineRefText({ lines: { end: Line.left(30) } }, true)).toBe('line 30, removed');
   });
+});
+
+test('a reference is to more than one line only where it spans lines', () => {
+  expect(onLines({ lines: { start: Line.right(39), end: Line.right(41) } })).toBe(true);
+  expect(onLines({ lines: { start: Line.left(3), end: Line.right(5) } })).toBe(true);
+  expect(onLines({ lines: { start: Line.left(3), end: Line.right(3) } })).toBe(true);
+  expect(onLines({ lines: { start: Line.right(41), end: Line.right(41) } })).toBe(false);
+  expect(onLines({ lines: { start: null, end: Line.right(41) } })).toBe(false);
+  expect(onLines({ lines: null })).toBe(false);
+  expect(onLines({ lines: undefined, revision: 'r1' })).toBe(false);
 });

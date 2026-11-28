@@ -220,8 +220,9 @@ export function Placeholder({
   useKeys();
   const waiting = !blocked(view);
   if (shaped) {
+    // Laid out to fill the view, the skeleton is cut off at its foot: a wait never scrolls.
     return (
-      <div className="h-full" data-lo-placeholder aria-busy={waiting || undefined}>
+      <div className="h-full overflow-hidden" data-lo-placeholder aria-busy={waiting || undefined}>
         {waiting && (
           <Skeletons since={since} status={status ?? 'Opening pull request…'}>
             {skeleton}

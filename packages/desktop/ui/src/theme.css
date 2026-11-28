@@ -127,6 +127,7 @@
   --color-warning: var(--lo-warning);
   --color-warning-bg: var(--lo-warning-bg);
   --color-warning-border: var(--lo-warning-border);
+  --color-warning-line: var(--lo-warning-line);
   --color-danger: var(--lo-danger);
   --color-danger-bg: var(--lo-danger-bg);
   --color-danger-border: var(--lo-danger-border);

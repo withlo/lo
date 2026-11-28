@@ -21,7 +21,10 @@ export interface NoteProps {
   label: string;
   /** The section of the overview it's from, by its name, in its head. */
   section?: string | undefined;
-  /** In a popover, the lines it's on, in its head: "Lines 2–15". */
+  /**
+   * The lines it's on, in its head: "Lines 2–15". A popover's always says them; a card's, under its
+   * last line, where it's on more than one.
+   */
   lines?: string | undefined;
   /**
    * In a popover, the popover pinned: its key chips and its Close show, in room a preview keeps for
@@ -32,8 +35,8 @@ export interface NoteProps {
   /** "Show in overview": the command its button runs, and what it runs on. */
   show?: { readonly command: string; readonly target?: Target | undefined } | undefined;
   /**
-   * In a popover, its Close: the popover's, on its first note. On a card, its collapse control,
-   * which closes it.
+   * In a popover, its Close: the popover's, on its first note; the notes after it keep its room, so
+   * their heads' controls line up. On a card, its collapse control, which closes it.
    */
   onClose?: (() => void) | undefined;
   /** Close's keys, as this system shows them. */
@@ -50,7 +53,7 @@ const STEPS = ['detail', 'keys', 'labels'];
 
 /**
  * What an overview says of lines of a diff, opened from its ball, laid out as a thread is: its head
- * one line, with the ball, "Overview", its lines in a popover and its section, and at the right
+ * one line, with the ball, "Overview", its lines and its section, and at the right
  * "Show in overview" and Close, or a card's collapse; then its words, in a comment's type and
  * colour, flush with the head's left edge. A preview shows no key chips and no Close, and keeps
  * their room. Its words are the caller's, drawn already, in the element a code view measures them
@@ -71,8 +74,10 @@ export function Note({
   useGiveUp(head, STEPS);
   const popover = variant === 'popover';
   const close =
-    onClose &&
-    (popover ? (
+    onClose === undefined ? (
+      // After the first in a popover, Close's room, so "Show in overview" lines up with the first's.
+      popover && <span aria-hidden="true" className="w-control-h-sm flex-none" />
+    ) : popover ? (
       // Only a pinned popover has it, in room a preview keeps, so pinning moves nothing.
       <span
         aria-hidden={focused ? undefined : true}
@@ -103,7 +108,7 @@ export function Note({
       >
         <Icon name="chevron-up" size={16} />
       </Button>
-    ));
+    );
   return (
     <div
       role="group"
@@ -122,7 +127,7 @@ export function Note({
         <span className="flex min-w-0 flex-1 items-center gap-8">
           <span aria-hidden="true" className="note-ball" />
           <span className="flex-none text-small-medium text-fg">Overview</span>
-          {popover && lines !== undefined && (
+          {lines !== undefined && (
             <span data-fit className="min-w-cut truncate">
               {lines}
             </span>

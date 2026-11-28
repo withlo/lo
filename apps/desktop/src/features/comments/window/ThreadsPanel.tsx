@@ -194,10 +194,11 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   const empty = emptyOf(threads, filter, run?.layers, signed);
   const keys = rowKeys(groups);
   const on = focusedIn(keys, focused);
-  const counts = filterCounts(
-    listable(threads),
-    acting?.kind === 'account' ? acting.login : undefined,
-  );
+  // Counted once the threads are read: until then there's nothing true to say.
+  const counts =
+    threads?.status === 'ready'
+      ? filterCounts(listable(threads), acting?.kind === 'account' ? acting.login : undefined)
+      : undefined;
 
   // Keys in the list act on the thread the keyboard is on.
   const stop = useRef<(() => void) | undefined>(undefined);
@@ -258,10 +259,11 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
       <div className="flex flex-none items-center gap-6 ps-12 pe-8 pb-8">
         <ThreadFilter value={filter} counts={counts} onChange={setFilter} keys={filters} />
       </div>
-      {/* Busy while it waits on the first read, so a screen reader waits for the list. */}
+      {/* Busy while it waits on the first read, so a screen reader waits for the list, and its
+          skeleton is cut off at the panel's foot: a wait never scrolls. */}
       <div
-        className="min-h-0 flex-1 overflow-auto"
-        aria-busy={empty.kind === 'reading' || undefined}
+        className={`min-h-0 flex-1 ${reading ? 'overflow-hidden' : 'overflow-auto'}`}
+        aria-busy={reading || undefined}
       >
         <ThreadList
           groups={groups}

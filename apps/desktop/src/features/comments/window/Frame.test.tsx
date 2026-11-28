@@ -16,10 +16,15 @@ vi.mock('../../../window/commands/registry.ts', () => ({
 }));
 
 /** What the window knows as the frame is drawn: who's signed in, and whether a review is pending. */
-const said = vi.hoisted(() => ({ accounts: 1, pending: false }));
+const said = vi.hoisted(() => ({
+  accounts: 1,
+  pending: false,
+  threads: 'between' as 'beside' | 'between',
+}));
 vi.mock('../../accounts/window/shared.ts', () => ({
   useAccounts: () => Array.from({ length: said.accounts }, (_, at) => ({ login: `account-${at}` })),
 }));
+vi.mock('./mode.ts', () => ({ threadsMode: () => said.threads }));
 vi.mock('../../tab/window/shared.ts', async (original) => ({
   ...(await original<typeof TabShared>()),
   usePull: () => ({
@@ -69,6 +74,7 @@ test('the frame is drawn as the box is made, not after', () => {
 afterEach(() => {
   said.accounts = 1;
   said.pending = false;
+  said.threads = 'between';
 });
 
 test('a box sending its comment notes its text, so the comment’s card shows it until GitHub’s rendering is in', async () => {
@@ -106,6 +112,42 @@ const ON_LINE: DraftPlaceRow = {
   path: 'src/backoff.ts',
   lines: { start: null, end: { side: 'RIGHT', number: 5 } },
 };
+
+/** The head row of the card the comment of a box at `place` is drawn as while it's sent. */
+async function sentHead(place: DraftPlaceRow): Promise<string | undefined> {
+  const box = new Box('v10', place, 'now', 'On its way');
+  const parts = {
+    head: part(),
+    note: part(),
+    preview: part(),
+    sent: part(),
+    dropzone: part(),
+    uploads: part(),
+    foot: part(),
+  };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the frame reads none of it here.
+  const frame = frameOf(box)(parts, {} as Composer);
+  box.set({ busy: true });
+  await vi.waitFor(() => expect(parts.sent.textContent).toContain('1 comment'));
+  const row = parts.sent.querySelector('.border-b')?.textContent;
+  frame.destroy();
+  return row;
+}
+
+test('a new thread’s sent comment says what it’s on in its head row, where its card will', async () => {
+  const lines: DraftPlaceRow = {
+    kind: 'thread',
+    commit: 'a'.repeat(40),
+    path: 'src/backoff.ts',
+    lines: { start: { side: 'RIGHT', number: 3 }, end: { side: 'RIGHT', number: 5 } },
+  };
+  // Between lines, a card says its lines where it's on more than one.
+  expect(await sentHead(lines)).toBe('UnresolvedLines 3–51 comment');
+  expect(await sentHead(ON_LINE)).toBe('Unresolved1 comment');
+  // Beside them, its popover's head always says them.
+  said.threads = 'beside';
+  expect(await sentHead(ON_LINE)).toBe('UnresolvedLine 51 comment');
+});
 
 /**
  * What a button is called. One that sends also holds what it says while it's working, out of sight

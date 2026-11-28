@@ -20,12 +20,19 @@ function lineWords(line: Line): string {
   return line.side === 'RIGHT' ? `${line.number}` : `${line.number}, removed`;
 }
 
+/** Whether a span starts on a line of its own: on more than one line. */
+function spans({ start, end }: NonNullable<LineRef['lines']>): boolean {
+  return (
+    start !== null &&
+    start !== undefined &&
+    (start.side !== end.side || start.number !== end.number)
+  );
+}
+
 function linesText(lines: NonNullable<LineRef['lines']> | null): string {
   if (!lines) return 'File';
   const { start, end } = lines;
-  if (!start || (start.side === end.side && start.number === end.number)) {
-    return `Line ${lineWords(end)}`;
-  }
+  if (!start || !spans(lines)) return `Line ${lineWords(end)}`;
   if (start.side === end.side) return `Lines ${start.number}–${lineWords(end)}`;
   return `Line ${lineWords(start)}, to line ${lineWords(end)}`;
 }
@@ -42,4 +49,12 @@ export function lineRefText({ lines, revision }: LineRef, after = false): string
   if (named === undefined) return revision ?? '';
   const on = after ? named.charAt(0).toLowerCase() + named.slice(1) : named;
   return revision === undefined ? on : `${on} · ${revision}`;
+}
+
+/**
+ * Whether a line reference is to more than one line, "Lines 39–41" or "Line 3, removed, to line
+ * 5", rather than one line, the file, or no line: what's under its last line says its lines then.
+ */
+export function onLines({ lines }: LineRef): boolean {
+  return lines !== null && lines !== undefined && spans(lines);
 }

@@ -366,14 +366,16 @@
  * A range's stem, 2 px wide in its slot, which `ranges.ts` places across the lane: from the middle
  * of its first line's first row, where its tick turns toward the code, to 2 px above its mark on
  * its last, skipping the first row of a line that holds another range's mark, and on under it.
- * Each keeps its own colour.
+ * Each keeps its own colour. A stem is drawn a row at a time, so its pieces are square where they
+ * meet, and only its ends are round: the top where it starts, at its tick or under a mark, and the
+ * foot over its own mark.
  */
 .lo-stem {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 2px;
-  border-radius: 1px;
+  border-radius: 0;
 }
 .lo-stem--from-mid {
   top: calc(var(--lo-code-line) / 2 - 1px);
@@ -381,9 +383,16 @@
 .lo-stem--from-under {
   top: var(--lo-code-line);
 }
+.lo-stem--from-mid,
+.lo-stem--from-under {
+  border-top-left-radius: 1px;
+  border-top-right-radius: 1px;
+}
 .lo-stem--to-mark {
   bottom: auto;
   height: calc(var(--mark-top) - 2px);
+  border-bottom-left-radius: 1px;
+  border-bottom-right-radius: 1px;
 }
 /* The tick, 2 px tall, from the outermost stem that starts on the row to 2 px short of the lane's edge. */
 .lo-tick {
@@ -396,8 +405,9 @@
 .lo-tick.is-under {
   top: calc(var(--lo-code-line) - 2px);
 }
+/* At rest, an unresolved or pending thread's stem is a hairline of its amber. */
 .lo-stem--warn {
-  background-color: var(--lo-warning-border);
+  background-color: var(--lo-warning-line);
 }
 .lo-stem--quiet,
 .lo-stem--muted {
@@ -500,6 +510,19 @@
   background-image:
     linear-gradient(var(--lo-land, transparent), var(--lo-land, transparent)),
     linear-gradient(var(--lo-ground), var(--lo-ground));
+}
+/*
+ * Between them, on the range's side, a fold and empty space take the same ground, over all of their
+ * own (a gap's hatch, a fold's hover), so the range reads as one block (`ranges.ts` marks them).
+ */
+.lo-app .cm-editor :is(.lo-spacer, .lo-collapsed).is-lit {
+  --lo-ground: var(--lo-selected);
+}
+.lo-app .cm-editor :is(.lo-spacer, .lo-collapsed).is-picked {
+  --lo-ground: var(--lo-code-line-selected);
+}
+.lo-app .cm-editor :is(.lo-spacer, .lo-collapsed):is(.is-lit, .is-picked) {
+  box-shadow: inset 0 0 0 100vmax var(--lo-ground);
 }
 /*
  * The threads' popover, beside lines: in a layer of the scroll the code is in (which the box that

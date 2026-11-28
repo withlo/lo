@@ -3513,6 +3513,40 @@ describe('threads beside lines', () => {
     expect(newBubble().getAttribute('aria-expanded')).toBe('false');
   });
 
+  test('the folds and empty space between a lit range’s lines take its ground, beside them too', () => {
+    const shown = open(events(), { threads: 'beside' });
+    // New lines 8 to 38 of `a`: over its first two folds, not its last.
+    // (Empty space is drawn as its lines are measured, which they aren't here.)
+    shown.setThreads(
+      [ranged('one', at('a', 'new', 38), { side: 'new', line: 8 })],
+      plain().render,
+      {
+        popover: popped().render,
+      },
+    );
+    const content = parent!.querySelector('.cm-content[aria-label="After"]')!;
+    const editor = content.closest('.cm-editor')!;
+    const filled = () =>
+      [...content.querySelectorAll(':scope > :is(.lo-collapsed, .lo-spacer)')].map(
+        (each) =>
+          `${each.classList.contains('lo-spacer') ? 'space' : 'fold'}${each.classList.contains('is-lit') ? ' lit' : ''}`,
+      );
+    expect(filled()).toEqual(['fold', 'fold', 'fold']);
+    expect(shown.pinThread('one')).toBe(true);
+    expect(filled()).toEqual(['fold lit', 'fold lit', 'fold']);
+    // Beside each, the numbers and the lane: 14 lines and the two folds.
+    expect(editor.querySelectorAll('.cm-lineNumbers .cm-gutterElement.is-lit')).toHaveLength(16);
+    expect(editor.querySelectorAll('.lo-threadlane .cm-gutterElement.is-lit')).toHaveLength(16);
+    // Nothing on the other side is lit.
+    const before = parent!
+      .querySelector('.cm-content[aria-label="Before"]')!
+      .closest('.cm-editor')!;
+    expect(before.querySelectorAll('.is-lit, .lo-lit')).toHaveLength(0);
+    expect(shown.closePopover()).toBe(true);
+    expect(filled()).toEqual(['fold', 'fold', 'fold']);
+    expect(editor.querySelectorAll('.is-lit, .lo-lit')).toHaveLength(0);
+  });
+
   test('the pointer at rest on a mark previews it, pinned by nothing, focus staying put', () => {
     vi.useFakeTimers();
     try {

@@ -131,7 +131,31 @@ function boxChildren(holder: Element): Element[] {
 function fits(element: HTMLElement): boolean {
   if (element.scrollWidth > element.clientWidth) return false;
   for (const each of element.querySelectorAll<HTMLElement>('[data-fit]')) {
-    if (each.scrollWidth > each.clientWidth) return false;
+    if (cutShort(each)) return false;
   }
   return true;
+}
+
+/**
+ * Whether `element` is narrower than what it holds, by as little as a fraction of a pixel, which
+ * cuts its end short all the same. Its widths in whole pixels miss that, so what it holds is
+ * measured as it's laid out.
+ */
+function cutShort(element: HTMLElement): boolean {
+  if (element.scrollWidth > element.clientWidth) return true;
+  const range = element.ownerDocument.createRange();
+  range.selectNodeContents(element);
+  // A test's page lays nothing out.
+  if (typeof range.getBoundingClientRect !== 'function') return false;
+  const { width } = element.getBoundingClientRect();
+  if (element.offsetWidth === 0) return false;
+  const style = getComputedStyle(element);
+  const edges =
+    Number.parseFloat(style.paddingLeft) +
+    Number.parseFloat(style.paddingRight) +
+    Number.parseFloat(style.borderLeftWidth) +
+    Number.parseFloat(style.borderRightWidth);
+  // Both are measured on screen, as a popover opening scales them: its edges are scaled the same.
+  const room = width - edges * (width / element.offsetWidth);
+  return range.getBoundingClientRect().width - room > 0.01;
 }
