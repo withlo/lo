@@ -165,6 +165,40 @@ describe('a right-click menu', () => {
     ]);
   });
 
+  it('starts a section at a command whose place is apart, whatever its group', () => {
+    const box = defineCommands('comments', {
+      above: {
+        label: 'Add line above',
+        group: 'Comments',
+        keys: [],
+        targets: ['lines'],
+        menu: { on: 'lines', order: 10 },
+      },
+      below: {
+        label: 'Add line below',
+        group: 'Comments',
+        keys: [],
+        targets: ['lines'],
+        menu: { on: 'lines', order: 20 },
+      },
+      toFile: {
+        label: 'Move comment to file',
+        group: 'Comments',
+        keys: [],
+        targets: ['lines'],
+        menu: { on: 'lines', order: 30, apart: true },
+      },
+    });
+    const apart = new Registry({
+      system: 'mac',
+      commands: handlers(box, { above: run, below: run, toFile: run }),
+    });
+    const sections = menuSections(apart, { kind: 'lines', box: 'b' }).map((section) =>
+      section.map((item) => item.label),
+    );
+    expect(sections).toEqual([['Add line above', 'Add line below'], ['Move comment to file']]);
+  });
+
   it('leaves out a command its handler doesn’t list for the target', () => {
     const listedOn = new Registry({
       system: 'mac',

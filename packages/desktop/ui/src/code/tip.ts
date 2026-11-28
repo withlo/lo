@@ -19,8 +19,11 @@ export const TIP_DELAY = 500;
 const GAP = 6;
 const EDGE = 8;
 
-/** What marks an element as a control with a tip: the command it runs, or a tip of its own. */
-export const TIPPED = '[data-command], [data-tip]';
+/**
+ * What marks an element as a control with a tip: the command it runs, a tip of its own, or an end
+ * of an open comment box's bracket, which says which end it is.
+ */
+export const TIPPED = '[data-command], [data-tip], [data-handle]';
 
 /**
  * Shows a tip under each control in `root` the pointer rests on, as `tipOf` says it, and takes it

@@ -17,6 +17,7 @@ import { type EditorView, gutter, ViewPlugin } from '@codemirror/view';
 import { type Bubble, bubbleElement, type LaneTone, sameBubble } from './bubbles.ts';
 import {
   defineLane,
+  type LaneHandle,
   type LaneMark,
   type LaneRange,
   type LaneUpdate,
@@ -88,14 +89,15 @@ export const setLane = lane.set;
  * The lane's cells for the part of `doc` from `from` to `to`, by document line: a bubble on each
  * line of `bubbles`, and the stems of `ranges` beside each line they cover, those `lit` names in
  * their lit colours. `command` is false where the bubbles' view runs their clicks itself; `beside`
- * where threads show beside lines, where a stem opens its thread's popover.
+ * where threads show beside lines, where a stem opens its thread's popover. `handles` are the cells
+ * that are an end of an open comment box's bracket.
  */
 export function laneUpdate(
   doc: Text,
   span: { readonly from: number; readonly to: number },
   ranges: readonly LaneRange[],
   bubbles: ReadonlyMap<number, LaneBubble>,
-  { command = true, beside = false, lit = new Set<string>() }: LaneOptions = {},
+  { command = true, beside = false, lit = new Set<string>(), handles }: LaneOptions = {},
 ): LaneUpdate {
   const marks = new Map<number, LaneMark>();
   for (const [line, bubble] of bubbles) marks.set(line, new BubbleMark(bubble, command, beside));
@@ -103,6 +105,7 @@ export function laneUpdate(
     lit,
     // A draft's stem isn't its mark: its bubble is.
     target: (range) => beside && range.tone !== 'muted',
+    handles,
   });
 }
 
@@ -111,16 +114,17 @@ export interface LaneOptions {
   readonly command?: boolean | undefined;
   readonly beside?: boolean | undefined;
   readonly lit?: ReadonlySet<string> | undefined;
+  readonly handles?: ReadonlyMap<number, LaneHandle> | undefined;
 }
 
 /**
  * Whether `event` is on a bubble, or, where threads show beside lines, on a stem's cell, which
- * opens its thread's popover too.
+ * opens its thread's popover too, or on an end of an open box's bracket, which drags.
  */
 function onBubble(event: Event): boolean {
   const { target } = event;
   if (!(target instanceof Element)) return false;
-  if (target.closest('.lo-bubble') !== null) return true;
+  if (target.closest('.lo-bubble, .lo-handle') !== null) return true;
   return target.closest('.is-beside') !== null && besideMarker(target) !== undefined;
 }
 
@@ -163,8 +167,9 @@ const exposed = ViewPlugin.fromClass(
 
 /**
  * The threads' lane, drawn from what the editor's state keeps of it (`setLane`), with the rows of
- * the code view's lit range (`setLit`). A press on a bubble leaves focus, and what's selected,
- * where they are; its click is the view's, which runs the bubble's command.
+ * the code view's lit range (`setLit`). A press on a bubble or a handle leaves focus, and what's
+ * selected, where they are; its click is the view's, which runs the bubble's command, and its drag
+ * the handle's.
  */
 export function threadLane(): Extension {
   return [
