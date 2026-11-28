@@ -4,6 +4,7 @@
 // shown; what's shared names it by its view on screen, so what follows the tab on screen follows
 // the layer on screen.
 
+import { LOADING_DELAY_MS } from '@lo/ui';
 import type { Handler, NoTarget } from '@lo/ui/commands';
 import { createElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
@@ -42,10 +43,11 @@ import {
   putRightBack,
   rightIds,
   showRightView,
+  wentAtOnce,
   type RightKept,
   type ViewKind,
 } from './panels.ts';
-import { Placeholder } from './Placeholder.tsx';
+import { Placeholder, waitedFor } from './Placeholder.tsx';
 import { activeOf, pullsStore, tabsStore, type TabsState } from './store.ts';
 
 export type {
@@ -316,9 +318,16 @@ export function useBeside(tab: string): boolean {
 /**
  * Shows the view pull request's tab `tab` opens on in place of the one Settings names, when that one
  * has nothing to show: the timeline, where the description is first, as Overview does for a pull
- * request with no overview. Says whether the tab has it.
+ * request with no overview. Says whether the tab has it. `asOpens` says the tab does so by itself
+ * as it opens, not for something the reader did: before its wait shows (`LOADING_DELAY_MS`), the
+ * header's view switch then goes there at once, as if the tab had opened there, since the reader
+ * has seen nothing to follow. Later, and for the reader, its thumb slides there.
  */
-export function showInstead(tab: string): boolean {
+export function showInstead(tab: string, asOpens = false): boolean {
+  if (!middleIds.ids.includes(INSTEAD)) return false;
+  if (asOpens && !viewsShown(tab).includes(INSTEAD) && (waitedFor(tab) ?? 0) < LOADING_DELAY_MS) {
+    wentAtOnce.set(tab, INSTEAD);
+  }
   return showMiddle(tab, INSTEAD);
 }
 

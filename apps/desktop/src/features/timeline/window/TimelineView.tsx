@@ -44,7 +44,7 @@ import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import { explain, REMEDY_LABELS, remedyOf } from '../../../window/explain.ts';
 import { avatarImage } from '../../../window/images.ts';
-import { signInAgain, signInTo, useAdding } from '../../accounts/window/shared.ts';
+import { signInAgain, signInAsk, useSignedIn } from '../../accounts/window/shared.ts';
 import {
   deletePullComment,
   editPullComment,
@@ -261,19 +261,13 @@ function Failed({ tab, view }: { tab: PullTab; view: TimelineView | undefined })
 }
 
 /**
- * A timeline read as no one, which shows only to an account. Its button is the command that signs
- * in, named as it is now: "Add account…" once one is listed, which the title says too.
+ * A timeline read as no one, which shows only to an account. It asks to sign in while no account
+ * is signed in, and to add one while one is, and its button does that, named as it is now.
  */
 function SignIn() {
   useKeys();
-  const adding = useAdding();
-  return (
-    <EmptyState
-      icon="user-round"
-      title={signInTo('see comments', adding)}
-      actions={['accounts.addAccount']}
-    />
-  );
+  const ask = signInAsk('see comments', useSignedIn());
+  return <EmptyState icon="user-round" title={ask.title} actions={[ask.command]} />;
 }
 
 function TimelineOf({ tab, shown }: { tab: PullTab; shown: boolean }) {

@@ -18,7 +18,7 @@ import { useStore } from 'zustand';
 import { registry } from '../../../window/commands/registry.ts';
 import { defineRow } from '../../settings/window/shared.ts';
 import type { AccountSummary } from '../contract.ts';
-import { openImport, openSignIn, openSignOut } from './dialogs.ts';
+import { openImport, openSignOut } from './dialogs.ts';
 import { accountsStore } from './store.ts';
 
 /** How an account is, in a tag, with a line about it where the tag and its button don't say it. */
@@ -62,7 +62,10 @@ function Account({ account }: { account: AccountSummary }) {
       note={line === undefined ? undefined : <span className="text-fg-muted">{line}</span>}
     >
       {again && (
-        <Button size="sm" onClick={fromCli ? openImport : () => openSignIn({ adds: false })}>
+        <Button
+          size="sm"
+          onClick={fromCli ? openImport : () => registry().run('accounts.signInAgain', NO_TARGET)}
+        >
           {fromCli ? 'Import again' : 'Sign in again'}
         </Button>
       )}

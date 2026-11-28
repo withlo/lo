@@ -5,9 +5,10 @@ import { useStore } from 'zustand';
 
 import type { AccountSummary } from '../contract.ts';
 import { openImport, openSignIn } from './dialogs.ts';
-import { accountsStore } from './store.ts';
+import { accountsStore, signedInOf, type SignedIn } from './store.ts';
 
 export type { AccountSummary } from '../contract.ts';
+export type { SignedIn } from './store.ts';
 
 /** Every account, oldest first, once main has said, re-rendering when they change. */
 export function useAccounts(): readonly AccountSummary[] | undefined {
@@ -23,20 +24,39 @@ export function useAccountsHeard(): boolean {
 }
 
 /**
- * Whether signing in now adds an account: one is listed, signed in or not. Words that ask for a
- * sign-in then ask for an account to be added, as the command that does it is then named "Add
- * account…". Re-renders as the accounts change.
+ * How the accounts stand for what needs one, as {@link SignedIn} says. Re-renders as they change.
  */
-export function useAdding(): boolean {
-  return useStore(accountsStore, (state) => (state.accounts?.length ?? 0) > 0);
+export function useSignedIn(): SignedIn {
+  return useStore(accountsStore, (state) => signedInOf(state.accounts));
+}
+
+/** What a state that needs an account asks for: its words, and the command its button runs. */
+export interface SignInAsk {
+  /** "Sign in to see threads", or "Add an account to see threads". */
+  readonly title: string;
+  readonly command: 'accounts.addAccount' | 'accounts.signInAgain';
 }
 
 /**
- * How words that ask for an account say what it's for, as the command they lead to is named:
- * "Sign in to see threads", or, once one is listed (`adding`), "Add an account to see threads".
+ * What a state that needs an account to show `what` asks for, as a pull request read as no one
+ * does, with the accounts as they stand (`signed`). While one is signed in, it asks for another to
+ * be added: "Add an account to see threads", with "Add account…". While none is, as the header's
+ * "Not signed in" says, it asks to sign in, plainly: "Sign in to see threads", with "Sign in with
+ * GitHub…", or "Sign in again" where those listed are all signed out.
  */
-export function signInTo(what: string, adding: boolean): string {
-  return `${adding ? 'Add an account' : 'Sign in'} to ${what}`;
+export function signInAsk(what: string, signed: SignedIn): SignInAsk {
+  switch (signed) {
+    case 'signedIn':
+      return { title: `Add an account to ${what}`, command: 'accounts.addAccount' };
+    case 'signedOut':
+      return { title: `Sign in to ${what}`, command: 'accounts.signInAgain' };
+    case 'none':
+      return { title: `Sign in to ${what}`, command: 'accounts.addAccount' };
+    default:
+      throw new Error(
+        `A standing of accounts Lo doesn’t know: ${JSON.stringify(signed satisfies never)}`,
+      );
+  }
 }
 
 /**

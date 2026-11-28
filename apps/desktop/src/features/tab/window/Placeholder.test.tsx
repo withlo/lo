@@ -8,7 +8,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { createRegistry } from '../../../window/commands/registry.ts';
 import keys from '../keys.ts';
 import type { PullView } from '../contract.ts';
-import { Placeholder } from './Placeholder.tsx';
+import { Placeholder, waitedFor } from './Placeholder.tsx';
 import { pullsStore } from './store.ts';
 
 const close = vi.hoisted(() => vi.fn<(tab: { id: string }) => Promise<void>>());
@@ -165,10 +165,14 @@ describe('a tab’s placeholder', () => {
   });
 
   it('begins a new wait once the last has been gone a moment', () => {
+    expect(waitedFor('fd')).toBeUndefined();
     const first = draw('fd');
     wait(500);
+    // How long the tab has waited, which a view the tab goes to by itself goes by.
+    expect(waitedFor('fd')).toBe(500);
     first.gone();
     wait(LOADING_DELAY_MS);
+    expect(waitedFor('fd')).toBeUndefined();
     const again = draw('fd');
     expect(again.box.textContent).toBe('');
     wait(LOADING_DELAY_MS);

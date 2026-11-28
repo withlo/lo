@@ -16,10 +16,10 @@
 // no box.
 //
 // Once an account is listed, a sign-in adds another, and says so: its title is "Add account", its
-// line says to type the code signed in as the account to add, since GitHub's page signs in
-// whichever account it's signed in to, and it ends with "Added ravi-k", or with the account that
-// was already there. Signing in a given account, as "Sign in again" does one GitHub signed out,
-// says only that it signs in.
+// line says to sign in on GitHub's page as the account to add, since that page signs in whichever
+// account it's signed in to, and it ends with "Added ravi-k", or with the account that was already
+// there. Signing in a given account, as "Sign in again" does one GitHub signed out, says only that
+// it signs in.
 
 import {
   Collapse,
@@ -204,7 +204,7 @@ export function SignInView({
   // code.
   const where =
     dialog?.state?.kind === 'waiting'
-      ? `Enter this code ${page === undefined ? 'on GitHub' : `at ${page}`}${adding ? ', signed in as the account to add' : ''}`
+      ? `Enter this code ${page === undefined ? 'on GitHub' : `at ${page}`}.${adding ? ' Sign in there as the account to add.' : ''}`
       : '\u00a0';
   return (
     <Dialog

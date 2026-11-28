@@ -13,7 +13,8 @@ code editor it started as.
 2. **One accent, for where you are.** Powder (`lo-accent`) marks focus, the cursor, selection,
    links, the main button and the thing on screen. Nothing else is Powder.
 3. **Status keeps GitHub's meanings.** Green is open, added or passing; red is closed, removed or
-   failing; purple is merged; amber is waiting or changed. Never use these colors for decoration.
+   failing; purple is merged or important; amber is waiting or changed. Never use these colors for
+   decoration.
 4. **The keyboard is discoverable.** Every action has a key and a visible control. A control shows
    its key where the key works now, and in its tooltip everywhere else.
 5. **Each view is a sheet.** The overview, diff and timeline sit on the ground (`lo-bg`) with round
@@ -84,8 +85,10 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
 
 - PR state: `lo-state-open`, `-draft`, `-merged`, `-closed`, each with `-bg` and `-border`. Always
   pair the color with the state's icon and word.
-- Status: `lo-success`, `lo-warning`, `lo-danger`, `lo-info`, each with `-bg` and `-border`. A
-  status color never appears without a word or icon that says the same thing.
+- Status: `lo-success`, `lo-warning`, `lo-danger`, `lo-info`, `lo-important`, each with `-bg` and
+  `-border`. A status color never appears without a word or icon that says the same thing.
+  `lo-important` is GitHub's purple, for what GitHub draws as Important; it has the values of
+  `lo-state-merged`, which stays a token of its own, as `lo-state-open` matches `lo-success`.
 - Diff: whole lines use `lo-diff-add-bg` / `lo-diff-del-bg`; changed words inside them
   `lo-diff-add-word` / `lo-diff-del-word`; signs and gutters `lo-diff-add-fg` / `lo-diff-del-fg`.
   Moved code uses the `lo-diff-moved-*` tokens, never green or red: a near-neutral ground, with the
@@ -114,8 +117,9 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   description, a comment's preview, a hover card's docs. Draw it with
   `lo-prose lo-prose--comment read-comment`, spaced as GitHub spaces a comment: nothing above its
   first block, 16 px between blocks, in a quote or an alert too, and under a heading, and 24 above a
-  heading. `lo-prose` alone is the overview's, a document with room around its sections, and never
-  right for a comment.
+  heading. An alert's title is 8 px over the block after it, the title of what follows rather than a
+  block of its own. `lo-prose` alone is the overview's, a document with room around its sections,
+  and never right for a comment.
 - A column's width follows the pane it's in, never the window: size it from its own box
   (`@container`), not a media query or `vw`, since panes resize.
 - Code is `--lo-code-size` on a fixed `--lo-code-line` (12.5/20) so both sides of a diff share one
@@ -262,11 +266,13 @@ where the action's target is.
 - **A choice of two to four is one `SegmentedControl`,** never buttons or pills drawn by hand: the
   header's view switch, the Files panel's Tree and Review order, the threads' filter, a comment
   box's Write and Preview, and Settings' choices are all one. Its thumb slides to the segment
-  chosen, and the key that steps through them follows it. It's `md` in the header alone, and `sm`
-  everywhere else: a panel's toolbar, a box's head, a Settings row. While it can't be changed it's
-  `disabled`, and `why` is each segment's tooltip, as the Files panel's "Reading files…" is; its key
-  chip goes meanwhile, keeping its room. One thing on or off, as "Changed files only" is, stays a
-  toggle of its own.
+  chosen, but to one the reader didn't choose and hasn't seen coming (`jump`), which it goes to in
+  one frame: a tab that goes to its timeline by itself as it opens, before its wait shows. The key
+  that steps through them follows it. It's `md` in the header alone, and `sm` everywhere else: a
+  panel's toolbar, a box's head, a Settings row. While it can't be changed it's `disabled`, and
+  `why` is each segment's tooltip, as the Files panel's "Reading files…" is; its key chip goes
+  meanwhile, keeping its room. One thing on or off, as "Changed files only" is, stays a toggle of
+  its own.
 - **A segment can be its icon alone.** Where a `SegmentedControl` has to narrow, as a comment box's
   Write and Preview do, each segment's label holds its icon and its words, the words marked as a row
   that gives up marks them (`data-gives`). Give the segment its `name`, which a screen reader hears
@@ -1026,9 +1032,10 @@ comments feature's `Post`, which does this.
 
 **GitHub's alerts look as GitHub draws them,** wherever Markdown is drawn: a comment, an overview, a
 hover card. Each starts with its icon, 16 px, then its word, both in its tone, with Lucide's nearest
-to GitHub's octicons: Note (`info`) and Important (`message-square-exclamation-point`) in `lo-info`,
-Tip (`lightbulb`) in `lo-success`, Warning (`triangle-exclamation-point`) in `lo-warning`, and
-Caution (`octagon-exclamation-point`) in `lo-danger`. The Markdown renderer draws them.
+to GitHub's octicons: Note (`info`) in `lo-info`, Tip (`lightbulb`) in `lo-success`, Important
+(`message-square-exclamation-point`) in `lo-important`, Warning (`triangle-exclamation-point`) in
+`lo-warning`, and Caution (`octagon-exclamation-point`) in `lo-danger`. The Markdown renderer draws
+them.
 
 ## Overviews
 

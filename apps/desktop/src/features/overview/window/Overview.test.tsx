@@ -37,7 +37,9 @@ import { checked, publish, readAgain, states } from './store.ts';
 /** The middle view the tab opened on, as Settings said. */
 const tabs = vi.hoisted(() => ({ opened: 'overview.view' as string | undefined }));
 /** The timeline, shown in the overview's place as the tab hands over to it. */
-const showInstead = vi.hoisted(() => vi.fn<(tab: string) => boolean>(() => true));
+const showInstead = vi.hoisted(() =>
+  vi.fn<(tab: string, asOpens?: boolean) => boolean>(() => true),
+);
 
 vi.mock(import('../../tab/window/shared.ts'), async (original) => ({
   ...(await original()),
@@ -455,7 +457,7 @@ describe('as the tab opens', () => {
       vi.advanceTimersByTime(1);
     });
     expect(openings.get(tab.id)).toMatchObject({ on: 'timeline' });
-    expect(showInstead).toHaveBeenCalledWith(tab.id);
+    expect(showInstead).toHaveBeenCalledWith(tab.id, true);
     expect(waits(view)).toBe(true);
     view.shown(false);
     expect(view.querySelector('[data-lo-overview="reading"]')).not.toBeNull();
@@ -496,7 +498,7 @@ describe('as the tab opens', () => {
     expect(waits(view)).toBe(true);
     act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
     expect(openings.get(tab.id)).toMatchObject({ on: 'timeline', handing: true });
-    expect(showInstead).toHaveBeenCalledWith(tab.id);
+    expect(showInstead).toHaveBeenCalledWith(tab.id, true);
     // Still on screen until the timeline takes its place, it draws the wait the timeline takes over.
     expect(waits(view)).toBe(true);
     view.shown(false);
@@ -513,7 +515,7 @@ describe('as the tab opens', () => {
     const tab = tabOf();
     act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
     const view = render(tab);
-    expect(showInstead).toHaveBeenCalledWith(tab.id);
+    expect(showInstead).toHaveBeenCalledWith(tab.id, true);
     expect(openings.get(tab.id)).toMatchObject({ on: 'timeline', handing: false });
     expect(waits(view)).toBe(false);
     expect(view.querySelector('[data-lo-overview="none"]')).not.toBeNull();
@@ -542,7 +544,7 @@ describe('as the tab opens', () => {
     const tab = tabOf();
     const view = render(tab, middle);
     act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
-    expect(showInstead).toHaveBeenCalledWith(tab.id);
+    expect(showInstead).toHaveBeenCalledWith(tab.id, true);
     view.shown(false);
     expect(document.activeElement).toBe(middle);
     // `]` before the timeline has drawn, and `s` once it has taken focus.
