@@ -7,8 +7,15 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { parseArtifact, type OverviewTree } from '@lo/artifact';
+import { defineCommands, handlers, holdRegistry, Registry } from '@lo/ui/commands';
 import { generationOf } from '@lo/ui/markdown';
-import { OverviewDocument, blockNumber, blockStops } from '@lo/ui/overview';
+import {
+  OverviewDocument,
+  blockNumber,
+  blockStops,
+  sectionsOf,
+  type OverviewFolds,
+} from '@lo/ui/overview';
 
 import { blockId } from './blocks.ts';
 import {
@@ -67,16 +74,53 @@ const EXAMPLE = [
 
 let root: Root | undefined;
 let host: HTMLElement | undefined;
+let release: (() => void) | undefined;
 
 afterEach(() => {
   act(() => root?.unmount());
   host?.remove();
+  release?.();
   root = undefined;
   host = undefined;
+  release = undefined;
 });
 
-/** The example overview, drawn, as the keys find it. */
-function drawn(): { overview: DrawnOverview; stops: HTMLElement[]; tree: OverviewTree } {
+/** The command a section's chevron runs, which draws the chevron. */
+const folding = defineCommands('overview', {
+  foldSection: {
+    label: 'Collapse section',
+    group: 'View',
+    keys: ['z a'],
+    targets: ['block', 'none'],
+  },
+});
+
+/** Folds for the example overview, with the sections whose headings are `names` collapsed. */
+function foldsOf(...names: string[]): (tree: OverviewTree) => OverviewFolds {
+  release = holdRegistry(
+    new Registry({ system: 'mac', commands: handlers(folding, { foldSection: { run() {} } }) }),
+  );
+  return (tree) => ({
+    collapsed: new Set(
+      sectionsOf(tree.blocks)
+        .filter((section) => names.includes(section.name))
+        .map((section) => section.heading),
+    ),
+    fold: (heading) => ({
+      command: 'overview.foldSection',
+      target: { kind: 'block', block: blockId(generationOf(tree), heading) },
+    }),
+    expand: () => undefined,
+    opened: new Map(),
+  });
+}
+
+/** The example overview, drawn, as the keys find it, with its sections folding as `folds` says. */
+function drawn(folds?: (tree: OverviewTree) => OverviewFolds): {
+  overview: DrawnOverview;
+  stops: HTMLElement[];
+  tree: OverviewTree;
+} {
   const { tree } = parseArtifact(EXAMPLE);
   const page = document.createElement('div');
   page.className = 'lo-app';
@@ -84,7 +128,7 @@ function drawn(): { overview: DrawnOverview; stops: HTMLElement[]; tree: Overvie
   host = page;
   const made = createRoot(page);
   root = made;
-  act(() => made.render(<OverviewDocument tree={tree} />));
+  act(() => made.render(<OverviewDocument tree={tree} folds={folds?.(tree)} />));
   const scroller = page.querySelector<HTMLElement>('.lo-ov')!;
   const overview: DrawnOverview = {
     tab: 'tab',
@@ -272,6 +316,56 @@ describe('following a block', () => {
     const { overview, stops, tree } = drawn();
     const tabs = stops.find((stop) => kindOf(tree, stop) === 'tabs')!;
     expect(followOf(overview, tabs)).toBe('No code or link in this block');
+  });
+});
+
+/** The heading of the example's section called `name`, as drawn. */
+function headOf(overview: DrawnOverview, name: string): HTMLElement {
+  const section = sectionsOf(overview.tree.blocks).find((each) => each.name === name)!;
+  return overview.root.querySelector<HTMLElement>(`[data-lo-section="${section.heading}"]`)!;
+}
+
+describe('a section’s heading', () => {
+  it('collapsed, is the block the keys stop at for its section, which ⏎ expands', () => {
+    const { overview, stops } = drawn(foldsOf('Where to look'));
+    const head = headOf(overview, 'Where to look');
+    expect(stops).toContain(head);
+    const before = stops[stops.indexOf(head) - 1]!;
+    before.focus();
+    expect(nextBlock(overview, 1)).toBe(head);
+    head.querySelector<HTMLElement>('h2')!.focus();
+    expect(focusedBlock(overview)).toBe(head);
+    // What's under it isn't there: it's the last block, as the glossary after it has none.
+    expect(nextBlock(overview, 1)).toBe('Last block');
+    expect(nextBlock(overview, -1)).toBe(before);
+    expect(followOf(overview, head)).toEqual({ kind: 'section', block: head });
+    expect(followName(overview, head)).toBe('Expand');
+  });
+
+  it('open, is where ]b and [b go on from, to the blocks after and before it', () => {
+    const { overview, tree } = drawn(foldsOf());
+    const head = headOf(overview, 'Where to look');
+    expect(head.hasAttribute('data-lo-block')).toBe(false);
+    head.querySelector<HTMLElement>('h2')!.focus();
+    expect(focusedBlock(overview)).toBeUndefined();
+    expect(kindOf(tree, nextBlock(overview, 1))).toBe('tabs');
+    expect(kindOf(tree, nextBlock(overview, -1))).toBe('walkthrough');
+    // Tab, from its chevron, goes on to the block after it too.
+    head.querySelector<HTMLElement>('button')!.focus();
+    const next = nextLink(overview, 1);
+    expect(next instanceof HTMLElement && kindOf(tree, next)).toBe('tabs');
+  });
+
+  it('has a chevron Tab doesn’t stop at on the way from the overview to the first block', () => {
+    const { overview, stops } = drawn(foldsOf());
+    // How it works's, Where to look's and the Glossary's: none on the tl;dr.
+    expect(overview.root.querySelectorAll('.lo-section-head__chevron button').length).toBe(3);
+    overview.scroller()!.tabIndex = -1;
+    overview.scroller()!.focus();
+    const sections = [...overview.root.querySelectorAll<HTMLElement>('.lo-toc__item')];
+    expect(nextLink(overview, 1)).toBe(sections[0]);
+    sections.at(-1)!.focus();
+    expect(nextLink(overview, 1)).toBe(stops[0]);
   });
 });
 

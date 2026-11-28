@@ -68,6 +68,8 @@ and keeps it across a restart.
 | `motion.reduce`       | system, on or off                         | `"system"`   | Whether the window keeps still: as the system says, always, or never. Tests start Lo with every move off, whatever it says.                                                                                                            |
 | `cache.cap`           | a whole number of GB, from 1 to 10,000    | `10`         | The size Lo keeps its local copies of repos under. Past it, the least recently used go.                                                                                                                                                |
 | `overview.on`         | true or false                             | `true`       | Whether Lo has overviews. Off, there's no Overview view, no overview notes, marks, prompts or skill, and Lo reads no overview.                                                                                                         |
+| `overview.auto`       | true or false                             | `true`       | Whether coding agents write an overview by themselves, after they open a pull request or push to one. The overview skill's hook reads it, and Lo shows it in Settings whether there are overviews or not.                              |
+| `overview.collapsed`  | lists of headings, by repo or "*"         | `{}`         | The overview sections that start collapsed, by heading, as below. The tl;dr always shows.                                                                                                                                              |
 | `tab.open`            | overview, timeline or diff                | `"overview"` | What a pull request opens on. Overview, for a pull request with no overview, or with `overview.on` off, opens on the timeline.                                                                                                         |
 | `diff.layout`         | split or inline                           | `"split"`    | The diff's layout: the two sides next to each other, or one column of both. `gi` switches it.                                                                                                                                          |
 | `diff.whitespace`     | show or hide                              | `"show"`     | Whether the diff shows changes to whitespace alone. `gw` switches it. GitHub's diff, shown until the local copy is ready, shows them either way.                                                                                       |
@@ -92,6 +94,34 @@ its diff. It's only in the file, and only Lo writes it. Lo carries a `"diff"` th
 `"overview"`. Then it sets this to `null`, so a later change to `tab.open` stands. If the file can't
 be written, Lo carries it at the next start, and until then pull requests open on the diff, as
 Settings shows, while the file has no `tab.open`.
+
+## Collapsed sections
+
+`overview.collapsed` lists the sections of an overview that start collapsed, by heading. Its `"*"`
+list is every repo's, and a repo's own list, under its name, replaces it there:
+
+```json
+{
+  "overview.collapsed": {
+    "*": ["Testing"],
+    "fieldwork/atlas-api": ["Testing", "Rollout"]
+  }
+}
+```
+
+- A heading matches as plain text, ignoring case and runs of spaces, and every section with that
+  heading starts collapsed. The tl;dr always shows, even where a list names it.
+- A section's menu writes the lists. "Collapse in this repo" adds its heading to the repo's list, or
+  takes it out: the repo's list becomes its own, starting from every repo's, and goes once it's the
+  same as every repo's again. "Collapse in every repo" adds it to every list, or takes it out of
+  every one.
+- Settings adds a heading to every repo's list, and removes one from any list. A repo's "Reset"
+  takes its own list out, so every repo's applies there again.
+- A section you collapse or expand by hand stays that way in its tab, across revisions, and writes
+  nothing.
+- An entry Lo can't read, as one that isn't text, or a key that's neither `"*"` nor a repo, is
+  reported and ignored, and stays in the file. Lo writes the value whole, so a comment inside it
+  goes.
 
 ## Trusted repos and pull requests
 

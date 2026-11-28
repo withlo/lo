@@ -149,6 +149,10 @@
   color: var(--lo-fg-muted);
   cursor: pointer;
 }
+/* Collapsed, the heading is a block, whose ring shows focus: its words, which hold it, draw none. */
+.lo-section-head.lo-block > h2:focus-visible {
+  box-shadow: none;
+}
 .lo-section-head__chevron,
 .lo-section-head__more {
   display: flex;
@@ -167,6 +171,29 @@
 }
 .lo-section-head__chevron button:is(:hover, :focus-visible) .lo-i {
   color: var(--lo-icon);
+}
+/*
+ * What's under a section's heading: the box that opens and closes (`lo-section`, a `Collapse`),
+ * with no room of its own, and inside it the section's body, which spaces its blocks as the article
+ * does its own, the first as it would be under its heading, so the room goes with the box.
+ */
+.lo-prose > .lo-section-head + .lo-section {
+  margin-top: 0;
+}
+/* As wide as the article, whatever its blocks' code holds: a grid's own column would grow to it. */
+.lo-prose > .lo-section {
+  grid-template-columns: minmax(0, 1fr);
+}
+.lo-prose.lo-section__body > :first-child {
+  margin-top: 12px;
+}
+/* A collapsed section's heading is followed by the next heading, at a heading's own room. */
+.lo-prose > .lo-section-head + .lo-section-head {
+  margin-top: 52px;
+}
+/* A collapsed section's row in the outline is quieter, as its heading is. */
+.lo-toc__item[data-collapsed] {
+  color: var(--lo-fg-subtle);
 }
 
 /*

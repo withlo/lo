@@ -520,7 +520,13 @@ async function watchStill(page: Page): Promise<void> {
       const scroller = article?.closest('.lo-ov');
       if (!article || !scroller) return [];
       const box = scroller.getBoundingClientRect();
-      return [...article.children].flatMap((block) => {
+      // Its blocks, a section's read through its body, as the article holds them.
+      const blocks = [...article.children].flatMap((child) =>
+        child.classList.contains('lo-section')
+          ? [...(child.querySelector(':scope > * > .lo-section__body')?.children ?? [])]
+          : [child],
+      );
+      return blocks.flatMap((block) => {
         const { top, bottom } = block.getBoundingClientRect();
         if (bottom <= box.top || top >= box.bottom) return [];
         const edge: Edge = top < box.top - 0.5 ? 'bottom' : 'top';
@@ -827,6 +833,121 @@ test('goes from the tab, its menus and the palette while Settings turns overview
     await expect(palette.getByRole('option', { name: /^Overview/ })).toBeVisible();
     await expect(beside).toContainText(/\boverview\b/);
     await page.keyboard.press('Escape');
+  });
+});
+
+test.describe('with a section’s heading in every repo’s list of those that start collapsed', () => {
+  test.use({ settings: JSON.stringify({ 'overview.collapsed': { '*': ['where  to LOOK'] } }) });
+
+  test('folds its sections: the setting’s starts collapsed, the outline, z a, ⏎ and the chevron fold one, z M and z R every one, and a heading’s menu writes the setting Settings lists', async ({
+    page,
+  }) => {
+    await open(page);
+    const shown = overview(page, 'shown');
+    await expect(shown).toBeVisible({ timeout: 20_000 });
+    /** The heading of the section called `name`, with its chevron and menu. */
+    const head = (name: string) =>
+      shown
+        .locator('.lo-section-head')
+        .filter({ has: page.getByRole('heading', { name, exact: true }) });
+    const heading = (name: string) => shown.getByRole('heading', { name, exact: true });
+    const row = (name: string) => shown.locator('.lo-toc__item', { hasText: name });
+    const collapsed = shown.locator('.lo-section-head[data-collapsed]');
+    const z = async (key: string) => {
+      await page.keyboard.press('z');
+      await page.keyboard.press(key);
+    };
+
+    await test.step('starts with the section the setting names collapsed, its outline row quieter', async () => {
+      await expect(head('Where to look')).toHaveAttribute('data-collapsed', '');
+      await expect(collapsed).toHaveCount(1);
+      await expect(shown.getByText('The README, which this pull request')).toHaveCount(0);
+      await expect(row('Where to look')).toHaveAttribute('data-collapsed', '');
+      // The tl;dr's heading has no chevron and no menu.
+      await expect(head('tl;dr').getByRole('button')).toHaveCount(0);
+    });
+
+    await test.step('its outline row expands it, going there', async () => {
+      await row('Where to look').click();
+      await expect(shown.getByText('The README, which this pull request')).toBeVisible();
+      await expect(collapsed).toHaveCount(0);
+    });
+
+    await test.step('z a folds the section whose heading has focus, which ⏎ then expands', async () => {
+      await heading('How it works').click();
+      await z('a');
+      await expect(head('How it works')).toHaveAttribute('data-collapsed', '');
+      await expect(shown.locator('.lo-walk')).toHaveCount(0);
+      // Collapsed, its heading is the block the keys are at, with its ring and chip.
+      await expect(head('How it works')).toHaveClass(/\bis-focused\b/);
+      await expect(head('How it works').locator('.lo-block__hints')).toContainText('Expand');
+      await page.keyboard.press('Enter');
+      await expect(collapsed).toHaveCount(0);
+      await expect(shown.locator('.lo-walk')).toBeVisible();
+    });
+
+    await test.step('its chevron folds it, and a collapsed heading’s words open it', async () => {
+      await head('How it was checked').getByRole('button', { name: 'Collapse section' }).click();
+      await expect(head('How it was checked')).toHaveAttribute('data-collapsed', '');
+      await expect(
+        head('How it was checked').getByRole('button', { name: 'Expand section' }),
+      ).toBeVisible();
+      await heading('How it was checked').click();
+      await expect(collapsed).toHaveCount(0);
+    });
+
+    await test.step('z M collapses every section but the tl;dr, and z R expands every one', async () => {
+      await z('Shift+M');
+      await expect(collapsed).toHaveCount(4);
+      await expect(head('tl;dr')).not.toHaveAttribute('data-collapsed', '');
+      await z('Shift+R');
+      await expect(collapsed).toHaveCount(0);
+    });
+
+    await test.step('a heading’s menu has the setting’s switches, which write it and fold the section', async () => {
+      await heading('Glossary').click({ button: 'right' });
+      const menu = page.getByRole('menu');
+      const here = menu.getByRole('menuitemcheckbox', { name: /^Collapse in this repo/ });
+      await expect(here).toHaveAttribute('aria-checked', 'false');
+      await expect(
+        menu.getByRole('menuitemcheckbox', { name: /^Collapse in every repo/ }),
+      ).toHaveAttribute('aria-checked', 'false');
+      await expect(menu.getByRole('menuitem')).toHaveText([
+        /^Collapse section/,
+        /^Expand all sections/,
+        /^Collapse all sections/,
+      ]);
+      await expect(menu.getByRole('separator')).toHaveCount(1);
+      await here.click();
+      await expect(head('Glossary')).toHaveAttribute('data-collapsed', '');
+      await expect.poll(saved).toEqual({
+        'overview.collapsed': {
+          '*': ['where  to LOOK'],
+          'rozed-dev/e2e': ['where  to LOOK', 'Glossary'],
+        },
+      });
+      // Its menu says so now, and names the fold by what it would do.
+      await heading('Glossary').click({ button: 'right' });
+      await expect(here).toHaveAttribute('aria-checked', 'true');
+      await expect(menu.getByRole('menuitem').first()).toHaveText(/^Expand section/);
+      await page.keyboard.press('Escape');
+    });
+
+    await test.step('Settings lists them by repo, with whether agents write overviews', async () => {
+      await page.evaluate(() => window.lo.invoke('tab.open', { kind: 'settings' }));
+      await page
+        .getByRole('navigation', { name: 'Settings' })
+        .getByRole('button', { name: 'Pull requests' })
+        .click();
+      await expect(
+        page.getByRole('switch', { name: 'Write overviews automatically' }),
+      ).toBeChecked();
+      const list = page.getByRole('group', { name: 'Collapsed sections' }).last();
+      await expect(list.locator('[data-scope]')).toHaveText([
+        /^Every repowhere\s+to LOOKRemove$/,
+        /^rozed-dev\/e2e · replaces every repo’s listResetwhere\s+to LOOKRemoveGlossaryCollapse in every repoRemove$/,
+      ]);
+    });
   });
 });
 

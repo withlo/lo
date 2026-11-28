@@ -111,7 +111,13 @@ async function watchStill(page: Page): Promise<void> {
       const scroller = article?.closest('.lo-ov');
       if (!article || !scroller) return [];
       const box = scroller.getBoundingClientRect();
-      return [...article.children].flatMap((block) => {
+      // Its blocks, a section's read through its body, as the article holds them.
+      const blocks = [...article.children].flatMap((child) =>
+        child.classList.contains('lo-section')
+          ? [...(child.querySelector(':scope > * > .lo-section__body')?.children ?? [])]
+          : [child],
+      );
+      return blocks.flatMap((block) => {
         const { top, bottom } = block.getBoundingClientRect();
         return bottom > box.top && top < box.bottom ? [{ block, y: top, away: 0 }] : [];
       });

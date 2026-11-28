@@ -1,11 +1,13 @@
 export {
   OverviewDocument,
   type OverviewDocumentProps,
+  type OverviewFolds,
   type OverviewTarget,
   type OverviewViews,
 } from './OverviewDocument.tsx';
 export { blockHints, isStop, type BlockHint } from './blocks.ts';
 export {
+  articleBlocks,
   BLOCK_ATTRIBUTE,
   blockNumber,
   blockOf,
@@ -13,8 +15,16 @@ export {
   focusTargetOf,
   hasSteps,
   linksIn,
+  sectionHeadOf,
   stepIn,
 } from './moving.ts';
+export {
+  headingName,
+  sectionAt,
+  sectionsOf,
+  TLDR_ANCHOR,
+  type OverviewSection,
+} from './sections.ts';
 export { alphabetical } from './terms.ts';
 export { cardsOpen, closeCards, HOVER_CLOSE_MS, HOVER_OPEN_MS } from './Term.tsx';
 export { lineRange } from './placeholders.tsx';

@@ -849,6 +849,20 @@
   gap: var(--lo-sp-4) var(--lo-sp-24);
 }
 
+/* A list row of Settings whose own controls are a field and its buttons (`SettingsList`'s
+   `wraps`): where the row is narrower than 600px, they go under its words, from its start. Its box
+   is the container (`@container`); its controls come last. */
+@utility settings-list-wraps {
+  @container (width < 600px) {
+    grid-template-columns: minmax(0, 1fr);
+    & > :last-child {
+      grid-column: 1;
+      grid-row: auto;
+      justify-content: flex-start;
+    }
+  }
+}
+
 /* One optional step on the welcome screen: its icon, its name and what it does, and its button. */
 @utility setup-item {
   display: grid;

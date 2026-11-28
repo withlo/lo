@@ -84,6 +84,11 @@ export interface MenuPlace {
   readonly order: number;
   /** What that menu calls it, for a command that does something else to other targets. */
   readonly label?: string;
+  /**
+   * A separator goes before it, within its group too: what acts on every section after what acts
+   * on the one clicked.
+   */
+  readonly apart?: true;
 }
 
 /** Each right-click menu `command` is in. */
@@ -149,7 +154,8 @@ export interface Declaration {
   /**
    * It's in the right-click menu of targets of this kind, or of each of these kinds, after the
    * commands with a lower `order`. A menu draws a separator wherever the key table's `group`
-   * changes between neighbours, so commands of one group sit together.
+   * changes between neighbours, so commands of one group sit together, and before a place that's
+   * `apart`.
    */
   readonly menu?: MenuPlace | readonly MenuPlace[];
   /** It's in the app menu, there: on macOS the menu bar, on Linux the menu at the strip's end. */

@@ -4,6 +4,7 @@ import { cva } from 'class-variance-authority';
 import { Fragment, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { useTakeFocus } from './focus.ts';
+import { Icon } from './Icon.tsx';
 import { Key, keyAria } from './Key.tsx';
 import { focusStillIn, giveFocusBack, useHeld, useOnClose } from './motion.ts';
 
@@ -24,6 +25,12 @@ export interface ContextMenuItem {
    * the greyed label says it all: Back with nowhere to go.
    */
   readonly disabled?: string | undefined;
+  /**
+   * For a switch of Lo's, whether it's on: the item shows a check while it is, and a screen reader
+   * hears it as a checkbox. Choosing it runs its action, as any item's does. Absent for anything
+   * else.
+   */
+  readonly checked?: boolean | undefined;
 }
 
 /** Where a menu opens in the window: a point, or the box of what it's for, in window pixels. */
@@ -75,6 +82,10 @@ export interface ContextMenuProps {
    */
   long?: boolean | undefined;
 }
+
+/** A row of the menu: an action, or a switch. */
+const ITEM =
+  'group flex min-h-menu-item-h cursor-default items-center gap-8 rounded-sm px-8 py-2 text-fg outline-none select-none focus-visible:shadow-none data-disabled:text-fg-disabled data-highlighted:bg-accent data-highlighted:text-on-accent data-highlighted:data-disabled:bg-hover data-highlighted:data-disabled:text-fg-disabled';
 
 /**
  * The box a row's key sits in: as tall as the label's line, and at the row's top when a reason
@@ -143,7 +154,9 @@ export function ContextMenu({
   useLayoutEffect(() => {
     if (!shown || !highlightFirst) return undefined;
     const frame = requestAnimationFrame(() => {
-      queueMicrotask(() => popup.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus());
+      queueMicrotask(() =>
+        popup.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus(),
+      );
     });
     return () => cancelAnimationFrame(frame);
   }, [shown, highlightFirst]);
@@ -174,36 +187,55 @@ export function ContextMenu({
             {held.sections.map((section, index) => (
               <Fragment key={section.map((item) => item.id).join(' ')}>
                 {index > 0 && <Separator className="mx-6 my-4 h-px bg-border" />}
-                {section.map((item) => (
-                  <Menu.Item
-                    key={item.id}
-                    label={item.label}
-                    disabled={item.disabled !== undefined}
-                    {...keyAria(item.keys, item.shortcut)}
-                    onClick={() => {
+                {section.map((item) => {
+                  const own = {
+                    label: item.label,
+                    disabled: item.disabled !== undefined,
+                    ...keyAria(item.keys, item.shortcut),
+                    onClick: () => {
                       // Leaving, it has said what was chosen already.
                       if (shown) chosen.current = item.id;
-                    }}
-                    className="group flex min-h-menu-item-h cursor-default items-center gap-8 rounded-sm px-8 py-2 text-fg outline-none select-none focus-visible:shadow-none data-disabled:text-fg-disabled data-highlighted:bg-accent data-highlighted:text-on-accent data-highlighted:data-disabled:bg-hover data-highlighted:data-disabled:text-fg-disabled"
-                  >
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span>{item.label}</span>
-                      {item.disabled && (
-                        <span className="text-fg-muted text-micro">{item.disabled}</span>
-                      )}
-                    </span>
-                    {item.keys && item.keys.length > 0 && (
-                      // On the label's line, where it is in a row with no reason under it.
-                      <span className={keyBox({ reason: Boolean(item.disabled) })}>
-                        <Key
-                          keys={item.keys}
-                          decorative
-                          className="group-data-highlighted:border-current group-data-highlighted:text-inherit group-data-highlighted:opacity-70 group-data-highlighted:shadow-none"
-                        />
+                    },
+                    className: ITEM,
+                  };
+                  const face = (
+                    <>
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span>{item.label}</span>
+                        {item.disabled && (
+                          <span className="text-fg-muted text-micro">{item.disabled}</span>
+                        )}
                       </span>
-                    )}
-                  </Menu.Item>
-                ))}
+                      {item.checked === true && (
+                        // On the label's line, before its key, as the palette draws a switch's.
+                        <span className={keyBox({ reason: Boolean(item.disabled) })}>
+                          <Icon name="check" size={14} />
+                        </span>
+                      )}
+                      {item.keys && item.keys.length > 0 && (
+                        // On the label's line, where it is in a row with no reason under it.
+                        <span className={keyBox({ reason: Boolean(item.disabled) })}>
+                          <Key
+                            keys={item.keys}
+                            decorative
+                            className="group-data-highlighted:border-current group-data-highlighted:text-inherit group-data-highlighted:opacity-70 group-data-highlighted:shadow-none"
+                          />
+                        </span>
+                      )}
+                    </>
+                  );
+                  // A switch is ticked as it is, and choosing it closes the menu, as any item does:
+                  // its action, run as the menu goes, turns it.
+                  return item.checked === undefined ? (
+                    <Menu.Item key={item.id} {...own}>
+                      {face}
+                    </Menu.Item>
+                  ) : (
+                    <Menu.CheckboxItem key={item.id} {...own} checked={item.checked} closeOnClick>
+                      {face}
+                    </Menu.CheckboxItem>
+                  );
+                })}
               </Fragment>
             ))}
           </Menu.Popup>

@@ -1,6 +1,6 @@
 // What a right-click menu shows, read from the registry: the commands that declare a menu on the
-// kind of target clicked, in their order, each with its keys as they are now and, when it can't
-// run on that target, why.
+// kind of target clicked, in their order, each with its keys as they are now, a switch with whether
+// it's on, and, when it can't run on that target, why.
 
 import { type Group, isOwned, menuPlaces } from './declare.ts';
 import { liveKeys, liveShortcut, onSystem } from './help.ts';
@@ -17,6 +17,11 @@ export interface MenuItem {
   readonly shortcut: string | undefined;
   /** Why it can't run on the target now, as the menu greys it with. Absent when it can. */
   readonly disabled: string | undefined;
+  /**
+   * For a switch, whether it's on for the target now, as the menu draws its check: "Collapse in
+   * this repo". Absent for anything else.
+   */
+  readonly checked?: boolean | undefined;
 }
 
 /**
@@ -25,7 +30,7 @@ export interface MenuItem {
  * on the target now is there, greyed with its reason, so the menu never hides what the keys can
  * do elsewhere; only a handler's `listed` leaves one out, for a target it doesn't apply to. The
  * commands are in sections, which the menu draws a separator between: a new one starts where the
- * key table's group changes.
+ * key table's group changes, and at a place that's `apart`. A switch says whether it's on.
  */
 export function menuSections(registry: Registry, target: Target): MenuItem[][] {
   const commands = registry
@@ -51,9 +56,10 @@ export function menuSections(registry: Registry, target: Target): MenuItem[][] {
       keys: liveKeys(registry, command)[0],
       shortcut: liveShortcut(registry, command),
       disabled: ready === true ? undefined : ready,
+      ...(command.toggle === 'switch' ? { checked: registry.checked(command.id, target) } : {}),
     };
     const last = sections.at(-1);
-    if (last && group === command.group) last.push(item);
+    if (last && group === command.group && place.apart !== true) last.push(item);
     else sections.push([item]);
     group = command.group;
   }

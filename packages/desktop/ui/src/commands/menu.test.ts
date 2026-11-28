@@ -238,6 +238,80 @@ describe('a right-click menu', () => {
     ]);
   });
 
+  it('puts a separator before a place that’s apart, within its group too', () => {
+    const sections = defineCommands('overview', {
+      fold: {
+        label: 'Collapse section',
+        group: 'View',
+        keys: ['z a'],
+        targets: ['block'],
+        menu: { on: 'block', order: 10 },
+      },
+      foldAll: {
+        label: 'Collapse all sections',
+        group: 'View',
+        keys: ['z M'],
+        targets: ['block'],
+        menu: { on: 'block', order: 20, apart: true },
+      },
+      unfoldAll: {
+        label: 'Expand all sections',
+        group: 'View',
+        keys: ['z R'],
+        targets: ['block'],
+        menu: { on: 'block', order: 30 },
+      },
+    });
+    const apart = new Registry({
+      system: 'mac',
+      commands: handlers(sections, { fold: run, foldAll: run, unfoldAll: run }),
+    });
+    expect(
+      menuSections(apart, { kind: 'block', block: '1.4' }).map((section) =>
+        section.map((item) => item.label),
+      ),
+    ).toEqual([['Collapse section'], ['Collapse all sections', 'Expand all sections']]);
+  });
+
+  it('says whether each switch is on for the target, and nothing of other commands', () => {
+    const switches = defineCommands('overview', {
+      foldHere: {
+        label: 'Collapse in this repo',
+        group: 'View',
+        keys: [],
+        targets: ['block'],
+        toggle: 'switch',
+        menu: { on: 'block', order: 10 },
+      },
+      fold: {
+        label: 'Collapse section',
+        group: 'View',
+        keys: ['z a'],
+        targets: ['block'],
+        menu: { on: 'block', order: 20 },
+      },
+    });
+    const on = new Registry({
+      system: 'mac',
+      commands: handlers(switches, {
+        foldHere: {
+          run() {},
+          checked: (target) => target.kind === 'block' && target.block === '1.4',
+        },
+        fold: run,
+      }),
+    });
+    const checks = (block: string) =>
+      menuSections(on, { kind: 'block', block })
+        .flat()
+        .map((item) => [item.label, item.checked]);
+    expect(checks('1.4')).toEqual([
+      ['Collapse in this repo', true],
+      ['Collapse section', undefined],
+    ]);
+    expect(checks('1.9')[0]).toEqual(['Collapse in this repo', false]);
+  });
+
   it('lists the commands for the system it is on only', () => {
     expect(labels(file, 'mac')).not.toContain('Quit Lo');
     expect(labels(file, 'linux')).toContain('Quit Lo');
