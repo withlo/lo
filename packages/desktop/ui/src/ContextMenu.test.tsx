@@ -175,6 +175,41 @@ describe('ContextMenu', () => {
     await vi.waitFor(() => expect(onClosed).toHaveBeenCalledWith('path'));
   });
 
+  it('highlights the first action that can be done as it opens from the keyboard, past a greyed one', async () => {
+    const back = { id: 'back', label: 'Back', disabled: '' };
+    const page = render(
+      <ContextMenu
+        open
+        onOpenChange={() => undefined}
+        label="File actions"
+        anchor={{ x: 40, y: 60 }}
+        sections={[[back, ...sections[0]!], ...sections.slice(1)]}
+        highlightFirst
+      />,
+    );
+    await vi.waitFor(() => expect(highlighted(page)).toContain('Show in the diff'));
+    expect(items(page)[0]?.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('highlights the first action as it opens from the keyboard where none can be done', async () => {
+    const page = render(
+      <ContextMenu
+        open
+        onOpenChange={() => undefined}
+        label="File actions"
+        anchor={{ x: 40, y: 60 }}
+        sections={[
+          [
+            { id: 'back', label: 'Back', disabled: '' },
+            { id: 'forward', label: 'Forward', disabled: '' },
+          ],
+        ]}
+        highlightFirst
+      />,
+    );
+    await vi.waitFor(() => expect(highlighted(page)).toBe('Back'));
+  });
+
   it('closes on a click, then says which action was chosen', async () => {
     const onClosed = vi.fn<(chosen: string | undefined) => void>();
     const page = render(<Harness onClosed={onClosed} />);

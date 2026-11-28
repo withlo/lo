@@ -18,6 +18,7 @@ import { ContextMenu, type ContextMenuAnchor } from './ContextMenu.tsx';
 import { withoutBidi } from './controls.ts';
 import { useGiveUp } from './giveUp.ts';
 import { Icon } from './Icon.tsx';
+import { pressedByKey } from './MoreButton.tsx';
 import { motionReduced, whenSettled } from './motion.ts';
 import { Skeleton, Spinner } from './Spinner.tsx';
 import { Tooltip } from './Tooltip.tsx';
@@ -853,7 +854,7 @@ function MoreTabs({
         hintShortcut={words.shortcut}
         onClick={(event: MouseEvent<HTMLButtonElement>) => {
           // A press of the pointer opens it with nothing highlighted; `⏎` or Space, its first tab.
-          keyboard.current = event.detail === 0;
+          keyboard.current = pressedByKey(event);
           setOpen(!shown);
         }}
       >

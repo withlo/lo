@@ -6,7 +6,7 @@
 // label: what to do first, or the fact, in a few words with no full stop, as a tab's menu has
 // "Already first". The same words are the toast its key gives where no control shows them.
 
-import { ContextMenu, menuOpener, type ContextMenuAnchor } from '@lo/ui';
+import { ContextMenu, menuOpenedByKey, menuOpener, type ContextMenuAnchor } from '@lo/ui';
 import {
   findScope,
   hasEditMenu,
@@ -73,8 +73,9 @@ export function followMenu(listener: () => void): () => void {
 }
 
 /**
- * Opens the menu of `target` at `anchor`. Returns whether it did: a target no command has a menu
- * item for has no menu.
+ * Opens the menu of `target` at `anchor`, as the keyboard does with `keyboard`, or a `⋯` a key
+ * pressed (`menuOpenedByKey`). Returns whether it did: a target no command has a menu item for has
+ * no menu.
  */
 export function openMenu(
   target: Target,
@@ -85,7 +86,7 @@ export function openMenu(
   closing = undefined;
   const active = document.activeElement;
   const from = active instanceof HTMLElement || active instanceof SVGElement ? active : undefined;
-  set({ target, anchor, keyboard, from, opener: menuOpener() });
+  set({ target, anchor, keyboard: keyboard || menuOpenedByKey(), from, opener: menuOpener() });
   return true;
 }
 

@@ -66,12 +66,18 @@ test('⇧F10 and the menu key each open the menu of what has focus, under the ke
       await page.keyboard.press(key);
       const menu = menuOf(page);
       await expect(menu).toBeVisible();
-      // From the keyboard, the first action is highlighted already, dimmed or not.
-      await expect(highlighted(page)).toContainText('Back');
-      await page.keyboard.press('j');
-      await expect(highlighted(page)).toContainText('Forward');
+      // From the keyboard, the first action that can be done is highlighted already, past Back
+      // and Forward, dimmed with nowhere to go, which `k` still reaches.
+      const first = menu.locator('[role="menuitem"]:not([aria-disabled="true"])').first();
+      await expect(first).toHaveAttribute('data-highlighted');
+      await expect(menu.getByRole('menuitem', { name: /^Back/ })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
       await page.keyboard.press('k');
-      await expect(highlighted(page)).toContainText('Back');
+      await expect(highlighted(page)).toHaveAttribute('aria-disabled', 'true');
+      await page.keyboard.press('j');
+      await expect(first).toHaveAttribute('data-highlighted');
       // Esc closes it, and focus is back where the menu was opened.
       await page.keyboard.press('Escape');
       await expect(menu).toBeHidden();

@@ -34,10 +34,12 @@ export {
 } from './Toast.tsx';
 export { HERE, KeyHelp, type KeyHelpProblem, type KeyHelpProps } from './KeyHelp.tsx';
 export {
+  menuOpenedByKey,
   menuOpener,
   MORE_ACTIONS,
   MoreButton,
   openMenuUnder,
+  pressedByKey,
   type MoreButtonProps,
 } from './MoreButton.tsx';
 export {
