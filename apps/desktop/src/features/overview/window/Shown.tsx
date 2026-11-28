@@ -46,7 +46,7 @@ import { targetsOf } from './targets.ts';
 import { blockId, codeAt } from './blocks.ts';
 import { ExcerptBlock, WalkthroughBlock, type CodeContext } from './Code.tsx';
 import { drawing as firstDraw, FirstDrawContext, useFirstDraw } from './drawing.ts';
-import { revisionAt, type Standing } from './facts.ts';
+import { copyOf, revisionAt, type Standing } from './facts.ts';
 import { drawnIn, followCode, loadNewer, recordFrom } from './follow.ts';
 import { useNow } from './hooks.ts';
 import { openings } from './opening.ts';
@@ -247,6 +247,7 @@ function Byline({
   const now = useNow(true, 60_000);
   const { byline } = commit;
   const author = byline && authorOf(byline);
+  const copy = copyOf(state);
   const revision = revisionAt(known, described)?.number;
   return (
     <div className="lo-ov-bylines" data-lo-byline>
@@ -272,12 +273,13 @@ function Byline({
           ) : (
             <strong>r{revision}</strong>
           )}
-          {commit.source === 'fork' && (
+          {copy !== undefined && (
             <>
               <span className="lo-ov-byline__dot" aria-hidden="true">
                 ·
               </span>
-              from fork
+              {/* The repository's copy of the fork's reads as the fork's, for now. */}
+              {copy === 'saved' ? 'saved copy' : 'from fork'}
             </>
           )}
         </span>

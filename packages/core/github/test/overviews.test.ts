@@ -12,13 +12,19 @@ import { GithubError } from '../src/errors.ts';
 import {
   blobBytes,
   commitSummary,
+  keptOverviewRef,
+  keptStackOverviewRef,
+  matchingRefsPath,
   MAX_POLL_INTERVAL,
   overviewRef,
   overviewRefNumbers,
   pollInterval,
   readOverviewRef,
   readOverviewRefNumbers,
+  readRef,
+  stackOverviewRef,
   watchOverviewRef,
+  watchRef,
 } from '../src/overviews.ts';
 import { RepoRef } from '../src/refs.ts';
 import { Token } from '../src/token.ts';
@@ -109,6 +115,75 @@ describe('the ref', () => {
   test("refuses a number that isn't a pull request's", () => {
     expect(() => watchOverviewRef(signedIn(fetch), E2E, 0, undefined)).toThrow(RangeError);
     expect(() => watchOverviewRef(signedIn(fetch), E2E, 1.5, undefined)).toThrow(RangeError);
+  });
+});
+
+describe('other refs Lo reads', () => {
+  test("are a fork's overview's copy, a stack's overview and its copy, by their numbers", () => {
+    expect(keptOverviewRef(5)).toBe('refs/lo/kept/pr/5');
+    expect(stackOverviewRef(12)).toBe('refs/lo/stack/12');
+    expect(keptStackOverviewRef(12)).toBe('refs/lo/kept/stack/12');
+    for (const make of [keptOverviewRef, stackOverviewRef, keptStackOverviewRef]) {
+      expect(() => make(0)).toThrow(RangeError);
+      expect(() => make(1.5)).toThrow(RangeError);
+    }
+  });
+
+  test('are asked for by the refs they start, and only under refs/lo/', () => {
+    expect(matchingRefsPath(E2E, 'refs/lo/terms')).toBe(
+      '/repos/rozed-dev/e2e/git/matching-refs/lo/terms',
+    );
+    expect(matchingRefsPath(E2E, keptOverviewRef(80))).toBe(
+      '/repos/rozed-dev/e2e/git/matching-refs/lo/kept/pr/80',
+    );
+    for (const ref of ['refs/heads/main', 'refs/lo', 'refs/lo/', 'refs/lo/../x', 'refs/lo/a b']) {
+      expect(() => matchingRefsPath(E2E, ref)).toThrow(RangeError);
+    }
+  });
+
+  test('count only the ref itself, never another it starts', () => {
+    const sha = 'a'.repeat(40);
+    const answer = [
+      { ref: 'refs/lo/terms2', object: { sha, type: 'commit' } },
+      { ref: 'refs/lo/terms/old', object: { sha, type: 'commit' } },
+    ];
+    expect(readRef('refs/lo/terms')(answer)).toEqual({ kind: 'none' });
+    expect(
+      readRef('refs/lo/terms')([
+        ...answer,
+        { ref: 'refs/lo/terms', object: { sha, type: 'commit' } },
+      ]),
+    ).toEqual({ kind: 'commit', sha });
+  });
+
+  test('are watched with an ETag, which costs nothing while they hold the same', async () => {
+    const etag = 'W/"abc"';
+    const seen: Request[] = [];
+    const client = signedIn(async (input, init) => {
+      const request = new Request(input, init);
+      seen.push(request);
+      if (request.headers.get('if-none-match') === etag) {
+        return new Response(null, { status: 304, headers: { etag } });
+      }
+      return Response.json(
+        [{ ref: 'refs/lo/terms', object: { sha: 'b'.repeat(40), type: 'commit' } }],
+        { headers: { etag, 'x-poll-interval': '300' } },
+      );
+    });
+    expect(await watchRef(client, E2E, 'refs/lo/terms', undefined)).toEqual({
+      notModified: false,
+      value: { kind: 'commit', sha: 'b'.repeat(40) },
+      etag,
+      pollInterval: 300,
+    });
+    expect(await watchRef(client, E2E, 'refs/lo/terms', etag)).toEqual({
+      notModified: true,
+      pollInterval: undefined,
+    });
+    expect(seen.map(({ url }) => url)).toEqual([
+      'https://api.github.com/repos/rozed-dev/e2e/git/matching-refs/lo/terms',
+      'https://api.github.com/repos/rozed-dev/e2e/git/matching-refs/lo/terms',
+    ]);
   });
 });
 

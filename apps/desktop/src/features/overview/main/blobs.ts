@@ -1,13 +1,18 @@
 // Overviews' files in the database, by their git IDs: `artifact.md` and the figures an overview
 // shows, as GitHub sent them. Each is checked against its ID as it's kept and again as it's read,
 // so what's shown is always the file the commit names, and past a cap on their sizes, those used
-// least recently go. Nothing here calls Electron.
+// least recently go. Those a closed or merged pull request's kept overview holds (`SavedRefs`) are
+// held apart: they never go, and don't count toward the cap, which only the rest are held to, so
+// they never crowd them out. Only clearing the cache forgets them. Nothing here calls Electron.
 
 import { createHash } from 'node:crypto';
 
 import type { Database } from '../../../main/database.ts';
 
-/** The most bytes of files kept, past which those used least recently go: 256 MiB. */
+/**
+ * The most bytes of files kept, past which those used least recently go: 256 MiB, not counting
+ * those closed pull requests' kept overviews hold.
+ */
 export const BLOBS_CAP = 256 * 1024 * 1024;
 
 /**
@@ -25,6 +30,12 @@ export function blobId(bytes: Uint8Array, length: 40 | 64 = 40): string {
 export function isBlob(id: string, bytes: Uint8Array): boolean {
   return (id.length === 40 || id.length === 64) && blobId(bytes, id.length) === id;
 }
+
+/** The files no closed or merged pull request's kept overview holds, as a condition on a row. */
+const UNHELD = `id NOT IN (
+  SELECT files.id FROM overview_ref_files AS files
+  JOIN overview_refs AS refs ON refs.repository = files.repository AND refs.number = files.number
+  WHERE refs.closed = 1)`;
 
 /** A row's integer column, as SQLite gives it back. */
 function integer(value: unknown): number {
@@ -80,7 +91,8 @@ export class Blobs {
 
   /**
    * Keeps `bytes` as the file `id` names, if they are, and says whether they are. Past the cap,
-   * the files used least recently go, though never the one just kept.
+   * the files used least recently go, though never the one just kept, nor one a closed pull
+   * request's kept overview holds, which the cap doesn't count.
    */
   put(id: string, bytes: Uint8Array): boolean {
     if (!isBlob(id, bytes)) return false;
@@ -110,12 +122,25 @@ export class Blobs {
     );
   }
 
-  /** Forgets the files used least recently until the rest fit under the cap, keeping `kept`. */
+  /** How many bytes the files the cap counts take: all but those closed pull requests' hold. */
+  counted(): number {
+    return integer(
+      this.#database
+        .prepare(`SELECT coalesce(sum(size), 0) AS total FROM overview_blobs WHERE ${UNHELD}`)
+        .get()?.total,
+    );
+  }
+
+  /**
+   * Forgets the files used least recently until those the cap counts fit under it, keeping `kept`
+   * and never counting those of closed pull requests' kept overviews.
+   */
   #trim(kept: string): void {
-    let total = this.size();
+    let total = this.counted();
     if (total <= this.#cap) return;
     const oldest = this.#database.prepare(
-      'SELECT id, size FROM overview_blobs WHERE id != ? ORDER BY used_at, id LIMIT 64',
+      `SELECT id, size FROM overview_blobs WHERE id != ? AND ${UNHELD}
+       ORDER BY used_at, id LIMIT 64`,
     );
     const remove = this.#database.prepare('DELETE FROM overview_blobs WHERE id = ?');
     while (total > this.#cap) {
