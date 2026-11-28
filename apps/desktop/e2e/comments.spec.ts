@@ -21,6 +21,7 @@ import { COMMENTS_PULL, COMMENTS_RENAME_PULL, writeCommentsRemote } from '@lo/te
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Page } from '@playwright/test';
 
+import type { DraftsView } from '../src/features/comments/contract.ts';
 import {
   appFolder,
   barItem,
@@ -626,18 +627,18 @@ async function dragToLine(
 }
 
 /** The lines each draft with words in it on tab `tab` is on, as main keeps them: `3–6`, or `6`. */
-function draftLines(page: Page, tab: string): Promise<string[]> {
-  return page.evaluate(async (id) => {
-    const reply = await window.lo.invoke('comments.current', { id });
-    if (!reply.ok) return [];
-    const lines: string[] = [];
-    for (const { text, place } of reply.value.drafts?.drafts ?? []) {
-      if (text.trim() === '' || place.kind !== 'thread' || place.lines === null) continue;
-      const { start, end } = place.lines;
-      lines.push(start ? `${start.number}–${end.number}` : `${end.number}`);
-    }
-    return lines;
-  }, tab);
+async function draftLines(page: Page, tab: string): Promise<string[]> {
+  const reply = await page.evaluate((id) => window.lo.invoke('comments.current', { id }), tab);
+  if (!reply.ok) return [];
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- what the contract says.
+  const { drafts } = reply.value as { drafts: DraftsView | undefined };
+  const lines: string[] = [];
+  for (const { text, place } of drafts?.drafts ?? []) {
+    if (text.trim() === '' || place.kind !== 'thread' || place.lines === null) continue;
+    const { start, end } = place.lines;
+    lines.push(start ? `${start.number}–${end.number}` : `${end.number}`);
+  }
+  return lines;
 }
 
 /** A write Lo sends GitHub, held on its way. */
