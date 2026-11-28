@@ -271,7 +271,7 @@ test("says why a pull request GitHub doesn't have, or one no account can see, ca
     /^Checking/,
     /^Submit review/,
     /^Reading revisions/,
-    /^Sign in to compare revisions/,
+    /^(Sign in|Add an account) to compare revisions/,
   ]) {
     await expect(header.getByRole('button', { name: gone })).toHaveCount(0);
   }
