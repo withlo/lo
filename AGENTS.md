@@ -350,8 +350,10 @@ the window find them with `import.meta.glob`.
 - `contract.ts` defines the feature's contract with `defineContract`: each request's input as a Zod
   schema and its reply's type, and each topic main pushes, with its schema. Channels are named
   `<feature>.<name>`. Objects in an input are `z.strictObject`, so unknown keys are refused; a test
-  checks every contract. Main and the window both load contracts, so lint keeps Electron, Node and
-  either side's code out of them.
+  checks every contract. A topic's values reach the window in the order main published them, but not
+  in order with replies: one published before a reply can come after it, so a value that's older
+  than a reply the window has heard never undoes what the reply said. Main and the window both load
+  contracts, so lint keeps Electron, Node and either side's code out of them.
 - `main/index.ts` exports `defineFeature(contract, { uses, handlers, provide, start, stop })` by
   default: the other features' services it `uses`; a handler for every request; optionally a
   `provide` that returns the values of the feature's services; optionally a `start` that runs before
@@ -1632,13 +1634,15 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   ms for), the same tree its card from GitHub then starts from. The box is held from the send, its
   typing saved, so neither "Discard draft" nor its notes take it during that wait, and a box gone by
   its end, as with its tab, sends nothing. A refusal keeps the draft and says why in the box. From
-  the send until GitHub's answer, the draft is marked sent, with when, in the database. When the
-  answer is lost, the mark stays, a restart included, and the draft can't be sent again until main's
-  own read of the threads, made 10 s or more after it was sent, settles it, even after a restart:
-  found among your comments made since, by GitHub's clock, the box closes; not found, or not read,
-  the box says so. While the read can't be made, as offline, it stays checking and main tries again.
-  Text changed since it was sent stays as the draft. Nothing is sent again by itself, and nothing is
-  sent while GitHub can't be reached.
+  the send until GitHub's answer, the draft is marked sent, with when, in the database. Main's
+  drafts from before its answer can come after it: once the answer says GitHub took the comment,
+  those that still show it on its way change nothing, until main's drafts don't (`holdAnswered`), so
+  no box takes the text sent again. When the answer is lost, the mark stays, a restart included, and
+  the draft can't be sent again until main's own read of the threads, made 10 s or more after it was
+  sent, settles it, even after a restart: found among your comments made since, by GitHub's clock,
+  the box closes; not found, or not read, the box says so. While the read can't be made, as offline,
+  it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
+  is sent again by itself, and nothing is sent while GitHub can't be reached.
 - A comment sent to post at once (`⌥⏎`) while you have a pending review joins it, since GitHub posts
   nothing else from you until it's submitted, and the notice says so ("Added to your pending
   review"). Main says it did when it planned the comment into your review, and for a reply when

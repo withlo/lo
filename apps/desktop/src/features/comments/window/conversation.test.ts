@@ -195,6 +195,68 @@ describe('the box at the end of the timeline', () => {
     expect(timelineBox(VIEW, ON_PULL)).toBe(next);
   });
 
+  test('main’s drafts from before GitHub’s answer, coming after it, leave the next box be', async () => {
+    let answer!: (outcome: unknown) => void;
+    answers['comments.send'] = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const box = ownBox();
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
+    const sending = send(box, 'now');
+    await vi.waitFor(() => expect(answer).toBeDefined());
+    // GitHub's answer comes before the drafts main sent on the way to it.
+    answer({
+      kind: 'sent',
+      pending: false,
+      joined: false,
+      thread: null,
+      landedOn: null,
+      comment: 'IC_9',
+    });
+    await sending;
+    const next = ownBox();
+    expect(next).not.toBe(box);
+    const composer = drawn(next);
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false, sending: 'sending' })] });
+    takeDrafts({
+      id: VIEW,
+      drafts: [draft({ restored: false, sending: 'sending', sent: 'Ship it.', sentAt: 9_000 })],
+    });
+    takeDrafts({ id: VIEW, drafts: [] });
+    expect(timelineBox(VIEW, ON_PULL)).toBe(next);
+    expect(composer.text).toBe('');
+    expect(next.state).toMatchObject({ text: '', sending: null, busy: false, landing: false });
+    expect(next.sentMark).toBe(false);
+    // The comment is on the timeline once, as what was sent.
+    expect(onPull.get(VIEW)).toEqual([
+      expect.objectContaining({ key: box.id, state: 'sent', copy: 'IC_9' }),
+    ]);
+    // What main sends after its answer is taken as ever.
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false, text: 'One more thing.' })] });
+    expect(composer.text).toBe('One more thing.');
+  });
+
+  test('a draft whose text changed since it was sent comes back after GitHub’s answer', async () => {
+    let answer!: (outcome: unknown) => void;
+    answers['comments.send'] = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const box = ownBox();
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
+    const sending = send(box, 'now');
+    await vi.waitFor(() => expect(answer).toBeDefined());
+    answer({ kind: 'sent', pending: false, joined: false, thread: null, landedOn: null });
+    await sending;
+    const next = ownBox();
+    const composer = drawn(next);
+    // Main keeps the draft, its text changed since it was sent, and says it's sent no more.
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false, text: 'Ship it, then.' })] });
+    expect(composer.text).toBe('Ship it, then.');
+    expect(next.state).toMatchObject({ text: 'Ship it, then.', sending: null });
+  });
+
   test('asks main for the drafts once, after a reload, though the box was drawn first', async () => {
     answers['comments.current'] = () => ({
       threads: undefined,
