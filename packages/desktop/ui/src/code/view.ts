@@ -50,6 +50,7 @@ import {
 import { cutShort } from '../cut.ts';
 import { dragEdge, limitOf, resizing } from '../drag.ts';
 import { EDIT_SLOT_EVENT } from '../edits.ts';
+import { keepEnd } from '../ends.ts';
 import { fitSides, shareOf, SIDE_MIN } from '../fit.ts';
 import { type Tip, TIPPED, tips } from './tip.ts';
 import type {
@@ -851,6 +852,9 @@ class View implements DiffView {
     this.#boxWatch = new ResizeObserver(this.#keepPlace);
     // The box itself, not what's inside its padding, which is the room after the last file.
     this.#boxWatch.observe(this.dom, { box: 'border-box' });
+    // What the end loses on screen, as a box or a thread under the last lines shrinks or closes,
+    // stays as room there, which goes as it leaves the screen, as the room a jump makes does.
+    this.#stops.push(keepEnd(this.dom));
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
     // The edge between the sides never takes the pointer itself: the view finds a press, a
     // double-click or the pointer on its grip, over code, before anything under it hears them, and

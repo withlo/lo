@@ -977,6 +977,12 @@ each picture it has drawn by its address: the empty disc, then the Swap, once.
   that grows as a line is typed, its preview is drawn or its text wraps in less width scrolls its
   pane the least that keeps `lo-sp-8` under it. One that shrinks moves nothing, and one whose foot
   the reader scrolled off screen stays where they left it.
+- **A pane's end never comes up the screen by itself.** What gets shorter at the end of a pane
+  scrolled there, as a comment box at the end of the timeline or the diff shrinks, sends or closes,
+  leaves room at the end rather than pulling the scroll back, which would move everything on screen
+  down. The room goes as the reader scrolls it off screen. A pane that ends in comment boxes keeps
+  its end with `keepEnd(pane)`; the overview keeps its own (`holdPlace`). In a thread's popover the
+  box's foot stays at the popover's, and the popover keeps its edge by its line.
 
 ## Comments
 

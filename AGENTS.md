@@ -1521,7 +1521,9 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
   goes on screen, what the reader is at keeps its place (`window/place.ts`): the box at the end
   while they write in it or the list is at its end, or else the keyboard's row while it's on screen,
   or else the first row on screen. When the keyboard's row goes, as a comment deleted, the keyboard
-  moves to its neighbour, with nothing scrolled.
+  moves to its neighbour, with nothing scrolled. The list keeps its end (`keepEnd`, as the diff
+  does): what it loses at its end on screen, as the box there shrinks, sends or closes, stays as
+  room that goes as the reader scrolls it off screen, so the scroll is never pulled back.
 - The box at the end comments on the pull request itself, and your comments there have Edit and
   Delete (`i`, `dd`), in the row's menu a post's `shy` `⋯` opens, drawn through the comments
   feature's `PullCommentBox`, `PullCommentEdit` and `PullCommentNote`. `window/yours.ts` says which

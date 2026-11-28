@@ -240,6 +240,7 @@ export {
   type Motion,
 } from './motion.ts';
 export { reveal, scrollPane, type RevealBlock, type RevealOptions } from './reveal.ts';
+export { keepEnd } from './ends.ts';
 export { Steps, type StepItem, type StepsProps, type StepState } from './Steps.tsx';
 export { Mark, type MarkProps } from './Mark.tsx';
 export {

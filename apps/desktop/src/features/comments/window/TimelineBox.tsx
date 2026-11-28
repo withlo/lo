@@ -4,13 +4,12 @@
 // draft as main does. From the moment the box at the end sends its comment, the comment is the
 // timeline's last row, and the box stands empty, as it will be once GitHub has the comment, taking
 // nothing until then; a box whose foot was on screen as it sent stays on screen under the row, in
-// the frame that draws it. The box keeps the room it took when it shrinks with no input of the
-// reader's, so nothing around it moves; the next key, click or scroll lets it go. Under a comment
-// whose delete's answer was lost, the card says how that stands.
+// the frame that draws it. Otherwise, as it shrinks, sends or closes, nothing on screen moves: the
+// timeline keeps its end where it was, as room that goes as the reader scrolls it off screen. Under
+// a comment whose delete's answer was lost, the card says how that stands.
 
 import { Button, CommentBoxFootBar, CommentBoxHeadBar, Key, reveal, scrollPane } from '@lo/ui';
 import { createComposer } from '@lo/ui/code';
-import { KEY_EVENT } from '@lo/ui/commands';
 import {
   useEffect,
   useId,
@@ -96,43 +95,6 @@ function TimelineComposer({
   return <div ref={host} />;
 }
 
-/**
- * Keeps `outer` as tall as `inner` has been since the reader's last key, click or scroll, so that
- * when `inner` shrinks with no input of theirs, nothing after it, and nothing scrolled to the end,
- * moves. A key counts once the key listener says it's the reader's input (`KEY_EVENT`), those Lo's
- * commands take, such as `j`, among them. `away` changing lets it go too: the box's comment has
- * gone to the timeline's last row, which takes its room.
- */
-function useHeldHeight(
-  outer: RefObject<HTMLDivElement | null>,
-  inner: RefObject<HTMLDivElement | null>,
-  away: boolean,
-): void {
-  useLayoutEffect(() => {
-    const held = outer.current;
-    const drawn = inner.current;
-    if (!held || !drawn) return undefined;
-    let tallest = 0;
-    const measure = () => {
-      tallest = Math.max(tallest, drawn.getBoundingClientRect().height);
-      held.style.minHeight = `${tallest}px`;
-    };
-    const input = () => {
-      tallest = 0;
-      measure();
-    };
-    const observer = new ResizeObserver(measure);
-    observer.observe(drawn);
-    const events = [KEY_EVENT, 'pointerdown', 'wheel', 'touchstart'] as const;
-    for (const event of events) document.addEventListener(event, input, true);
-    return () => {
-      observer.disconnect();
-      for (const event of events) document.removeEventListener(event, input, true);
-      held.style.minHeight = '';
-    };
-  }, [outer, inner, away]);
-}
-
 /** Whether `box`'s comment is on its way, or looked for: the timeline's last row shows it. */
 function useAway(box: Box | undefined): boolean {
   return useSyncExternalStore(
@@ -168,7 +130,7 @@ function footShown(element: Element): boolean {
  * As `box`'s comment goes to the timeline's last row, which pushes the box down by the row's
  * height: where the box's foot was on screen as it sent, the box is brought back on screen whole,
  * at once, in the frame that draws the row, so the row never pushes it under the pane's foot.
- * `outer` holds the box, its height held as it was until that frame.
+ * `outer` holds the box.
  */
 function useKeptOnScreen(
   box: Box | undefined,
@@ -269,7 +231,6 @@ export function PullBox({ tab, leave, keys }: PullBoxProps): ReactNode {
   const away = useTabState(timelineBoxes, view, (boxes) => boxes.away);
   const box = own ?? (away ? undefined : timelineBox(view, ON_PULL));
   const outer = useRef<HTMLDivElement>(null);
-  const inner = useRef<HTMLDivElement>(null);
   const drawn = useRef<HTMLDivElement>(null);
   // Its comment on its way is the timeline's last row: the box stands empty meanwhile.
   const sent = useAway(box);
@@ -313,32 +274,29 @@ export function PullBox({ tab, leave, keys }: PullBoxProps): ReactNode {
     was.box.composer?.focus();
   }, [sent, leave, box]);
   useKeptOnScreen(box, outer, sent);
-  useHeldHeight(outer, inner, sent);
   return (
     <div ref={outer} data-lo-timeline="box">
-      <div ref={inner}>
-        {box ? (
-          <>
-            {sent && <Away number={tab.number} height={emptyHeight.current} />}
-            <div ref={drawn} hidden={sent}>
-              <TimelineComposer
-                box={box}
-                label={`Comment on #${tab.number}`}
-                hint={hintOf(box.state.place, tab.number)}
-                leave={leave}
-              />
-            </div>
-          </>
-        ) : (
-          <div className="flex flex-wrap items-center gap-x-8 gap-y-4 py-4 text-fg-muted text-small">
-            <span>{AWAY[away ?? 'block']}</span>
-            <Button variant="ghost" size="sm" onClick={() => bringToTimeline(view)}>
-              {`Comment on #${tab.number}`}
-              {keys && <Key keys={keys} decorative />}
-            </Button>
+      {box ? (
+        <>
+          {sent && <Away number={tab.number} height={emptyHeight.current} />}
+          <div ref={drawn} hidden={sent}>
+            <TimelineComposer
+              box={box}
+              label={`Comment on #${tab.number}`}
+              hint={hintOf(box.state.place, tab.number)}
+              leave={leave}
+            />
           </div>
-        )}
-      </div>
+        </>
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-4 py-4 text-fg-muted text-small">
+          <span>{AWAY[away ?? 'block']}</span>
+          <Button variant="ghost" size="sm" onClick={() => bringToTimeline(view)}>
+            {`Comment on #${tab.number}`}
+            {keys && <Key keys={keys} decorative />}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
