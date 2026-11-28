@@ -329,66 +329,97 @@
 }
 
 /*
- * Overview markers: a lane as wide with none as with them, last before the code on the side an
- * overview marks, so markers that come later move nothing. The ball's ring may reach past the
- * lane's edges.
- */
-.lo-app .cm-editor .cm-gutter.lo-ovcolumn {
-  width: 14px;
-  overflow: visible;
-}
-
-/*
- * The threads' lane, between the line numbers and the code, on the line numbers' ground: as wide
- * with no marks as with them, so marks that come later move nothing.
+ * The lanes ranges are drawn in, as wide with none as with them, so marks that come later move
+ * nothing: the threads' lane, between the line numbers and the code, on the line numbers' ground,
+ * and the overview's, last before the code on the side an overview marks. A mark's room on its
+ * row, which stems stop 2 px short of: a thread's 14 px bubble, and a note's 9 px ball with its 3 px
+ * halo, which may reach past the lane's edges.
  */
 .lo-app .cm-editor .cm-gutter.lo-threadlane {
+  --mark-top: calc((var(--lo-code-line) - 14px) / 2);
+  --mark-bottom: calc((var(--lo-code-line) + 14px) / 2);
   width: 16px;
+  overflow: visible;
+}
+.lo-app .cm-editor .cm-gutter.lo-ovcolumn {
+  --mark-top: calc(var(--lo-code-line) / 2 - 7.5px);
+  --mark-bottom: calc(var(--lo-code-line) / 2 + 7.5px);
+  width: 14px;
   overflow: visible;
 }
 .lo-lanecell {
   position: relative;
+  user-select: none;
 }
 .lo-lanemark {
   position: absolute;
   inset: 0;
 }
 /*
- * A bracket up a thread's range: 2 px down the lane's middle, from the middle of the range's first
- * line, where a 5 px tick turns toward the code, to 2 px above the bubble on its last. Amber while
- * the thread is unresolved or pending.
+ * A range's stem, 2 px wide in its slot, which `ranges.ts` places across the lane: from the middle
+ * of its first line's first row, where its tick turns toward the code, to 2 px above its mark on
+ * its last, round another range's mark on the way, and on under it. Each keeps its own colour.
  */
-.lo-bracket {
+.lo-stem {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(50% - 1px);
   width: 2px;
   border-radius: 1px;
 }
-.lo-bracket--warn {
+.lo-stem--from-mid {
+  top: calc(var(--lo-code-line) / 2 - 1px);
+}
+.lo-stem--from-mark {
+  top: calc(var(--mark-bottom) + 2px);
+}
+.lo-stem--to-mark {
+  bottom: auto;
+  height: calc(var(--mark-top) - 2px);
+}
+/* The tick, 2 px tall, from the outermost stem that starts on the row to 2 px short of the lane's edge. */
+.lo-tick {
+  position: absolute;
+  top: calc(var(--lo-code-line) / 2 - 1px);
+  height: 2px;
+  border-radius: 1px;
+}
+/* Under the row's mark, where a range starts on the line another ends on. */
+.lo-tick.is-under {
+  top: calc(var(--mark-bottom) + 2px);
+}
+.lo-stem--warn {
   background-color: var(--lo-warning-border);
 }
-.lo-bracket--quiet,
-.lo-bracket--muted {
+.lo-stem--quiet,
+.lo-stem--muted {
   background-color: var(--lo-border);
 }
-.lo-bracket--from-mid,
-.lo-bracket--tick {
-  top: calc(var(--lo-code-line) / 2);
+.lo-stem--note {
+  background-color: var(--lo-accent-line);
 }
-.lo-bracket--from-bubble {
-  top: calc((var(--lo-code-line) - 14px) / 2 + 16px);
+/* Lit: under the pointer, pinned, or where a key landed. */
+.lo-stem--warn.is-lit {
+  background-color: var(--lo-warning);
 }
-.lo-bracket--to-bubble {
-  bottom: auto;
-  height: calc((var(--lo-code-line) - 14px) / 2 - 2px);
+.lo-stem--quiet.is-lit,
+.lo-stem--muted.is-lit {
+  background-color: var(--lo-fg-muted);
 }
-.lo-bracket--tick {
-  bottom: auto;
-  width: 7px;
-  height: 2px;
+.lo-stem--note.is-lit {
+  background-color: var(--lo-accent);
 }
+/*
+ * A cell whose stems open what they mean, beside lines, and a note's: it tints under the pointer,
+ * as a bubble does.
+ */
+.lo-lanemark.is-target:not(:has(.lo-bubble)):hover {
+  background-color: var(--lo-hover);
+}
+.lo-lanemark.is-target:not(:has(.lo-bubble)):active {
+  background-color: var(--lo-press);
+}
+
 /*
  * A thread's bubble: a 14 px icon on the first row of its last line, amber or grey, whose control
  * is the lane beside the whole line. A file's own threads' is in its header's row, in the lane the
@@ -439,30 +470,28 @@
 .lo-diffhead__bubble > .lo-i {
   top: calc(50% - 7px);
 }
-/*
- * Beside lines, a bracket's cell is its thread's mark too, as a bubble is: it takes the pointer's
- * hover. A draft's alone isn't: its bubble is. While a thread's popover is open, its bubble and
- * bracket are drawn in full colour.
- */
-.is-beside .lo-lanemark:not(:has(.lo-bubble)):has(.lo-bracket--warn, .lo-bracket--quiet):hover {
-  background-color: var(--lo-hover);
-}
-.is-beside .lo-lanemark:not(:has(.lo-bubble)):has(.lo-bracket--warn, .lo-bracket--quiet):active {
-  background-color: var(--lo-press);
-}
-.lo-bubble--quiet.is-open {
+/* A resolved thread's bubble, lit, and a file's own threads' bubble while their popover is open. */
+.lo-lanebubble.lo-bubble--quiet.is-lit,
+.lo-diffhead__bubble.lo-bubble--quiet.is-open {
   color: var(--lo-fg-muted);
 }
-.lo-bracket--warn.is-open {
-  background-color: var(--lo-warning);
+/*
+ * The rows of the range lit, across the line numbers, the lanes and the code: the selected ground
+ * over their own, so an added or removed line's shows through it, under a landing's tint. The
+ * lines of a comment box being written take the ground `v` gives instead.
+ */
+.lo-app .cm-editor .cm-line.lo-lit,
+.lo-app .cm-editor .cm-gutterElement.is-lit {
+  --lo-ground: var(--lo-selected);
 }
-.lo-bracket--quiet.is-open,
-.lo-bracket--muted.is-open {
-  background-color: var(--lo-fg-muted);
+.lo-app .cm-editor .cm-line.lo-picked,
+.lo-app .cm-editor .cm-gutterElement.is-picked {
+  --lo-ground: var(--lo-code-line-selected);
 }
-/* The lines of a thread whose popover is open: their number and lane cells take the selected ground. */
-.lo-app .cm-editor .cm-gutterElement.is-popped {
-  background-color: var(--lo-selected);
+.lo-app .cm-editor :is(.cm-line, .cm-gutterElement):is(.lo-lit, .lo-picked, .is-lit, .is-picked) {
+  background-image:
+    linear-gradient(var(--lo-land, transparent), var(--lo-land, transparent)),
+    linear-gradient(var(--lo-ground), var(--lo-ground));
 }
 /*
  * The threads' popover, beside lines: in a layer of the scroll the code is in (which the box that

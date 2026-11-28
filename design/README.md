@@ -871,9 +871,16 @@ each picture it has drawn by its address: the empty disc, then the Swap, once.
   lines, on one side leaves space (`lo-spacer`) on the other.
 - **A marker sits against the code it's about.** Line numbers, then the thread lane, then the
   overview lane on a side that shows new lines, then the code. A lane is as wide empty as full.
-- **A thread is a bubble, the overview is a ball.** A thread's mark is a `message-square` icon with
-  a bracket up its range, amber while unresolved or pending, grey once resolved or out of date. The
-  overview's is the Powder ball and rail. Neither borrows from the other.
+- **A range is a bracket with its mark at the foot.** A thread and an overview note draw the same
+  way, from the same code (`ui/code/ranges.ts`): the mark on the range's last line, a stem up its
+  lane to a tick on its first, and its lines on `lo-selected` while it's lit, which is under the
+  pointer, open, or where a key landed. A thread's mark is the `message-square` bubble in the thread
+  lane, amber while unresolved or pending, grey once resolved or out of date. An overview note's is
+  the Powder ball in the overview lane. Only the mark, its colour and its lane tell them apart.
+- **Ranges that overlap nest.** In a lane each range keeps a stem of its own, in the first free of
+  three slots 4 px apart, the earliest start outermost, and a stem skips the row of another's mark.
+  Ranges that end on one line share its mark and open together. One range is lit at a time, so no
+  line carries two grounds.
 - **A thread opens over the code, not in it.** With Threads in code at "Beside lines", the default,
   a thread, a reply and a new comment's box open in `ThreadPopover` under the last line they're
   about, and no line of code moves. It never covers its own lines unless they fill the pane.

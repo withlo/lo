@@ -328,8 +328,15 @@
    off. */
 
 /* Tint: hover, press and selection change color, and nothing else. */
+/* A ground laid over a row's own, as a code view's lit lines take (`--lo-ground`), tints too. */
+@property --lo-ground {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
 @utility move-tint {
-  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+  transition-property:
+    color, background-color, border-color, text-decoration-color, fill, stroke, --lo-ground;
   transition-duration: var(--lo-dur-fast);
   transition-timing-function: var(--lo-ease-out);
 }

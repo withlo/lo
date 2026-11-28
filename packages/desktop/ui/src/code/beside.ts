@@ -34,12 +34,19 @@ import { bubbleOf, rangeTone, Tones } from './bubbles.ts';
 import { CommentBox } from './comments.ts';
 import type { HeaderThreads } from './decorations.ts';
 import { endSelection } from './keys.ts';
-import { besideMarker, type LaneBubble, type LaneRange, setPopped } from './lanes.ts';
+import { besideMarker, type LaneBubble } from './lanes.ts';
 import type { Popover, PopHost, PopLines, PopRoom } from './popover.ts';
+import { type LaneRange, type Lights, type LitRange, rangeUnder, sameRange } from './ranges.ts';
 import { editSlot, HeaderWidget, SpacerWidget } from './widgets.ts';
 
 /** An editor of a code view: one side's, side by side, or the one with both sides' lines. */
 export type Pane = Side | 'inline';
+
+/** Where the pointer is: what it's on, and how far across the window. */
+export interface Pointed {
+  readonly target: EventTarget | null;
+  readonly clientX: number;
+}
 
 /** A file's line on one side, by the file's index: line 0 is its header. */
 export interface At {
@@ -54,6 +61,17 @@ export interface At {
  */
 export interface PopPlace extends At {
   readonly key: string;
+}
+
+/**
+ * The document lines a range covers in a pane, as its stem draws them, and whether it ticks there
+ * and has its mark there.
+ */
+export type LaneLines = Pick<LaneRange, 'from' | 'to' | 'tick' | 'foot'>;
+
+/** The name a draft's range has in the lane: by its file and its lines. */
+export function draftKey(file: number, side: Side, from: number, to: number): string {
+  return `draft:${file}|${side}:${from}-${to}`;
 }
 
 /** A file's threads' marks in one pane, by document line: their ranges, and each line's bubble. */
@@ -120,6 +138,14 @@ function markedDraft<T extends { readonly shown?: boolean | undefined }>(
   drafts: readonly T[],
 ): T | undefined {
   return threads.length === 0 ? drafts[0] : drafts.find((draft) => draft.shown !== true);
+}
+
+/** A draft's mark at the line it ends on: its words, its range's name, and its box's state. */
+interface DraftEnd {
+  readonly words: string;
+  readonly key: string;
+  readonly open: boolean;
+  readonly shown?: boolean | undefined;
 }
 
 /** The thread a draft is in, where it's in one. */
@@ -267,7 +293,7 @@ export interface BesideHost {
     file: number,
     from: { side: Side; line: number },
     end: { side: Side; line: number },
-  ): Omit<LaneRange, 'tone'> | undefined;
+  ): LaneLines | undefined;
   /** The pane the popover is placed in, as it is now. */
   room(): PopRoom;
   /** Scrolls the pane by `by`, down or up, as the view's own scroll. */
@@ -278,6 +304,8 @@ export interface BesideHost {
   focusLine(at: At): void;
   /** Files' marks changed: those of `files` in the lanes, and of `headers` in their headers. */
   marksChanged(files: Iterable<number>, headers: Iterable<number>): void;
+  /** What lights the view's ranges may have changed, as the popover opened, moved or closed. */
+  relight(): void;
   /** The lines file `file` keeps shown changed, as a comment box's line no longer is. */
   keep(file: number): void;
   /** Keeps line `at` shown, as a comment box's: out of its fold, the line staying where it is. */
@@ -312,15 +340,45 @@ export class Beside {
   #drafts: readonly DraftMark[] = [];
   /** Stops waiting for the reader's next input, which lets a sent box in the popover go. */
   #sentWait: (() => void) | undefined;
+  /** The popover's card the pointer is on, or its first where it's in the popover on none. */
+  #pointedCard: LitRange | undefined;
+  /** Stops following the pointer in the popover. */
+  #unpoint: (() => void) | undefined;
 
   constructor(host: BesideHost) {
     this.#host = host;
   }
 
-  /** The popover, made as it's first needed: until a thread shows, the view makes nothing. */
+  /**
+   * The popover, made as it's first needed: until a thread shows, the view makes nothing. The card
+   * the pointer is on in it lights its thread's range.
+   */
   #popover(): Popover<PopPlace> {
-    this.#pop ??= this.#host.popover(this.#popHost());
-    return this.#pop;
+    if (this.#pop) return this.#pop;
+    const pop = this.#host.popover(this.#popHost());
+    this.#pop = pop;
+    const point = (event: PointerEvent): void => {
+      const { target } = event;
+      const next =
+        event.type === 'pointerleave' || !(target instanceof Element)
+          ? undefined
+          : (this.cardUnder(target) ?? undefined);
+      if (sameRange(next, this.#pointedCard)) return;
+      this.#pointedCard = next;
+      this.#host.relight();
+    };
+    pop.dom.addEventListener('pointermove', point, { passive: true });
+    pop.dom.addEventListener('pointerleave', point, { passive: true });
+    this.#unpoint = () => {
+      pop.dom.removeEventListener('pointermove', point);
+      pop.dom.removeEventListener('pointerleave', point);
+    };
+    return pop;
+  }
+
+  /** The popover's card the pointer is on, while it's open at the view's lines. */
+  get pointedCard(): LitRange | undefined {
+    return this.#pop?.open ? this.#pointedCard : undefined;
   }
 
   /** What draws the popover's threads: what it shows is drawn anew as it changes. */
@@ -372,7 +430,7 @@ export class Beside {
     const drafts = this.#draftsIn(pane, file);
     if ((!drawn || drawn.size === 0) && drafts.size === 0) return { ranges, bubbles };
     if (!host.hasLines(pane, file)) return { ranges, bubbles };
-    // Beside lines, the threads whose popover is open: their marks are drawn in full colour.
+    // Beside lines, the threads whose popover is open: their bubble says so.
     const shown = this.#shownAt;
     const popped =
       host.mode() === 'beside'
@@ -393,9 +451,9 @@ export class Beside {
         if (range) {
           ranges.push({
             ...range,
+            key: thread.id,
             tone: rangeTone(thread),
             arriving: this.#arriving.has(thread.id),
-            open: popped?.has(thread.id) ?? false,
           });
         }
       }
@@ -404,12 +462,17 @@ export class Beside {
     ranges.push(...drafts.ranges);
     for (const line of new Set([...ending.keys(), ...drafts.bubbles.keys()])) {
       const threads = ending.get(line) ?? [];
-      const draft = markedDraft(threads, drafts.bubbles.get(line) ?? []);
+      const marked = drafts.bubbles.get(line) ?? [];
+      const draft = markedDraft(threads, marked);
       if (threads.length === 0 && !draft) continue;
       const bubble = bubbleOf(popped ? listed(threads) : threads, draft);
       const key = threads.length > 0 ? bubble.thread : `draft:${line}`;
       bubbles.set(line, {
         bubble,
+        keys:
+          threads.length > 0
+            ? listed(threads).map((thread) => thread.id)
+            : marked.map((each) => each.key),
         open:
           threads.length === 0
             ? (draft?.open ?? false)
@@ -432,15 +495,12 @@ export class Beside {
     pane: Pane,
     file: number,
   ): {
-    bubbles: Map<number, { words: string; open: boolean; shown?: boolean | undefined }[]>;
+    bubbles: Map<number, DraftEnd[]>;
     ranges: LaneRange[];
     size: number;
   } {
     const host = this.#host;
-    const bubbles = new Map<
-      number,
-      { words: string; open: boolean; shown?: boolean | undefined }[]
-    >();
+    const bubbles = new Map<number, DraftEnd[]>();
     const ranges: LaneRange[] = [];
     const none = { bubbles, ranges, size: 0 };
     if (host.mode() !== 'beside') return none;
@@ -449,11 +509,12 @@ export class Beside {
       const at = this.#draftAt(draft);
       if (!at || at.end.file !== file || at.end.line === 0) continue;
       const open = this.#shownAt?.key === this.#popKey(at.end);
+      const key = at.key ?? '';
       const range = at.from && host.laneRange(pane, file, at.from, at.end);
-      if (range) ranges.push({ ...range, tone: 'muted', open });
+      if (range) ranges.push({ ...range, key, tone: 'muted' });
       if (pane !== 'inline' && at.end.side !== pane) continue;
       const line = host.docLine(pane, at.end);
-      const mark = { words: draft.words, open, shown: draft.shown };
+      const mark = { words: draft.words, open, shown: draft.shown, key };
       bubbles.set(line, [...(bubbles.get(line) ?? []), mark]);
     }
     return { bubbles, ranges, size: bubbles.size + ranges.length };
@@ -594,7 +655,7 @@ export class Beside {
         else host.focusLine(at);
       },
       scrollBy: (by) => host.scrollBy(by),
-      onMark: (target, at) => this.markOf(target)?.at.key === at.key,
+      onMark: (event, at) => this.markOf(event)?.at.key === at.key,
       holds: (at) => this.#box?.at.key === at.key && !this.#box.sent,
       release: (at) => {
         if (this.#box?.at.key === at.key) this.#releaseBox();
@@ -652,7 +713,7 @@ export class Beside {
    */
   #draftAt(
     draft: DraftMark,
-  ): { end: At; from?: { side: Side; line: number }; thread?: string } | undefined {
+  ): { end: At; from?: { side: Side; line: number }; thread?: string; key?: string } | undefined {
     const { at } = draft;
     if ('thread' in at) {
       const end = this.#host.threadPlace(at.thread);
@@ -664,9 +725,11 @@ export class Beside {
       const first = Math.min(at.from, at.to);
       const last = Math.max(at.from, at.to);
       const end = { file, side: at.side, line: last };
-      return first === last ? { end } : { end, from: { side: at.side, line: first } };
+      const key = draftKey(file, at.side, first, last);
+      return first === last ? { end, key } : { end, from: { side: at.side, line: first }, key };
     }
-    return { end: { file, ...placeOf(at) } };
+    const end = { file, ...placeOf(at) };
+    return { end, key: draftKey(file, end.side, end.line, end.line) };
   }
 
   /**
@@ -763,22 +826,18 @@ export class Beside {
   }
 
   /**
-   * The popover opened at `at`, moved there, or closed: its lines' number and lane cells take the
-   * selected tint, its marks full colour, and pinned, the cursor goes to its bubble's line unless
-   * it's on its lines already.
+   * The popover opened at `at`, moved there, or closed: its marks say so, what it lights changes,
+   * and pinned, the cursor goes to its bubble's line unless it's on its lines already.
    */
   #popShown(at: PopPlace | undefined): void {
     const host = this.#host;
     const was = this.#shownAt;
     this.#shownAt = at;
-    for (const pane of host.lanePanes()) {
-      const span = at && at.line > 0 ? this.#poppedSpan(pane, at) : undefined;
-      host.viewOf(pane).dispatch({ effects: setPopped.of(span ?? null) });
-    }
     const files = [was, at].flatMap((each) => (each ? [each.file] : []));
     // A file's own threads' bubble is in its header.
     const heads = new Set([was, at].flatMap((each) => (each?.line === 0 ? [each.file] : [])));
     host.marksChanged(files, heads);
+    host.relight();
     if (at && this.#pop?.pinned) this.#cursorOnto(at);
   }
 
@@ -810,33 +869,104 @@ export class Beside {
   }
 
   /**
-   * Beside lines, the thread mark `target` is on, a bubble or a bracket's cell in the lane: its
-   * thread, and where its popover opens.
+   * Beside lines, the thread mark the pointer `event` is on, a bubble or a cell in the lane: the
+   * bubble's thread, or else the one whose stem is nearest the pointer, and where its popover
+   * opens.
    */
-  markOf(target: EventTarget | null): { at: PopPlace; thread: string } | undefined {
+  markOf(event: Pointed): { at: PopPlace; thread: string } | undefined {
     const host = this.#host;
+    const { target } = event;
     if (host.mode() !== 'beside' || !(target instanceof Element)) return undefined;
     if (!host.root.contains(target) || this.#pop?.dom.contains(target)) return undefined;
     // A draft's own bubble is a control of its own, which opens its box again.
     if (target.closest('.lo-bubble[data-draft]') !== null) return undefined;
     let thread = target.closest<HTMLElement>('.lo-bubble[data-beside]')?.dataset.thread;
-    if (thread === undefined) {
-      const cell = besideMarker(target);
-      const pane = cell && host.panes().find((each) => host.viewOf(each).dom.contains(cell));
-      if (!cell || !pane) return undefined;
-      const view = host.viewOf(pane);
-      const height = cell.getBoundingClientRect().top + 1 - view.documentTop;
-      const line = view.state.doc.lineAt(view.lineBlockAtHeight(height).from).number;
-      thread = this.threadAt(host.placeAt(pane, line));
+    if (thread === undefined && besideMarker(target)) {
+      const under = rangeUnder(event);
+      if (under?.kind === 'threads') thread = under.key;
     }
     const at = thread === undefined ? undefined : this.#popOf(thread);
     return at && thread !== undefined ? { at, thread } : undefined;
   }
 
+  // What lights the view's ranges ---------------------------------------------------------------
+
+  /**
+   * What the popover lights while it's pinned: its cards' threads, in its order, or a new
+   * comment's box open in it, whose lines count as pinned, with its draft's range.
+   */
+  pinnedLight(): Lights['pinned'] {
+    const pop = this.#pop;
+    if (!pop?.pinned || !pop.at) return undefined;
+    const box = this.pickedBox();
+    if (box) {
+      const first = box.from?.line ?? box.place.line;
+      const key = draftKey(box.place.file, box.place.side, first, box.place.line);
+      return { picked: { lane: 'threads', key } };
+    }
+    const cards = this.#poppedThreads(pop.at).map((thread): LitRange => ({
+      lane: 'threads',
+      key: thread.id,
+    }));
+    return cards.length > 0 ? { cards } : undefined;
+  }
+
+  /**
+   * The lines range `key` covers, a thread's or a draft's: its file, its first line and its last,
+   * as its stem and mark draw them. None for one the view doesn't have, or on a file.
+   */
+  linesOf(key: string): { file: number; from: { side: Side; line: number }; end: At } | undefined {
+    for (const draft of this.#drafts) {
+      const at = this.#draftAt(draft);
+      if (at?.key === key && at.end.line > 0) {
+        return { file: at.end.file, from: at.from ?? at.end, end: at.end };
+      }
+    }
+    const end = this.#host.threadPlace(key);
+    if (!end || end.line === 0) return undefined;
+    const threads = this.#host.threadsIn(end.file)?.get(`${end.side}:${end.line}`);
+    const from = threads?.find((thread) => thread.id === key)?.mark?.from;
+    return { file: end.file, from: from ?? end, end };
+  }
+
+  /**
+   * The lines of the new comment's box open in the popover, being written: its last line, and its
+   * first where it's on more than one.
+   */
+  pickedBox(): { place: At; from: { side: Side; line: number } | undefined } | undefined {
+    const box = this.#box;
+    if (!box || box.sent || box.box.thread !== undefined || box.place.line === 0) return undefined;
+    if (!this.#pop?.pinned || this.#pop.at?.key !== box.at.key) return undefined;
+    return { place: box.place, from: box.from };
+  }
+
+  /** The thread of the card in the popover the keyboard is on, if focus is in one. */
+  focusedCard(): LitRange | undefined {
+    const pop = this.#pop;
+    const active = pop?.dom.ownerDocument.activeElement;
+    if (!pop?.open || !(active instanceof Element) || !pop.dom.contains(active)) return undefined;
+    const id = active.closest<HTMLElement>('[data-thread-id]')?.dataset.threadId;
+    return id === undefined ? undefined : { lane: 'threads', key: id };
+  }
+
+  /**
+   * The thread of the popover's card `target` is on, or its first card's where it's in the
+   * popover but on none of them; `null` where it isn't in the popover.
+   */
+  cardUnder(target: Element): LitRange | undefined | null {
+    const pop = this.#pop;
+    if (!pop?.open || !pop.dom.contains(target)) return null;
+    const card =
+      target.closest<HTMLElement>('[data-thread-id]') ??
+      pop.dom.querySelector<HTMLElement>('[data-thread-id]');
+    const id = card?.dataset.threadId;
+    return id === undefined ? undefined : { lane: 'threads', key: id };
+  }
+
   /** The pointer came over something, or left the view: a mark it rests on previews its popover. */
   hover(event: PointerEvent): void {
     if (this.#host.mode() !== 'beside') return;
-    const at = event.type === 'pointerleave' ? undefined : this.markOf(event.target)?.at;
+    const at = event.type === 'pointerleave' ? undefined : this.markOf(event)?.at;
     // Off a mark, with no popover made, there's nothing to tell.
     if (at === undefined && !this.#pop) return;
     this.#popover().hover(at);
@@ -1178,6 +1308,7 @@ export class Beside {
   destroy(): void {
     this.#popping++;
     this.#sentWait?.();
+    this.#unpoint?.();
     this.#box?.box.destroy();
     this.#box = undefined;
     this.#pop?.destroy();

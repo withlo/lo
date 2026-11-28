@@ -61,7 +61,7 @@ import type {
   ThreadView,
   VimKey,
 } from './api.ts';
-import { type At, Beside, type BesideHost, type Pane } from './beside.ts';
+import { type At, Beside, type BesideHost, type LaneLines, type Pane } from './beside.ts';
 import { CommentBox, placeKey } from './comments.ts';
 import { fileMarks } from './decorations.ts';
 import { askToShowLine, codeEditor } from './editor.ts';
@@ -81,9 +81,23 @@ import {
   vimOn,
   vimPending,
 } from './keys.ts';
-import { type LaneRange, type LaneUpdate, laneUpdate, setLane, threadLane } from './lanes.ts';
+import { laneUpdate, setLane, threadLane } from './lanes.ts';
 import { marking } from './marks.ts';
 import { type PopRoom, sharedPop } from './popover.ts';
+import {
+  type LaneUpdate,
+  lightOf,
+  type Lit,
+  litOf,
+  type LitRange,
+  type LitRows,
+  rangeUnder,
+  sameKeys,
+  sameLit,
+  sameRange,
+  setLit,
+  UNLIT,
+} from './ranges.ts';
 import { type ThreadHost, Threads } from './threads.ts';
 import { type Tip, tips } from './tip.ts';
 import { FileNoteWidget, ThreadSizes, ThreadWidget } from './widgets.ts';
@@ -434,6 +448,10 @@ class Excerpt implements ExcerptView {
     this.dom.addEventListener('click', this.#clicked);
     this.dom.addEventListener('pointerover', this.#hoverMark, { passive: true });
     this.dom.addEventListener('pointerleave', this.#hoverMark, { passive: true });
+    this.dom.addEventListener('pointermove', this.#pointRange, { passive: true });
+    this.dom.addEventListener('pointerleave', this.#pointRange, { passive: true });
+    this.dom.addEventListener('focusin', this.#focusRelight);
+    this.dom.addEventListener('focusout', this.#focusRelight);
     // The reader's pointer or key in the excerpt lets go of what waits in it; in a thread, what
     // becomes of the thread's size next is theirs.
     for (const type of TOUCH) this.dom.addEventListener(type, this.#touched, { capture: true });
@@ -496,9 +514,99 @@ class Excerpt implements ExcerptView {
   #lane(): LaneUpdate {
     const { ranges, bubbles } = this.#beside.lane('inline', 0);
     const { doc } = this.#view.state;
-    const beside = this.#mode === 'beside';
-    return laneUpdate(doc, { from: 0, to: doc.length }, ranges, bubbles, false, beside);
+    return laneUpdate(doc, { from: 0, to: doc.length }, ranges, bubbles, {
+      command: false,
+      beside: this.#mode === 'beside',
+      lit: this.#lit.stems.threads,
+    });
   }
+
+  // What's lit ---------------------------------------------------------------------------------
+
+  /** What the excerpt lights now: one range's rows, and the stems in their lit colours. */
+  #lit: Lit = UNLIT;
+  /** The range the pointer is on in the excerpt: a mark, a stem, a card. */
+  #pointed: LitRange | undefined;
+  /** Between lines, the line of the comment box that had focus last, while it's open. */
+  #pickedLine: number | undefined;
+
+  /**
+   * Lights what should be lit now, as the diff does: a popover pinned or a comment box open on a
+   * line, else what the pointer is on.
+   */
+  #relight(): void {
+    for (const [line, box] of this.#boxes) if (box.hasFocus) this.#pickedLine = line;
+    if (this.#pickedLine !== undefined && !this.#boxes.has(this.#pickedLine)) {
+      this.#pickedLine = undefined;
+    }
+    const between = this.#mode === 'between' && this.#pickedLine !== undefined;
+    const lit = lightOf({
+      pinned:
+        this.#mode === 'beside'
+          ? this.#beside.pinnedLight()
+          : between
+            ? { picked: undefined }
+            : undefined,
+      focused: this.#beside.focusedCard(),
+      pointed: this.#pointed ?? this.#beside.pointedCard,
+    });
+    const was = this.#lit;
+    this.#lit = lit;
+    const rows = this.#litRows(lit);
+    if (!sameLit(litOf(this.#view.state), rows)) this.#view.dispatch({ effects: setLit.of(rows) });
+    if (!sameKeys(was.stems.threads, lit.stems.threads)) {
+      this.#view.dispatch({ effects: setLane.of([this.#lane()]) });
+    }
+  }
+
+  /** The excerpt's rows what's lit covers, as runs of its document lines, or none. */
+  #litRows(lit: Lit): LitRows | null {
+    let lines:
+      { from: { side: Side; line: number }; end: { side: Side; line: number } } | undefined;
+    if (lit.picked) {
+      if (this.#mode === 'beside') {
+        const box = this.#beside.pickedBox();
+        lines = box && { from: box.from ?? box.place, end: box.place };
+      } else if (this.#pickedLine !== undefined) {
+        return { rows: [{ from: this.#pickedLine, to: this.#pickedLine }], picked: true };
+      }
+    } else if (lit.range?.lane === 'threads') {
+      lines = this.#beside.linesOf(lit.range.key);
+    }
+    const covered = lines && this.#laneRange(lines.from, lines.end);
+    if (!lines || !covered) return null;
+    // A range on one side's lines leaves out the rows of the other side's between them.
+    const side = lines.from.side === lines.end.side ? lines.from.side : undefined;
+    const rows: { from: number; to: number }[] = [];
+    for (let line = covered.from; line <= covered.to; line++) {
+      if (side !== undefined && (this.#shown[side][line - 1] ?? 0) === 0) continue;
+      const last = rows.at(-1);
+      if (last && last.to === line - 1) last.to = line;
+      else rows.push({ from: line, to: line });
+    }
+    return { rows, picked: lit.picked };
+  }
+
+  /** The pointer moved, or left the excerpt: the range it's on lights at once. */
+  readonly #pointRange = (event: PointerEvent): void => {
+    let next: LitRange | undefined;
+    const { target } = event;
+    if (event.type !== 'pointerleave' && target instanceof Element) {
+      const under = rangeUnder(event);
+      const card = target.closest<HTMLElement>('.lo-diffthread [data-thread-id]')?.dataset.threadId;
+      if (under) next = { lane: under.kind, key: under.key };
+      else if (card !== undefined) next = { lane: 'threads', key: card };
+    }
+    if (sameRange(next, this.#pointed)) return;
+    this.#pointed = next;
+    this.#relight();
+  };
+
+  /** Focus moved in the excerpt or out of it: what it's in may light another range. */
+  readonly #focusRelight = (): void =>
+    queueMicrotask(() => {
+      if (this.dom.isConnected) this.#relight();
+    });
 
   /**
    * The document lines a range from `from` to `end` covers, as its bracket draws it: from the top
@@ -508,13 +616,18 @@ class Excerpt implements ExcerptView {
   #laneRange(
     from: { side: Side; line: number },
     end: { side: Side; line: number },
-  ): Omit<LaneRange, 'tone'> | undefined {
+  ): LaneLines | undefined {
     const last = this.#docLine(end.side, end.line);
     if (last === undefined) return undefined;
     const shown = this.#docLine(from.side, from.line);
     const start = shown ?? (from.line < this.#docLines[from.side].first ? 1 : undefined);
     if (start === undefined) return undefined;
-    return { from: Math.min(start, last), to: Math.max(start, last), tick: shown !== undefined };
+    return {
+      from: Math.min(start, last),
+      to: Math.max(start, last),
+      tick: shown !== undefined,
+      foot: true,
+    };
   }
 
   /** The line of the excerpt document line `line` shows, or, with none, the header's place. */
@@ -577,6 +690,7 @@ class Excerpt implements ExcerptView {
       },
       focusLine: (at) => this.#focusLine(this.#docLine(at.side, at.line) ?? 1),
       marksChanged: () => this.#view.dispatch({ effects: setLane.of([this.#lane()]) }),
+      relight: () => this.#relight(),
       // It folds no line, so a box's line is always shown, and nothing holds the line a box left.
       keep: () => {},
       showLine: () => {},
@@ -639,7 +753,7 @@ class Excerpt implements ExcerptView {
         runControl(command, target);
         return;
       }
-      const marked = this.#beside.markOf(event.target);
+      const marked = this.#beside.markOf(event);
       if (!marked || event.button !== 0) return;
       event.preventDefault();
       this.#beside.clicked(marked.at);
@@ -1003,6 +1117,8 @@ class Excerpt implements ExcerptView {
     this.#drawBlocks();
     if (focused) this.#focusLine(line);
     if (!kept) box.destroy();
+    // Its lines are no longer picked.
+    this.#relight();
   }
 
   /** Gives focus to document line `line`, the cursor on it. */
@@ -1281,6 +1397,10 @@ class Excerpt implements ExcerptView {
     this.dom.removeEventListener('click', this.#clicked);
     this.dom.removeEventListener('pointerover', this.#hoverMark);
     this.dom.removeEventListener('pointerleave', this.#hoverMark);
+    this.dom.removeEventListener('pointermove', this.#pointRange);
+    this.dom.removeEventListener('pointerleave', this.#pointRange);
+    this.dom.removeEventListener('focusin', this.#focusRelight);
+    this.dom.removeEventListener('focusout', this.#focusRelight);
     for (const type of TOUCH) this.dom.removeEventListener(type, this.#touched, { capture: true });
     document.removeEventListener('scroll', this.#scrolled, { capture: true });
     for (const type of INPUT) {
@@ -1444,7 +1564,7 @@ class Excerpt implements ExcerptView {
       return;
     }
     // A mark beside lines: its thread's menu, as on its card.
-    const marked = this.#beside.markOf(target);
+    const marked = this.#beside.markOf(event);
     if (marked) {
       event.preventDefault();
       this.#on.menu({ kind: 'thread', thread: marked.thread }, event.clientX, event.clientY);
