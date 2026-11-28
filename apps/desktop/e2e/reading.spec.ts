@@ -1308,6 +1308,158 @@ test('ignores a term from its menu, in this repo or every repo: plain text at on
   });
 });
 
+/**
+ * The repo's definitions with Credit as it was, and Tenant locked, with another name, a suggestion
+ * waiting on it and seven earlier definitions.
+ */
+const HISTORY = JSON.stringify({
+  format: 1,
+  terms: {
+    credit: JSON.parse(DEFINED).terms.credit,
+    tenant: {
+      term: 'Tenant',
+      definition: 'the accounts a quota is counted for.',
+      aliases: ['tenants'],
+      written: 'human',
+      by: { login: 'mona' },
+      from: 'lo',
+      at: '2026-11-20T09:00:00Z',
+      locked: { by: { login: 'elle-kzn' }, at: '2026-11-21T09:00:00Z' },
+      suggestions: [
+        {
+          definition: 'who a quota is counted for.',
+          by: { login: 'octocat' },
+          from: '#70',
+          at: '2026-11-22T09:00:00Z',
+        },
+      ],
+      changes: Array.from({ length: 7 }, (_, at) => ({
+        definition: `the accounts, as change ${7 - at} wrote them.`,
+        written: 'agent',
+        by: { login: 'octocat' },
+        from: `#${60 - at}`,
+        at: `2026-11-1${8 - at}T09:00:00Z`,
+      })),
+    },
+  },
+});
+
+test('expands a term’s row by its chevron, its term and ⏎, and goes to it from the text’s menu and the card, with who it’s by, its lock, its other names, its suggestion and its earlier definitions', async ({
+  page,
+  ref,
+}) => {
+  ref.holds = { kind: 'made', overview: overviewOf({ 'artifact.md': DEFINING }) };
+  ref.terms = overviewOf({ 'terms.json': HISTORY });
+  await open(page);
+  await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
+  await overviewTab(page).click();
+  const shown = overview(page, 'shown');
+  await expect(shown.getByRole('note').filter({ hasText: 'definitions' })).toContainText(
+    'Adds 2 definitions',
+    { timeout: 20_000 },
+  );
+  const rows = shown.locator('[data-lo-glossary] [data-lo-term-row]');
+  const row = (name: string) =>
+    rows.filter({ has: page.locator('.lo-term-row__term', { hasText: name }) });
+  const tenant = row('Tenant');
+  const term = tenant.locator('.lo-term-row__term');
+  const chevron = tenant.locator('.lo-term-row__end button[aria-expanded]');
+  const parts = tenant.locator('.lo-term-row__definition [role="group"]');
+  const menu = page.getByRole('menu');
+  const tldr = shown.locator('[data-lo-block]', { hasText: 'A request takes a' });
+  /** Gives the tl;dr's paragraph focus, by a click on its first word, not on a term in it. */
+  const intoTldr = async () => {
+    await tldr.click({ position: { x: 2, y: 6 } });
+    await expect(tldr).toBeFocused();
+  };
+
+  await test.step('its chevron expands it, with all the glossary holds of it', async () => {
+    await tenant.hover();
+    await chevron.click();
+    await expect(term).toHaveAttribute('aria-expanded', 'true');
+    const definition = tenant.locator('.lo-term-row__definition');
+    await expect(definition).toContainText('mona · human-written ·');
+    await expect(definition).toContainText('Locked by elle-kzn ·');
+    await expect(definition).toContainText('Also written as tenants');
+    await expect(parts.first()).toContainText('Suggestionswho a quota is counted for.');
+    await expect(parts.first()).toContainText('octocat · agent-written · #70 ·');
+    const history = parts.last();
+    await expect(history).toContainText('Historythe accounts, as change 7 wrote them.');
+    await expect(history).toContainText('as change 3 wrote them.');
+    await expect(history).not.toContainText('as change 2 wrote them.');
+    await history.getByRole('button', { name: 'Show 2 more' }).click();
+    await expect(history).toContainText('as change 1 wrote them.');
+    await expect(history).not.toContainText('Earlier changes aren’t listed.');
+  });
+
+  await test.step('a click on its term and ⏎ on it collapse and expand it, and its menu names which', async () => {
+    await term.click();
+    await expect(term).toHaveAttribute('aria-expanded', 'false');
+    await expect(parts).toHaveCount(0);
+    await expect(term).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(term).toHaveAttribute('aria-expanded', 'true');
+    await term.click({ button: 'right' });
+    await expect(menu.getByRole('menuitem', { name: /^Collapse term/ })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /^Show history/ })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Enter');
+    await expect(term).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  await test.step('a term the glossary doesn’t hold yet has no chevron, and its menu says why', async () => {
+    const bucket = row('Bucket');
+    await bucket.hover();
+    await expect(bucket.locator('.lo-term-row__end button[aria-expanded]')).toHaveCount(0);
+    await bucket.click({ button: 'right' });
+    await expect(menu.getByRole('menuitem', { name: /^Expand term/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await expect(menu.getByRole('menuitem', { name: /^Expand term/ })).toContainText(
+      'Joins the glossary when #80 merges',
+    );
+    await page.keyboard.press('Escape');
+  });
+
+  await test.step('Show history from a term’s menu in the text goes to its row, expanded, and ⌃o comes back', async () => {
+    await intoTldr();
+    await tldr.locator('.lo-term', { hasText: 'tenant' }).click({ button: 'right' });
+    await expect(menu.getByRole('menuitem', { name: /^Expand term/ })).toHaveCount(0);
+    await menu.getByRole('menuitem', { name: /^Show history/ }).click();
+    await expect(term).toBeFocused();
+    await expect(term).toHaveAttribute('aria-expanded', 'true');
+    await expect(parts).toHaveCount(2);
+    await page.keyboard.press('Control+o');
+    await expect(tldr).toBeFocused();
+  });
+
+  await test.step('the card’s History and its suggestion’s link go there too; a term not in the glossary has no foot', async () => {
+    await term.click();
+    await expect(term).toHaveAttribute('aria-expanded', 'false');
+    await intoTldr();
+    // The card takes no focus and a screen reader never hears it: its buttons are found by text.
+    const card = page.locator('.lo-hovercard');
+    const button = (name: string) => card.locator('button', { hasText: new RegExp(`^${name}$`) });
+    await tldr.locator('.lo-term', { hasText: 'bucket' }).hover();
+    await expect(card).toContainText('the credits a tenant has to spend.');
+    await expect(card.locator('.lo-hovercard__foot')).toBeHidden();
+    await page.mouse.move(0, 0);
+    await expect(card).toHaveCount(0);
+    await tldr.locator('.lo-term', { hasText: 'tenant' }).hover();
+    await expect(button('1 suggestion')).toBeVisible();
+    await button('History').click();
+    await expect(card).toHaveCount(0);
+    await expect(term).toBeFocused();
+    await expect(term).toHaveAttribute('aria-expanded', 'true');
+    await term.click();
+    await tldr.locator('.lo-term', { hasText: 'tenant' }).hover();
+    await button('1 suggestion').click();
+    await expect(term).toBeFocused();
+    await expect(term).toHaveAttribute('aria-expanded', 'true');
+  });
+});
+
 test.describe('with the Glossary in every repo’s list of sections that start collapsed', () => {
   test.use({ settings: JSON.stringify({ 'overview.collapsed': { '*': ['Glossary'] } }) });
 

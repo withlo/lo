@@ -15,8 +15,11 @@ import {
   blockStops,
   sectionsOf,
   type OverviewFolds,
+  type OverviewTerms,
+  type TermShown,
 } from '@lo/ui/overview';
 
+import { createRegistry } from '../../../window/commands/registry.ts';
 import { blockId } from './blocks.ts';
 import {
   blockAt,
@@ -117,8 +120,14 @@ function foldsOf(...names: string[]): (tree: OverviewTree) => OverviewFolds {
   });
 }
 
-/** The example overview, drawn, as the keys find it, with its sections folding as `folds` says. */
-function drawn(folds?: (tree: OverviewTree) => OverviewFolds): {
+/**
+ * The example overview, drawn, as the keys find it, with its sections folding as `folds` says, and
+ * its terms shown as `terms` says.
+ */
+function drawn(
+  folds?: (tree: OverviewTree) => OverviewFolds,
+  terms?: OverviewTerms,
+): {
   overview: DrawnOverview;
   stops: HTMLElement[];
   tree: OverviewTree;
@@ -130,7 +139,7 @@ function drawn(folds?: (tree: OverviewTree) => OverviewFolds): {
   host = page;
   const made = createRoot(page);
   root = made;
-  act(() => made.render(<OverviewDocument tree={tree} folds={folds?.(tree)} />));
+  act(() => made.render(<OverviewDocument tree={tree} folds={folds?.(tree)} terms={terms} />));
   const scroller = page.querySelector<HTMLElement>('.lo-ov')!;
   const overview: DrawnOverview = {
     tab: 'tab',
@@ -247,6 +256,47 @@ describe('Tab', () => {
     expect(followOf(overview, glossary)).toBe('Nothing to open on a term');
     expect(followName(overview, glossary)).toBeUndefined();
     expect(nextLink(overview, 1)).toBe(glossary);
+  });
+
+  it('presses a row’s term that expands, named by what it does there now', () => {
+    let open = false;
+    const expanding = defineCommands('terms', {
+      expand: { label: 'Expand term', group: 'Review', keys: ['enter'], targets: ['term'] },
+    });
+    release = holdRegistry(
+      createRegistry(
+        handlers(expanding, {
+          expand: {
+            run: () => {
+              open = !open;
+            },
+            labelled: () => (open ? 'Collapse term' : undefined),
+          },
+        }),
+        'mac',
+      ),
+    );
+    const bucket: TermShown = {
+      source: 'store',
+      name: 'Bucket',
+      blocks: [],
+      marks: {},
+      details: { aliases: [], suggestions: [], earlier: [], capped: false },
+    };
+    const { overview, stops } = drawn(undefined, {
+      of: (key) => (key === 'bucket' ? bucket : undefined),
+      expanded: () => open,
+      commands: { expand: 'terms.expand', history: 'terms.history', hints: [] },
+    });
+    const glossary = stops.at(-1)!;
+    const term = glossary.querySelector<HTMLElement>('.lo-term-row__term')!;
+    term.focus();
+    expect(followName(overview, glossary)).toBe('Expand term');
+    const found = followOf(overview, glossary);
+    expect(found).toEqual({ kind: 'activate', element: term });
+    act(() => term.click());
+    expect(open).toBe(true);
+    expect(followName(overview, glossary)).toBe('Collapse term');
   });
 
   it('says so in a block with nothing in it to go to', () => {

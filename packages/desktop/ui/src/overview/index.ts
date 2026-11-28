@@ -31,10 +31,13 @@ export {
   termAt,
   type OverviewTerms,
   type TermAt,
+  type TermCommands,
   type TermMenu,
   type TermShown,
+  type TermShownDefinition,
+  type TermShownDetails,
 } from './terms.ts';
-export { glossaryIn, type GlossaryParts } from './Glossary.tsx';
+export { glossaryIn, termRowIn, type GlossaryParts } from './Glossary.tsx';
 export { cardsOpen, closeCards, HOVER_CLOSE_MS, HOVER_OPEN_MS } from './Term.tsx';
 export { lineRange } from './placeholders.tsx';
 export {

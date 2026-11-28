@@ -132,6 +132,24 @@ describe('TermRow', () => {
     expect(term.getAttribute('aria-controls')).toBe(chevron().getAttribute('aria-controls'));
   });
 
+  it('runs its chevron’s command on a click on its term, but not one ending a drag across its words', () => {
+    const ran = held();
+    const host = render(<TermRow term="bucket" definition="A pool." expand={EXPAND} />);
+    const term = host.querySelector<HTMLElement>('.lo-term-row__term')!;
+    click(term);
+    expect(ran).toEqual([['terms.expand', BUCKET]]);
+    const range = document.createRange();
+    range.selectNodeContents(term);
+    document.getSelection()?.addRange(range);
+    click(term);
+    expect(ran).toHaveLength(1);
+    document.getSelection()?.removeAllRanges();
+    // A term that doesn't expand takes no click.
+    const plain = render(<TermRow term="cost" definition="A charge." />);
+    click(plain.querySelector('.lo-term-row__term')!);
+    expect(ran).toHaveLength(1);
+  });
+
   it('holds its byline, lock, other names, suggestions and history, expanded', () => {
     held();
     const host = render(

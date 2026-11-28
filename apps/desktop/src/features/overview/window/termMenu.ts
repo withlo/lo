@@ -16,15 +16,19 @@ import { drawnIn, targetOf, type DrawnOverview } from './follow.ts';
  */
 let madeFor: Element | undefined;
 
-/** The target of the term `found`, in `overview`, with the block it's in, if it's in one. */
+/**
+ * The target of the term `found`, in `overview`, with the block it's in, if it's in one, and
+ * whether it's the term's row.
+ */
 export function termTarget(overview: DrawnOverview, found: TermAt): TermTarget {
   madeFor = found.element;
   const article = overview.scroller()?.querySelector('.lo-ov__article');
   const block = article ? blockOf(article, found.element) : undefined;
   const at = block && targetOf(overview, block);
-  return at?.kind === 'block'
-    ? { kind: 'term', term: found.key, block: at.block }
-    : { kind: 'term', term: found.key };
+  const target: TermTarget = { kind: 'term', term: found.key };
+  if (at?.kind === 'block') target.block = at.block;
+  if (found.row) target.row = true;
+  return target;
 }
 
 /** The menu of a term in the overview on screen, as its card opens it and stays open with it. */

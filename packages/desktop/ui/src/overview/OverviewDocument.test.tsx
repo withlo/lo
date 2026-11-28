@@ -1261,6 +1261,153 @@ describe('with the repo’s definitions', () => {
   });
 });
 
+/** The commands a term's row and card run, which a test's registry records the runs of. */
+const TERM_KEYS = defineCommands('terms', {
+  expand: { label: 'Expand term', group: 'Review', keys: ['enter'], targets: ['term'] },
+  history: { label: 'Show history', group: 'Review', keys: [], targets: ['term'] },
+});
+
+/** What the overview's terms run, by their ids. */
+const TERM_COMMANDS = {
+  expand: 'terms.expand',
+  history: 'terms.history',
+  hints: [{ command: 'terms.history', label: 'History' }],
+} as const;
+
+/** Holds a registry of `TERM_KEYS` for the test, which can't run on `refused`; lists each run. */
+function heldTerms(refused: readonly string[] = []): Target[] {
+  const ran: Target[] = [];
+  onTestFinished(
+    holdRegistry(
+      new Registry({
+        system: 'mac',
+        commands: commandsOf(TERM_KEYS).map((each) => ({
+          ...each,
+          handler: {
+            run: (target: Target) => void ran.push(target),
+            enabled: (target: Target) =>
+              target.kind === 'term' && refused.includes(target.term)
+                ? 'Not in the glossary'
+                : true,
+          },
+        })),
+      }),
+    ),
+  );
+  return ran;
+}
+
+/** Who a definition is by, as a term's byline says it. */
+const by = (login: string, number: number, when: string) => ({
+  by: { login },
+  written: 'agent' as const,
+  pull: { number },
+  when,
+});
+
+/** "lease", which the repo's definitions hold, locked, and "cost", which they don't. */
+function leaseAndCost(open: boolean): OverviewTerms {
+  return {
+    ...shownTerms({
+      lease: {
+        source: 'store',
+        name: 'lease',
+        blocks: paragraph('the repo’s lease.'),
+        marks: { locked: true, suggestions: 1 },
+        byline: by('ravi-k', 264, '3 d ago'),
+        details: {
+          locked: { by: 'elle-kzn', when: '2 d ago' },
+          aliases: ['leases', 'lease time'],
+          suggestions: [
+            {
+              key: 's',
+              blocks: paragraph('a lease that ends.'),
+              byline: by('mona', 270, '1 h ago'),
+            },
+          ],
+          earlier: Array.from({ length: 7 }, (_, at) => ({
+            key: String(at),
+            blocks: paragraph(`lease ${at}.`),
+            byline: by('octocat', 200 + at, `${at + 4} d ago`),
+          })),
+          capped: false,
+        },
+      },
+      cost: ownTerm('cost', false),
+    }),
+    expanded: (key) => open && key === 'lease',
+    commands: TERM_COMMANDS,
+  };
+}
+
+describe('a term’s row and card, with what they run', () => {
+  it('expands the row of a term the repo’s definitions hold, by its chevron or its term: who it’s by, its lock, its other names, its suggestions and its earlier definitions', () => {
+    const ran = heldTerms();
+    const page = render(
+      <OverviewDocument tree={defining('lease', 'cost')} terms={leaseAndCost(false)} />,
+    );
+    const chevron = (name: string) =>
+      rowOf(page, name).querySelector<HTMLButtonElement>('.lo-term-row__end [aria-expanded]');
+    expect(chevron('cost')).toBeNull();
+    expect(rowOf(page, 'cost').querySelector('.lo-term-row__term')?.hasAttribute('role')).toBe(
+      false,
+    );
+    click(chevron('lease')!);
+    click(rowOf(page, 'lease').querySelector('.lo-term-row__term')!);
+    expect(ran).toEqual([
+      { kind: 'term', term: 'lease', row: true },
+      { kind: 'term', term: 'lease', row: true },
+    ]);
+
+    rerender(
+      page,
+      <OverviewDocument tree={defining('lease', 'cost')} terms={leaseAndCost(true)} />,
+    );
+    const definition = rowOf(page, 'lease').querySelector('.lo-term-row__definition')!;
+    expect(chevron('lease')?.getAttribute('aria-expanded')).toBe('true');
+    expect(definition.textContent).toContain('ravi-k · agent-written · #264 · 3 d ago');
+    expect(definition.textContent).toContain('Locked by elle-kzn · 2 d ago');
+    expect(definition.textContent).toContain('Also written as leases, lease time');
+    const [suggestions, history] = [...definition.querySelectorAll('[role="group"]')];
+    expect(suggestions?.textContent).toContain('Suggestionsa lease that ends.');
+    expect(suggestions?.textContent).toContain('mona · agent-written · #270 · 1 h ago');
+    // Five of its earlier definitions, newest first, then the rest on asking.
+    expect(history?.textContent).toContain('lease 4.');
+    expect(history?.textContent).toContain('octocat · agent-written · #204 · 8 d ago');
+    expect(history?.textContent).not.toContain('lease 5.');
+    expect(history?.textContent).toContain('Show 2 more');
+  });
+
+  it('gives a term’s card its foot and its suggestions’ link, which run Show history on the term', () => {
+    const ran = heldTerms(['cost']);
+    const page = render(
+      <OverviewDocument tree={defining('lease', 'cost')} terms={leaseAndCost(false)} />,
+    );
+    const [lease, cost] = page.querySelectorAll<HTMLElement>('.lo-term');
+    focus(lease!);
+    const shown = card()!;
+    const buttons = () => [...card()!.querySelectorAll<HTMLButtonElement>('button')];
+    expect(buttons().map((button) => button.textContent)).toEqual([
+      '#264',
+      '1 suggestion',
+      'History',
+    ]);
+    click(buttons()[1]!);
+    click(buttons()[2]!);
+    expect(ran).toEqual([
+      { kind: 'term', term: 'lease' },
+      { kind: 'term', term: 'lease' },
+    ]);
+    // Neither takes focus from the term.
+    expect(document.activeElement).toBe(lease);
+    expect(shown.querySelector('.lo-hovercard__foot')).not.toBeNull();
+
+    // Where Show history can't run, its hint is left out, and a term that isn't locked has no link.
+    focus(cost!);
+    expect(buttons().map((button) => button.textContent)).toEqual([]);
+  });
+});
+
 describe('tabs', () => {
   it('switches with ← and →, Home and End, the tab shown taking focus, its panel alone shown', () => {
     const page = render(

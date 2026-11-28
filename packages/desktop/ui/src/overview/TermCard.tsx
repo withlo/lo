@@ -130,7 +130,7 @@ export function TermCard({
         </div>
       )}
       {hints.length > 0 && (
-        <div className="lo-hovercard__foot mt-8 border-t border-border pt-8">
+        <div className="lo-hovercard__foot mt-8 border-t border-border-subtle pt-8">
           <HintRow className="-mx-8 gap-4">
             {hints.map((hint) => (
               <CardHint key={hint.command} hint={hint} keys={keys} />

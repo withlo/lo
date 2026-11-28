@@ -9,7 +9,7 @@ import { createContext, useContext, type ReactNode, type RefObject } from 'react
 import type { Definition, OverviewBlock } from '@lo/artifact';
 
 import type { Anchors } from '../markdown/index.ts';
-import type { TermBylineShown } from './TermByline.tsx';
+import type { TermBylineFacts, TermBylineShown } from './TermByline.tsx';
 import type { TermMarks } from './TermTags.tsx';
 
 export interface Glossary {
@@ -81,6 +81,48 @@ export interface TermShown {
    * underline, card or stop for `Tab`, and its row waits in the Glossary section's Ignored group.
    */
   readonly ignored?: boolean | undefined;
+  /**
+   * What its row holds expanded, for a term the repo's definitions hold: its row has a chevron,
+   * and expands. None for one they don't.
+   */
+  readonly details?: TermShownDetails | undefined;
+}
+
+/** A definition the repo's definitions keep for a term besides its own, with who it's by. */
+export interface TermShownDefinition {
+  /** What tells it from the others of its kind. */
+  readonly key: string;
+  /** The definition, to draw. */
+  readonly blocks: readonly OverviewBlock[];
+  /** Who it's by. */
+  readonly byline: TermBylineFacts;
+}
+
+/** What a term's row holds expanded, from the repo's definitions, as `TermRow`'s `details` draws. */
+export interface TermShownDetails {
+  /** Who locked it, by name, and when, as Lo writes a time past: "2 d ago". */
+  readonly locked?: { readonly by: string; readonly when: string } | undefined;
+  /** The other names it goes by. */
+  readonly aliases: readonly string[];
+  /** What merged pull requests offered for it, a locked term, oldest first. */
+  readonly suggestions: readonly TermShownDefinition[];
+  /** Its earlier definitions, newest first. */
+  readonly earlier: readonly TermShownDefinition[];
+  /** The repo's definitions keep no more of its earlier definitions than these. */
+  readonly capped: boolean;
+}
+
+/**
+ * The commands a term offers from its row and its card, by their ids, which run on the term: whoever
+ * shows the overview declares them.
+ */
+export interface TermCommands {
+  /** Expand term, then Collapse term: a row’s chevron, and a click on its term. */
+  readonly expand: string;
+  /** Show history: "2 suggestions" in a term's card. */
+  readonly history: string;
+  /** The hints in a term's card's foot, in order, each shown only while its command can run. */
+  readonly hints: readonly { readonly command: string; readonly label?: ReactNode }[];
 }
 
 /**
@@ -122,6 +164,10 @@ export interface OverviewTerms {
    * switches turn off.
    */
   readonly stopIgnoring?: ((key: string) => void) | undefined;
+  /** Whether the row of the term `key` names is expanded. */
+  readonly expanded?: ((key: string) => boolean) | undefined;
+  /** What a term's row and card run. Without them, a row has no chevron and a card no foot. */
+  readonly commands?: TermCommands | undefined;
 }
 
 /** What marks a term the reader can act on, in the text or as a glossary's row: its key. */

@@ -2,9 +2,10 @@
 // request adds or changes first, by name, then a hairline and the rest, by name. With the repo's
 // definitions, each row shows what the overview shows for its term: the repo's definition or the
 // overview's own, its tags, and the definition a Changed term replaces; and under the section's
-// heading, why the repo's definitions can't be used, where they can't. The terms the reader
-// ignores leave the list for the Ignored group at its end, a fold that's closed whenever it's
-// drawn.
+// heading, why the repo's definitions can't be used, where they can't. A row of a term they hold
+// expands, by its chevron: who its definition is by, its lock, its other names, its suggestions and
+// its earlier definitions. The terms the reader ignores leave the list for the Ignored group at its
+// end, a fold that's closed whenever it's drawn.
 
 import { useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 
@@ -13,8 +14,17 @@ import type { Definition, Glossary as GlossaryBlock, Overview, OverviewBlock } f
 import { Collapse, Swap } from '../Collapse.tsx';
 import { Icon } from '../Icon.tsx';
 import { MarkdownBlocks, MarkdownInlines } from '../markdown/index.ts';
-import { TermRow } from './TermRow.tsx';
-import { alphabetical, ReachedContext, TERM_ATTRIBUTE, useGlossary } from './terms.ts';
+import type { TermTarget } from '../commands/targets.ts';
+import { TermByline } from './TermByline.tsx';
+import { TermRow, type TermDetails } from './TermRow.tsx';
+import {
+  alphabetical,
+  ReachedContext,
+  TERM_ATTRIBUTE,
+  useGlossary,
+  type TermShown,
+  type TermShownDetails,
+} from './terms.ts';
 
 /** What marks the Glossary section's own box, which holds its rows. */
 const GLOSSARY_ATTRIBUTE = 'data-lo-glossary';
@@ -58,10 +68,14 @@ export function Glossary({ node }: { node: GlossaryBlock }) {
   }, [ignored]);
   const arrived = (key: string) => before.current !== undefined && !before.current.has(key);
 
+  const commands = terms?.commands;
   const row = (own: Definition, place: 'list' | 'ignored') => {
     const shown = terms?.of(own.key);
     const isMarked = shown?.marks.mark !== undefined;
     const reached = own.key === target && place === 'list';
+    // A term the repo's definitions hold expands, in the list: in the Ignored group, "Stop
+    // ignoring" takes its chevron's place.
+    const expands = place === 'list' && commands !== undefined && shown?.details !== undefined;
     return (
       <TermRow
         {...{
@@ -78,6 +92,9 @@ export function Glossary({ node }: { node: GlossaryBlock }) {
         }
         before={shown?.before && <Opening blocks={shown.before} />}
         menu={terms?.menu !== undefined}
+        expand={expands ? { command: commands.expand, target: rowTarget(own.key) } : undefined}
+        expanded={expands && terms?.expanded?.(own.key) === true}
+        details={expands && shown.details ? detailsOf(shown, shown.details) : undefined}
         stop
         ignored={place === 'ignored'}
         onStopIgnoring={() => terms?.stopIgnoring?.(own.key)}
@@ -160,6 +177,34 @@ function IgnoredGroup({ count, children }: { count: number; children: ReactNode 
   );
 }
 
+/** The term `key` names, as its row's controls act on it. */
+function rowTarget(key: string): TermTarget {
+  return { kind: 'term', term: key, row: true };
+}
+
+/**
+ * What the row of a term the repo's definitions hold shows expanded: who its definition is by, its
+ * lock, its other names, its suggestions and its earlier definitions, each with who it's by.
+ */
+function detailsOf(shown: TermShown, details: TermShownDetails): TermDetails {
+  return {
+    byline: shown.byline && <TermByline {...shown.byline} />,
+    locked: details.locked,
+    aliases: details.aliases,
+    suggestions: details.suggestions.map((suggestion) => ({
+      key: suggestion.key,
+      definition: <Opening blocks={suggestion.blocks} />,
+      byline: <TermByline {...suggestion.byline} />,
+    })),
+    earlier: details.earlier.map((earlier) => ({
+      key: earlier.key,
+      definition: <Opening blocks={earlier.blocks} />,
+      byline: <TermByline {...earlier.byline} />,
+    })),
+    capped: details.capped,
+  };
+}
+
 /** A definition the repo's definitions hold, one paragraph, as words that run on from a tag. */
 function Opening({ blocks }: { blocks: readonly OverviewBlock[] }) {
   const [first] = blocks;
@@ -184,6 +229,16 @@ export interface GlossaryParts {
 /** Whether `row`, in a Glossary section, is in its list now: not ignored, nor on its way out. */
 function inList(row: Element): boolean {
   return row.closest(`[${IGNORED_ATTRIBUTE}], [data-closed]`) === null;
+}
+
+/**
+ * The row of the term `key` names in `box`, a Glossary section's, in its list: not in the Ignored
+ * group, nor on its way out of the list.
+ */
+export function termRowIn(box: Element, key: string): HTMLElement | undefined {
+  return [...box.querySelectorAll<HTMLElement>('[data-lo-term-row]')].find(
+    (row) => row.getAttribute(TERM_ATTRIBUTE) === key && inList(row),
+  );
 }
 
 /** The Glossary section drawn in `article`, an overview's, if it has one. */

@@ -112,3 +112,15 @@ test('a key acts on a thread that is its target, or on a line with one, but not 
   expect(isOn({ kind: 'line', at }, 'thread')).toBe(false);
   expect(isOn({ kind: 'header', file: 'a', side: 'new', thread: 't' }, 'thread')).toBe(false);
 });
+
+test('a term’s row is on a row for a key, but gives no row to what takes one', () => {
+  const row = { kind: 'term', term: 'bucket', block: 'b1', row: true } as const;
+  const used = { kind: 'term', term: 'bucket', block: 'b1' } as const;
+  expect(isOn(row, 'row')).toBe(true);
+  expect(isOn(used, 'row')).toBe(false);
+  expect(isOn(row, 'term')).toBe(true);
+  expect(fit(['row'], row)).toBeUndefined();
+  expect(fit(['row', 'none'], row)).toEqual({ kind: 'none' });
+  expect(plainTarget({ ...row, extra: 1 } as Target)).toEqual(row);
+  expect(plainTarget(used)).toEqual(used);
+});

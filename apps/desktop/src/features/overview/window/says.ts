@@ -1,13 +1,14 @@
 // What the overview's view says: who wrote it and when, and whose copy it is; why it can't be shown
 // (its findings by line, its sizes by kind, the format it's in) and why it couldn't be fetched,
-// with when it's fetched again; the terms it adds and changes; and why the repo's definitions
-// can't be used. Plain functions of what main and the check found, so each wording is tested
-// alone.
+// with when it's fetched again; the terms it adds and changes; why the repo's definitions can't be
+// used, and why a term's row can't offer what they hold. Plain functions of what main and the check
+// found, so each wording is tested alone.
 
 import {
   FORMAT,
   LIMITS,
   STORE_LIMITS,
+  type Account,
   type Finding,
   type SizeKind,
   type Sizes,
@@ -231,6 +232,27 @@ export const STORE_TITLE = 'Can’t read the repo’s glossary';
 
 /** What the note says last: each definition shown is the overview's own. */
 export const OWN_DEFINITIONS = 'These definitions are this overview’s own.';
+
+/**
+ * Why what a term's row offers from the repo's glossary can't be had for it: they're still being
+ * read, the repo has none, or they don't hold it, as a term an open pull request adds, which joins
+ * it as the pull request merges, or one the overview's own glossary doesn't list, which has no row
+ * in it.
+ */
+export const GLOSSARY_READING = 'Reading the glossary…';
+export const NO_GLOSSARY = 'This repo has no glossary';
+export const NOT_IN_GLOSSARY = 'Not in the glossary';
+export const NOT_IN_THIS_GLOSSARY = 'Not in this overview’s glossary';
+
+/** Why a term pull request `number` adds isn't in the repo's glossary yet. */
+export function joinsGlossary(number: number): string {
+  return `Joins the glossary when #${number} merges`;
+}
+
+/** The words that say who a writer is, in a line: their login, or the name their commit gives. */
+export function writerName(by: Account): string {
+  return 'login' in by ? by.login : by.name;
+}
 
 /**
  * Why the repo's definitions can't be used, for any cause but GitHub's, which `problemReason`

@@ -113,7 +113,8 @@ export function ignoredBy(keys: ReadonlySet<string>, names: TermNames): boolean 
  *   name, as its Glossary section lists them;
  * - `added`, `changed`: how many it adds and changes, for the line at its top;
  * - `terms`: the repository's definitions, as far as the window knows: when they aren't `read`,
- *   every definition shown is the overview's own, and this says why.
+ *   every definition shown is the overview's own, and this says why;
+ * - `subject`: what the overview is of.
  */
 export interface Definitions {
   of(key: string): ShownTerm | undefined;
@@ -122,6 +123,8 @@ export interface Definitions {
   added: number;
   changed: number;
   terms: RepoTerms;
+  /** What the overview is of. */
+  subject: Subject;
 }
 
 /**
@@ -205,6 +208,7 @@ export function definitionsOf(
     added: counted(marked, 'new'),
     changed: counted(marked, 'changed'),
     terms,
+    subject,
   };
 }
 
@@ -228,7 +232,8 @@ export function glossaryOf(blocks: readonly OverviewBlock[]): Definition[] {
 /** The order of a glossary's terms, by name: the overview's glossary's own. */
 const COLLATOR = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
 
-function isOpen(state: PullState): boolean {
+/** Whether a pull request in `state` can still change the repo's definitions: open or a draft. */
+export function isOpen(state: PullState): boolean {
   switch (state) {
     case 'open':
     case 'draft':
