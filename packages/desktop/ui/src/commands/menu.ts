@@ -19,7 +19,8 @@ export interface MenuItem {
   readonly disabled: string | undefined;
   /**
    * For a switch, whether it's on for the target now, as the menu draws its check: "Collapse in
-   * this repo". Absent for anything else.
+   * this repo". Absent for anything else, and for a switch the menu calls something else, which
+   * is an action there: "Dismiss for all stacks".
    */
   readonly checked?: boolean | undefined;
 }
@@ -56,7 +57,10 @@ export function menuSections(registry: Registry, target: Target): MenuItem[][] {
       keys: liveKeys(registry, command)[0],
       shortcut: liveShortcut(registry, command),
       disabled: ready === true ? undefined : ready,
-      ...(command.toggle === 'switch' ? { checked: registry.checked(command.id, target) } : {}),
+      // A switch the menu names by what it does there, as "Dismiss for all stacks" is, is an action.
+      ...(command.toggle === 'switch' && place.label === undefined
+        ? { checked: registry.checked(command.id, target) }
+        : {}),
     };
     const last = sections.at(-1);
     if (last && group === command.group && place.apart !== true) last.push(item);

@@ -273,7 +273,7 @@ describe('a right-click menu', () => {
     ).toEqual([['Collapse section'], ['Collapse all sections', 'Expand all sections']]);
   });
 
-  it('says whether each switch is on for the target, and nothing of other commands', () => {
+  it('says whether each switch is on for the target, and nothing of other commands or a switch it names otherwise', () => {
     const switches = defineCommands('overview', {
       foldHere: {
         label: 'Collapse in this repo',
@@ -290,6 +290,15 @@ describe('a right-click menu', () => {
         targets: ['block'],
         menu: { on: 'block', order: 20 },
       },
+      // Named by what it does in the menu, it's an action there, whatever it is.
+      offer: {
+        label: 'Offer GitHub stacks',
+        group: 'View',
+        keys: [],
+        targets: ['block'],
+        toggle: 'switch',
+        menu: { on: 'block', order: 30, label: 'Dismiss for all stacks' },
+      },
     });
     const on = new Registry({
       system: 'mac',
@@ -299,6 +308,7 @@ describe('a right-click menu', () => {
           checked: (target) => target.kind === 'block' && target.block === '1.4',
         },
         fold: run,
+        offer: { run() {}, checked: () => true },
       }),
     });
     const checks = (block: string) =>
@@ -308,6 +318,7 @@ describe('a right-click menu', () => {
     expect(checks('1.4')).toEqual([
       ['Collapse in this repo', true],
       ['Collapse section', undefined],
+      ['Dismiss for all stacks', undefined],
     ]);
     expect(checks('1.9')[0]).toEqual(['Collapse in this repo', false]);
   });
