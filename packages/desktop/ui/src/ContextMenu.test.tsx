@@ -100,6 +100,38 @@ describe('ContextMenu', () => {
     expect(page.querySelectorAll('[role="separator"]')).toHaveLength(1);
   });
 
+  it('ticks a switch that’s on, which a screen reader hears as a checkbox, and runs it as chosen', async () => {
+    const onClosed = vi.fn<(chosen: string | undefined) => void>();
+    function Switches() {
+      const [open, setOpen] = useState(true);
+      return (
+        <ContextMenu
+          open={open}
+          onOpenChange={setOpen}
+          label="Block actions"
+          anchor={{ x: 40, y: 60 }}
+          sections={[
+            [
+              { id: 'here', label: 'Collapse in this repo', checked: true },
+              { id: 'every', label: 'Collapse in every repo', checked: false },
+              { id: 'fold', label: 'Collapse section', keys: ['z', 'a'] },
+            ],
+          ]}
+          onClosed={onClosed}
+        />
+      );
+    }
+    const page = render(<Switches />);
+    const switches = [...page.querySelectorAll('[role="menuitemcheckbox"]')];
+    expect(switches.map((item) => item.getAttribute('aria-checked'))).toEqual(['true', 'false']);
+    expect(switches.map((item) => item.querySelector('svg') !== null)).toEqual([true, false]);
+    expect(items(page)).toHaveLength(1);
+    act(() => {
+      if (switches[1] instanceof HTMLElement) switches[1].click();
+    });
+    await vi.waitFor(() => expect(onClosed).toHaveBeenCalledWith('every'));
+  });
+
   it('gives a screen reader an action’s key as aria-keyshortcuts, or a sequence described, never the key caps', () => {
     const page = render(<Harness />);
     const [show, , path] = items(page);

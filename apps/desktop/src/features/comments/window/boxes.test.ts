@@ -13,6 +13,7 @@ import type {
   OnFile,
   Place,
   Send,
+  Side,
   Span,
 } from '@lo/ui/code';
 import {
@@ -86,6 +87,9 @@ import {
   takeJoined,
   takenDown,
   drawnInTimeline,
+  linesChange,
+  changingLines,
+  movingToFile,
   takeOffer,
   drafted,
   editing,
@@ -98,7 +102,7 @@ import { landed } from './landed.ts';
 import type * as Main from './main.ts';
 import type * as SaidModule from './Said.tsx';
 import * as threads from './threads.ts';
-import { NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF, offersOf } from './writing.ts';
+import { CHECK_FIRST, NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF, offersOf } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
 const OLDER = 'b'.repeat(40);
@@ -244,6 +248,7 @@ function composerOf(draft: string, on: ComposerEvents): Drawn['composer'] {
       composer.closed = 'dismiss';
     },
     keep: () => ({ text: composer.text, editor: 'as it was' }),
+    move: () => false,
   } as Drawn['composer'];
   return composer;
 }
@@ -2028,6 +2033,123 @@ function png(): File {
 function marked(): Promise<void> {
   return new Promise((resolve) => queueMicrotask(resolve));
 }
+
+/**
+ * `c`, or `s`, on new lines `from` to `to` of the fake diff: its box, which the diff moves as it's
+ * asked, what it was asked, and the target its lines button's menu acts on.
+ */
+async function openOn(from: number, to: number, suggest = false, side: Side = 'new') {
+  const fake = fakeDiff();
+  const at: Place | Span =
+    from === to ? { file: 'f0', side, line: to } : { file: 'f0', side, from, to };
+  await comment(tab(), { kind: 'line', at }, 'review', suggest);
+  const drawn = fake.drawn.at(-1)!;
+  const moves: unknown[] = [];
+  drawn.composer.move = (lines) => {
+    moves.push(lines);
+    return true;
+  };
+  const id = drawn.options!.name!;
+  return { ...fake, drawn, moves, id, target: { kind: 'lines', box: id } as const };
+}
+
+describe('changing a new comment’s lines', () => {
+  test('a key takes the next line that way that takes a comment, the draft going with the box to its new place', async () => {
+    const { drawn, moves, target, id } = await openOn(4, 5);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    bridge.calls.length = 0;
+    heard.length = 0;
+    void changingLines('lineBelow').run(target);
+    expect(moves).toEqual([{ file: 'f0', side: 'new', from: 4, to: 6 }]);
+    // Nothing stays under the old place: the new one holds the text, and then its draft goes.
+    expect(asked('comments.draft')).toEqual([
+      { id: VIEW, place: onLines(4, 6), text: 'Look here', home: null },
+      { id: VIEW, place: onLines(4, 5), text: '', home: null },
+    ]);
+    expect(heard).toEqual(['Lines 4–6']);
+    void changingLines('dropFirst').run(target);
+    expect(moves.at(-1)).toEqual({ file: 'f0', side: 'new', from: 5, to: 6 });
+    // The menu's rows, and the lines button, are the box's own.
+    expect(linesChange(id)).toBe(true);
+    expect(changingLines('lineAbove').enabled!(target)).toBe(true);
+    // Line 3 is the hunk's first.
+    void changingLines('lineAbove').run(target);
+    void changingLines('lineAbove').run(target);
+    void changingLines('lineAbove').run(target);
+    expect(moves.at(-1)).toEqual({ file: 'f0', side: 'new', from: 3, to: 6 });
+    expect(changingLines('lineAbove').enabled!(target)).toBe('No line above takes a comment');
+  });
+
+  test('a row is refused, its reason its tooltip and a key’s toast: one line, a draft already there, or sending', async () => {
+    const { target, moves } = await openOn(5, 5);
+    expect(changingLines('dropLast').enabled!(target)).toBe('The comment is on one line');
+    void changingLines('dropLast').run(target);
+    expect(notice()?.title).toBe('The comment is on one line');
+    expect(moves).toEqual([]);
+    // Another draft on lines 5–6.
+    takeDrafts({ id: VIEW, drafts: [row(onLines(5, 6), 'Mine', { savedAt: 1 })] });
+    await marked();
+    expect(changingLines('lineBelow').enabled!(target)).toBe('A draft is already on lines 5–6');
+    expect(changingLines('lineAbove').enabled!(target)).toBe(true);
+  });
+
+  test('a box whose comment may be on GitHub already keeps its lines, every row of its menu saying why', async () => {
+    const { target, moves, id } = await openOn(5, 5);
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'unknown', sent: 'Ship it?' })],
+    });
+    await marked();
+    bridge.calls.length = 0;
+    expect(linesChange(id)).toBe(true);
+    for (const how of ['lineAbove', 'lineBelow', 'dropFirst', 'dropLast'] as const) {
+      expect(changingLines(how).enabled!(target)).toBe(CHECK_FIRST);
+    }
+    expect(movingToFile.enabled!(target)).toBe(CHECK_FIRST);
+    void changingLines('lineBelow').run(target);
+    expect(notice()?.title).toBe(CHECK_FIRST);
+    void movingToFile.run(target);
+    // Its draft stays where it was sent from, marked sent.
+    expect(moves).toEqual([]);
+    expect(asked('comments.draft')).toEqual([]);
+  });
+
+  test('a removed line’s box taken down to the unchanged line under it goes under that line, on the new side, and back', async () => {
+    const { drawn, moves, target } = await openOn(5, 5, false, 'old');
+    heard.length = 0;
+    void changingLines('lineBelow').run(target);
+    expect(moves).toEqual([{ file: 'f0', side: 'new', line: 7 }]);
+    expect(heard).toEqual(['Line 5, removed, to line 7']);
+    void changingLines('dropLast').run(target);
+    expect(moves.at(-1)).toEqual({ file: 'f0', side: 'old', line: 5 });
+    // Its end dragged there in the old column, the same.
+    drawn.on.lines!({ file: 'f0', side: 'old', from: 5, to: 6 });
+    expect(moves.at(-1)).toEqual({ file: 'f0', side: 'new', line: 7 });
+  });
+
+  test('a suggestion block still the old lines’ is written again from the new ones; one changed is left', async () => {
+    const { drawn, target } = await openOn(4, 5, true);
+    expect(drawn.composer.text).toBe('```suggestion\nline 4\nline 5\n```');
+    void changingLines('lineBelow').run(target);
+    expect(drawn.composer.text).toBe('```suggestion\nline 4\nline 5\nline 6\n```');
+    drawn.composer.replace(0, drawn.composer.text.length, '```suggestion\nmine\n```');
+    void changingLines('dropLast').run(target);
+    expect(drawn.composer.text).toBe('```suggestion\nmine\n```');
+  });
+
+  test('an end dragged in the gutter moves the box to the lines GitHub takes there, or says why not', async () => {
+    const { drawn, moves } = await openOn(4, 6);
+    const box = drawn.on;
+    box.lines!({ file: 'f0', side: 'new', from: 4, to: 7 });
+    expect(moves).toEqual([{ file: 'f0', side: 'new', from: 4, to: 7 }]);
+    box.lines!({ file: 'f0', side: 'new', from: 7, to: 7 });
+    expect(moves.at(-1)).toEqual({ file: 'f0', side: 'new', line: 7 });
+    box.lines!({ file: 'f0', side: 'new', from: 7, to: 40 });
+    expect(notice()?.title).toBe(NOT_IN_DIFF);
+    expect(moves).toHaveLength(2);
+  });
+});
 
 /** Main's draft on line 5, which `opened` opens, standing as `changes` say. */
 function standsOnFive(changes: Partial<DraftRow>): void {

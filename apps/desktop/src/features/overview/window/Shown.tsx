@@ -59,6 +59,7 @@ import { DefinitionsLine, useOverviewTerms } from './Glossary.tsx';
 import { useDefinitions, useNow } from './hooks.ts';
 import { openings } from './opening.ts';
 import { OutOfDateBanner } from './OutOfDate.tsx';
+import { useFolds } from './sections.ts';
 import { AuthorPicture, WhoWrote } from './Author.tsx';
 import { authorOf, copyLabel, linesOf, shortId } from './says.ts';
 import { labelOf, staleAgainst } from './stale.ts';
@@ -438,6 +439,7 @@ export function Shown({
   // seen only once it's shown.
   const [seen, setSeen] = useState(false);
   if (!seen && !drawing && onScreen) setSeen(true);
+  const folds = useFolds(tab, parsed.tree);
   // Drawn once its wait has shown, it takes the skeleton's place in one Swap. A quick load's comes
   // at once, with nothing shown before it.
   const box = useRef<HTMLDivElement>(null);
@@ -468,6 +470,7 @@ export function Shown({
           focused={focused}
           outlineFoot={<OutlineFoot drawing={drawing} />}
           hints={hints}
+          folds={folds}
           terms={terms}
           onFollow={follow}
         />

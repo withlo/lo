@@ -224,6 +224,25 @@ describe('Settings', () => {
     expect(empty?.textContent).toBe('EmptyNothing hereAdd one above.');
   });
 
+  it('says what’s wrong with what was typed in a list row’s controls under its line', () => {
+    const container = render(
+      <SettingsList
+        label="Collapsed sections"
+        description="Overview sections that start collapsed."
+        actions={<Input aria-label="Heading to collapse" aria-describedby="why" />}
+        note="The tl;dr can’t collapse."
+        noteId="why"
+      >
+        <div role="list" />
+      </SettingsList>,
+    );
+    const note = container.querySelector('#why');
+    expect(note?.textContent).toBe('The tl;dr can’t collapse.');
+    expect(note?.getAttribute('role')).toBe('alert');
+    // Under the line, beside the controls, not in the list's box.
+    expect(note?.closest('.setting-row')).not.toBeNull();
+  });
+
   it('tells which section was chosen in the list', () => {
     const chosen = vi.fn<(id: string) => void>();
     const container = render(

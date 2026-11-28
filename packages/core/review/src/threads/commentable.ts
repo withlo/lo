@@ -18,7 +18,7 @@
 
 import type { Hunk } from '@lo/github';
 
-import { Line, Lines } from '../threads.ts';
+import { type DiffSide, Line, Lines } from '../threads.ts';
 import type { Screen } from './place.ts';
 
 /** A hunk as comments find their lines in it. */
@@ -30,16 +30,34 @@ interface Placed {
   readonly old: readonly number[];
   /** The position in the hunk of each of its right lines, from `newStart` on. */
   readonly new: readonly number[];
+  /** Each of its rows, by position: its line's number on each side it's on. */
+  readonly rows: readonly Row[];
+}
+
+/**
+ * A row of a hunk: a removed line's left number, an added line's right one, or an unchanged line's
+ * two.
+ */
+interface Row {
+  readonly left: number | undefined;
+  readonly right: number | undefined;
 }
 
 function placed(hunk: Hunk): Placed {
   const old: number[] = [];
   const added: number[] = [];
+  const rows: Row[] = [];
+  const oldStart = hunk.old.start + 1;
+  const newStart = hunk.new.start + 1;
   for (const [at, line] of hunk.lines.entries()) {
+    rows.push({
+      left: line.kind === 'added' ? undefined : oldStart + old.length,
+      right: line.kind === 'deleted' ? undefined : newStart + added.length,
+    });
     if (line.kind !== 'added') old.push(at);
     if (line.kind !== 'deleted') added.push(at);
   }
-  return { oldStart: hunk.old.start + 1, newStart: hunk.new.start + 1, old, new: added };
+  return { oldStart, newStart, old, new: added, rows };
 }
 
 /** The position in `hunk` of `line`, if the hunk has it. */
@@ -166,6 +184,74 @@ export class CommentableLines {
     if (order === 0) return { kind: 'lines', lines: Lines.one(end.line) };
     const lines = order < 0 ? Lines.range(start.line, end.line) : Lines.range(end.line, start.line);
     return { kind: 'lines', lines };
+  }
+
+  /**
+   * `lines` with one end moved to the next line that way that takes a comment, as a new comment's
+   * lines change while its box is open: its `'first'` end or its `'last'`, up the file (-1) or down
+   * it (1), in its hunk or across the lines between hunks. A range keeps to a side both its ends are
+   * on, as one picked in a column does, so the other side's rows between them aren't in it; one
+   * from a removed line to an added one takes the diff's next row, on either side. An end never
+   * passes the other: where it reaches it, the range is that one line. Nothing where no line that
+   * way takes a comment, or where an end of `lines` doesn't.
+   */
+  moveEnd(lines: Lines, end: 'first' | 'last', way: 1 | -1): Lines | undefined {
+    const first = Lines.first(lines);
+    const start = this.#find(first);
+    const last = this.#find(lines.end);
+    if (!start || !last) return undefined;
+    const both = (on: 'left' | 'right') =>
+      this.#row(start.at)[on] !== undefined && this.#row(last.at)[on] !== undefined;
+    const side =
+      first.side === lines.end.side
+        ? first.side
+        : both('left')
+          ? 'LEFT'
+          : both('right')
+            ? 'RIGHT'
+            : undefined;
+    const [moving, other] = end === 'first' ? [start, last] : [last, start];
+    let at: readonly [number, number] | undefined = moving.at;
+    for (;;) {
+      at = this.#step(at, way);
+      if (!at) return undefined;
+      if (at[0] === other.at[0] && at[1] === other.at[1]) return Lines.one(other.line);
+      const line = this.#lineAt(at, side);
+      if (!line) continue;
+      const moved = end === 'first' ? this.range(line, lines.end) : this.range(first, line);
+      return moved.kind === 'lines' ? moved.lines : undefined;
+    }
+  }
+
+  /** The row at `at`, a hunk's index and a position in it. */
+  #row([hunk, at]: readonly [number, number]): Row {
+    return this.#hunks![hunk]!.rows[at]!;
+  }
+
+  /** The row past `at`, `way` down the diff or up it, across the lines between hunks. */
+  #step([hunk, at]: readonly [number, number], way: 1 | -1): [number, number] | undefined {
+    const hunks = this.#hunks ?? [];
+    let index = hunk;
+    let next = at + way;
+    while (next < 0 || next >= hunks[index]!.rows.length) {
+      index += way;
+      const across = hunks[index];
+      if (!across) return undefined;
+      next = way === 1 ? 0 : across.rows.length - 1;
+    }
+    return [index, next];
+  }
+
+  /**
+   * The line of the row at `at` that takes a comment, on `side` where it's given: an added or
+   * unchanged line's on the right, a removed line's on the left. Nothing where the row isn't on
+   * `side`, or its line is on a side that takes none.
+   */
+  #lineAt(at: readonly [number, number], side: DiffSide | undefined): Line | undefined {
+    const { left, right } = this.#row(at);
+    if (side !== 'LEFT' && right !== undefined) return Line.right(right);
+    if (side !== 'RIGHT' && left !== undefined && this.#left) return Line.left(left);
+    return undefined;
   }
 
   /**

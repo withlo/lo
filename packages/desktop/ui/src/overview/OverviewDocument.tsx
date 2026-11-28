@@ -1,4 +1,5 @@
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -10,6 +11,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react';
+import { flushSync } from 'react-dom';
 
 import type {
   Excerpt,
@@ -19,13 +21,15 @@ import type {
   OverviewTree,
   Walkthrough,
 } from '@lo/artifact';
-import { plainText, type Code } from '@lo/markdown';
+import type { Code } from '@lo/markdown';
 
+import { Collapse } from '../Collapse.tsx';
 import { heldRegistry } from '../commands/control.ts';
 import { NO_TARGET } from '../commands/targets.ts';
 import { HintButton } from '../HintButton.tsx';
 import {
   Anchors,
+  anchorNames,
   Fold,
   FollowLink,
   MarkdownBlock,
@@ -42,6 +46,9 @@ import {
 import { blockHints, isStop, type BlockHint } from './blocks.ts';
 import { holdPlace } from './hold.ts';
 import { Glossary } from './Glossary.tsx';
+import { SECTION_BODY_CLASS, SECTION_CLASS } from './moving.ts';
+import { SectionHead } from './SectionHead.tsx';
+import { sectionAt, sectionsOf, type OverviewSection } from './sections.ts';
 import {
   GlossaryContext,
   ReachedContext,
@@ -73,6 +80,31 @@ export interface OverviewViews {
   fence?: ((node: Code) => ReactNode) | undefined;
 }
 
+/**
+ * How an overview's sections fold, kept by whoever shows it: which are collapsed now, the command a
+ * heading's chevron runs, and how what goes into a collapsed one expands it first.
+ */
+export interface OverviewFolds {
+  /** The sections collapsed now, by their heading's block number. */
+  readonly collapsed: ReadonlySet<number>;
+  /**
+   * The command a section's chevron runs on it, Collapse section and then Expand section, which a
+   * click on a collapsed heading's words runs too.
+   */
+  readonly fold: (heading: number) => BlockHint;
+  /**
+   * Expands the sections whose headings are `headings` at once, as anything that goes into one
+   * does before it gets there: a link, the outline, a term's entry. It counts each in `opened`. It's
+   * asked inside `flushSync`, so what it changes is drawn in the same frame.
+   */
+  readonly expand: (headings: readonly number[]) => void;
+  /**
+   * The sections opened at once, by their heading's block number, counted: each such opening draws
+   * the section's box anew, open from the start, so nothing moves.
+   */
+  readonly opened: ReadonlyMap<number, number>;
+}
+
 export interface OverviewDocumentProps {
   tree: OverviewTree;
   /** Who wrote it and for which commit, at the top of the article. */
@@ -100,6 +132,12 @@ export interface OverviewDocumentProps {
   /** Where hover cards go: an element inside `.lo-app`. By default, the `.lo-app` it's in. */
   container?: HTMLElement | null | undefined;
   /**
+   * How its sections fold. With it, each heading of its own but the tl;dr's folds its section: a
+   * chevron, its words and a `⋯` (`SectionHead`), and what's under it in a box that opens and
+   * closes. Without it, nothing folds.
+   */
+  folds?: OverviewFolds | undefined;
+  /**
    * The repo's definitions, as the overview shows its terms with them: which definition shows for
    * each, its tags and who it's by, and why they can't be used. Without them, each term shows the
    * overview's own definition, untagged.
@@ -118,13 +156,6 @@ export interface OverviewDocumentProps {
    * room above it. By default, once it's drawn.
    */
   seen?: boolean | undefined;
-}
-
-/** A section of the outline: a heading of the article's own, by its block's number. */
-interface Section {
-  block: number;
-  anchor: string;
-  title: string;
 }
 
 /** How far under the top of the article a section's heading may be, and still be the current one. */
@@ -146,6 +177,7 @@ export function OverviewDocument({
   onFollow,
   hints = blockHints,
   container,
+  folds,
   terms: shownTerms,
   ref,
   drawing = false,
@@ -154,7 +186,8 @@ export function OverviewDocument({
   const prefix = scopePrefix(useId());
   const anchors = useMemo(() => new Anchors(prefix, tree.blocks), [prefix, tree.blocks]);
   const glossary = useMemo(() => readGlossary(tree.blocks, anchors), [tree.blocks, anchors]);
-  const sections = useMemo(() => outlineOf(tree.blocks), [tree.blocks]);
+  const sections = sectionsOf(tree.blocks);
+  const places = useMemo(() => placesOf(tree.blocks), [tree.blocks]);
   const lead = useMemo(() => leadOf(tree.blocks), [tree.blocks]);
   const [current, setCurrent] = useState<number | undefined>(undefined);
   // What the focused block's chip offers. Only that block is drawn again as it changes.
@@ -196,19 +229,41 @@ export function OverviewDocument({
     handler.current = onFollow;
   }, [onFollow]);
 
+  // The folds as they are now, read as something goes into a section, so a new set of them doesn't
+  // make a new way to follow a link.
+  const foldsNow = useRef(folds);
+  useLayoutEffect(() => {
+    foldsNow.current = folds;
+  }, [folds]);
+  /**
+   * Expands the collapsed section block `block` is in, or heads, at once, before something goes
+   * there: drawn in this frame, so what's in it is on the page to go to.
+   */
+  const goInto = useCallback(
+    (block: number | undefined) => {
+      const now = foldsNow.current;
+      const section = block === undefined ? undefined : sectionAt(sections, block);
+      if (!now || !section?.folds || !now.collapsed.has(section.heading)) return;
+      flushSync(() => now.expand([section.heading]));
+    },
+    [sections],
+  );
+
   const follow = useCallback(
     (to: OverviewTarget, from: Element) => {
       if (to.kind === 'anchor') {
+        goInto(places.anchors.get(to.name));
         reveal(root.current, anchors.id(to.name));
         const section = sections.find((each) => each.anchor === to.name);
-        if (section) setCurrent(section.block);
+        if (section) setCurrent(section.heading);
       } else if (to.kind === 'term') {
+        goInto(places.terms.get(to.key));
         setTarget(to.key);
         reveal(root.current, glossary.termId(to.key));
       }
       handler.current?.(to, from);
     },
-    [anchors, glossary, sections],
+    [anchors, glossary, sections, places, goInto],
   );
 
   const extension = useMemo(() => overviewExtension(views), [views]);
@@ -236,7 +291,7 @@ export function OverviewDocument({
         const id = anchors.id(section.anchor);
         const heading = id === undefined ? null : element.ownerDocument.getElementById(id);
         if (!heading || heading.getBoundingClientRect().top - top > CURRENT_WITHIN_PX) break;
-        at = section.block;
+        at = section.heading;
       }
       setCurrent(at);
     };
@@ -250,7 +305,21 @@ export function OverviewDocument({
     };
   }, [anchors, sections]);
 
-  const shown = current ?? sections[0]?.block;
+  const shown = current ?? sections[0]?.heading;
+  const drawBlock = (index: number) => {
+    const block = tree.blocks[index];
+    return block === undefined ? null : (
+      <ArticleBlock
+        // A new tree's blocks start fresh: no fold or tab keeps the state of the one before.
+        key={`${generation}:${index}`}
+        block={block}
+        number={index}
+        lead={index === lead}
+        focused={focused === index}
+        hints={focused === index ? offered : NO_HINTS}
+      />
+    );
+  };
   return (
     <MarkdownProvider rendering={rendering}>
       <GlossaryContext value={terms}>
@@ -270,16 +339,20 @@ export function OverviewDocument({
                 <div className="lo-toc__label">Overview</div>
                 {sections.map((section) => (
                   <button
-                    key={section.block}
+                    key={section.heading}
                     type="button"
                     className="lo-toc__item text-start"
-                    aria-current={section.block === shown}
+                    aria-current={section.heading === shown}
+                    data-collapsed={
+                      section.folds && folds?.collapsed.has(section.heading) ? '' : undefined
+                    }
                     onClick={() => {
+                      goInto(section.heading);
                       reveal(root.current, anchors.id(section.anchor));
-                      setCurrent(section.block);
+                      setCurrent(section.heading);
                     }}
                   >
-                    {section.title}
+                    {section.name}
                   </button>
                 ))}
                 {outlineFoot !== undefined && <div className="lo-toc__foot">{outlineFoot}</div>}
@@ -288,17 +361,45 @@ export function OverviewDocument({
             <article className="lo-ov__article lo-prose">
               {byline}
               {banner}
-              {tree.blocks.map((block, index) => (
-                <ArticleBlock
-                  // A new tree's blocks start fresh: no fold or tab keeps the state of the one before.
-                  key={`${generation}:${index}`}
-                  block={block}
-                  number={index}
-                  lead={index === lead}
-                  focused={focused === index}
-                  hints={focused === index ? offered : NO_HINTS}
-                />
-              ))}
+              {folds === undefined
+                ? tree.blocks.map((_block, index) => drawBlock(index))
+                : sectioned(tree.blocks, sections).map((part) => {
+                    if (part.kind === 'block') return drawBlock(part.block);
+                    const { section } = part;
+                    const { heading } = section;
+                    const node = tree.blocks[heading];
+                    if (node?.kind !== 'heading') return null;
+                    const open = !section.folds || !folds.collapsed.has(heading);
+                    const body = anchors.own(`section${heading}`);
+                    return (
+                      <Fragment key={`${generation}:${heading}`}>
+                        <SectionHeading
+                          node={node}
+                          section={section}
+                          id={anchors.id(section.anchor)}
+                          open={open}
+                          fold={section.folds ? folds.fold : undefined}
+                          controls={body}
+                          focused={focused === heading}
+                          hints={focused === heading ? offered : NO_HINTS}
+                        />
+                        {section.folds ? (
+                          <Collapse
+                            // Opened at once, as something went into it: drawn open from the start.
+                            key={folds.opened.get(heading) ?? 0}
+                            open={open}
+                            className={SECTION_CLASS}
+                          >
+                            <div id={body} className={`lo-prose ${SECTION_BODY_CLASS}`}>
+                              {range(section.from, section.to).map(drawBlock)}
+                            </div>
+                          </Collapse>
+                        ) : (
+                          range(section.from, section.to).map(drawBlock)
+                        )}
+                      </Fragment>
+                    );
+                  })}
               <MarkdownNotes notes={tree.notes} />
             </article>
           </div>
@@ -363,6 +464,57 @@ const ArticleBlock = memo(function ArticleBlock({
       {drawn}
       {chip}
     </div>
+  );
+});
+
+/** An overview's second-level heading. */
+type HeadingBlock = Extract<OverviewBlock, { kind: 'heading' }>;
+
+interface SectionHeadingProps {
+  node: HeadingBlock;
+  section: OverviewSection;
+  /** Its anchor's id in the document. */
+  id: string | undefined;
+  open: boolean;
+  /** The command its chevron runs on a section, for one that folds. */
+  fold: ((heading: number) => BlockHint) | undefined;
+  /** What's under it, by its id. */
+  controls: string;
+  focused: boolean;
+  /** What its chip offers, while it's focused. */
+  hints: readonly BlockHint[];
+}
+
+/**
+ * A section's heading: its words, and for a section that folds, its chevron and `⋯`. Collapsed,
+ * it's a block the block keys stop at, with its chip while it's focused. Drawn again only when
+ * what it's given changes.
+ */
+const SectionHeading = memo(function SectionHeading({
+  node,
+  section,
+  id,
+  open,
+  fold,
+  controls,
+  focused,
+  hints,
+}: SectionHeadingProps) {
+  return (
+    <SectionHead
+      name={section.name}
+      id={id}
+      tabIndex={-1}
+      open={open}
+      fold={fold?.(section.heading)}
+      menu={fold !== undefined}
+      controls={controls}
+      number={section.heading}
+      focused={focused}
+      chip={focused ? <Hints hints={hints} fold={false} /> : null}
+    >
+      <MarkdownInlines<Overview> nodes={node.children} />
+    </SectionHead>
   );
 });
 
@@ -448,15 +600,49 @@ function overviewExtension(views: OverviewViews | undefined): MarkdownExtension<
   };
 }
 
-/** The article's sections, for the outline: its own second-level headings, in order. */
-function outlineOf(blocks: readonly OverviewBlock[]): Section[] {
-  const sections: Section[] = [];
-  for (const [block, node] of blocks.entries()) {
-    if (node.kind !== 'heading' || node.level !== 2) continue;
-    const title = plainText({ blocks: [node], notes: [], diagnostics: [] }, 200);
-    sections.push({ block, anchor: node.anchor, title });
+/** A part of the article as it's drawn with sections that fold: a block of its own, or a section. */
+type Part = { kind: 'block'; block: number } | { kind: 'section'; section: OverviewSection };
+
+/**
+ * The article's parts, in order: the blocks before the first section, then each section, its
+ * heading with the blocks under it, then what's after the last, its footnotes.
+ */
+function sectioned(blocks: readonly OverviewBlock[], sections: readonly OverviewSection[]): Part[] {
+  const first = sections[0]?.heading ?? blocks.length;
+  const last = sections.at(-1)?.to ?? blocks.length;
+  return [
+    ...range(0, first).map(blockPart),
+    ...sections.map((section): Part => ({ kind: 'section', section })),
+    ...range(last, blocks.length).map(blockPart),
+  ];
+}
+
+/** Block `block` as a part of the article of its own. */
+function blockPart(block: number): Part {
+  return { kind: 'block', block };
+}
+
+/** The numbers from `from` up to, not including, `to`. */
+function range(from: number, to: number): number[] {
+  return Array.from({ length: Math.max(0, to - from) }, (_, at) => from + at);
+}
+
+/**
+ * Where the article's own places are, by the block they're in: each anchor, a heading's or a
+ * note's, and each term the glossary defines.
+ */
+function placesOf(blocks: readonly OverviewBlock[]): {
+  anchors: ReadonlyMap<string, number>;
+  terms: ReadonlyMap<string, number>;
+} {
+  const anchors = new Map<string, number>();
+  const terms = new Map<string, number>();
+  for (const [at, block] of blocks.entries()) {
+    for (const name of anchorNames([block])) if (!anchors.has(name)) anchors.set(name, at);
+    if (block.kind !== 'glossary') continue;
+    for (const term of block.terms) if (!terms.has(term.key)) terms.set(term.key, at);
   }
-  return sections;
+  return { anchors, terms };
 }
 
 /** The block number of the tl;dr's first paragraph, which leads: the overview opens with it. */

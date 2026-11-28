@@ -316,6 +316,7 @@ class WholeFile implements FileView {
       case 'tab':
       case 'row':
       case 'box':
+      case 'lines':
       case 'notice':
       case 'none':
         return undefined;

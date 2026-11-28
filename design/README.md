@@ -985,7 +985,9 @@ text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" di
   "Lines 39–41", "Line 3, removed", "File", "Pull request", "Reply", "Edit", "Summary". Why it's on
   that, where the reader asked for something else, is one quiet line under it (`why`). Write |
   Preview is at the right, then the control that closes the box (`close`), which keeps the draft.
-  "as login" shows only when more than one account is signed in.
+  "as login" shows only when more than one account is signed in. On a new comment on lines those
+  words are a button: its menu, its keys and the bracket's two ends in the gutter change the lines,
+  and the box keeps its text.
 - **Body.** The editor, or its preview. The box has one ring, which is its focus; nothing inside it
   has another. An empty box under the pull request says what it's for in a quiet hint (`hint`):
   "Comment on #264"; one whose head says it, as a reply's does, has none.

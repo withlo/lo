@@ -6,7 +6,9 @@
 // and showing the timeline in the overview's place are stood in for, so each test says what the tab
 // opened on and sees when the tab hands over to the timeline.
 
-import { commandsOf, listen, NO_TARGET } from '@lo/ui/commands';
+import { commandsOf, findScope, listen, NO_TARGET, scopeTarget } from '@lo/ui/commands';
+import { generationOf } from '@lo/ui/markdown';
+import { sectionsOf } from '@lo/ui/overview';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -25,17 +27,24 @@ import { checkOverview, parseOverview } from '../background/index.ts';
 import settingsKeys from '../../settings/keys.ts';
 import stacksKeys from '../../stacks/keys.ts';
 import updatesKeys from '../../updates/keys.ts';
+import { blockId } from './blocks.ts';
 import { Checking } from './checking.ts';
 import { copyPrompt as copyPromptOf } from './copy.ts';
+import { standingOf } from './facts.ts';
+import { revealBlock, setOpener } from './follow.ts';
 import { OverviewMark } from './Mark.tsx';
 import { openings } from './opening.ts';
 import { OverviewView } from './Overview.tsx';
+import { folds, isCollapsed, openShown } from './sections.ts';
 import { blockInOverview, blockKey } from './shared.ts';
 import { OverviewStatus } from './Status.tsx';
 import { checked, publish, readAgain, states } from './store.ts';
 
-/** The middle view the tab opened on, as Settings said. */
-const tabs = vi.hoisted(() => ({ opened: 'overview.view' as string | undefined }));
+/** The middle view the tab opened on, as Settings said, and the tab on screen. */
+const tabs = vi.hoisted(() => ({
+  opened: 'overview.view' as string | undefined,
+  active: undefined as PullTab | undefined,
+}));
 /** The timeline, shown in the overview's place as the tab hands over to it. */
 const showInstead = vi.hoisted(() =>
   vi.fn<(tab: string, asOpens?: boolean) => boolean>(() => true),
@@ -43,6 +52,7 @@ const showInstead = vi.hoisted(() =>
 
 vi.mock(import('../../tab/window/shared.ts'), async (original) => ({
   ...(await original()),
+  activeTab: () => tabs.active,
   openedOn: () => tabs.opened,
   showInstead,
 }));
@@ -257,6 +267,26 @@ async function until(done: () => boolean): Promise<void> {
     });
   }
   expect(done()).toBe(true);
+}
+
+/** What keys act on, and the menu key opens the menu of, where focus is. */
+function focusedTarget() {
+  return scopeTarget(findScope(document.activeElement));
+}
+
+/** The tree of the overview `tab` shows, once it's checked. */
+function treeOf(tab: PullTab) {
+  const standing = standingOf(states.get(tab.id), checked.get(tab.id));
+  if (standing.kind !== 'shown') throw new Error(`The overview is ${standing.kind}.`);
+  return standing.parsed.tree;
+}
+
+/** Has `tab`'s overview checked, as main says it has one, with nothing drawn. */
+async function checkedFor(tab: PullTab): Promise<void> {
+  const checking = checkingFor(tab);
+  act(() => states.set(tab.id, stateOf(tab)));
+  checking.take(stateOf(tab));
+  await until(() => checked.get(tab.id)?.kind === 'checked');
 }
 
 /**
@@ -1053,5 +1083,54 @@ describe('an overview on screen', () => {
     );
     // Offered, never put in place of the one on screen.
     expect(view.querySelector('.lo-ov__article')).toBe(article);
+  });
+});
+
+describe('a section’s heading', () => {
+  it('is what keys and the menu key act on with focus on it, its chevron or `⋯`, open or not', async () => {
+    const tab = tabOf();
+    const view = render(tab);
+    await checkedFor(tab);
+    await until(() => view.querySelector('[data-lo-overview="shown"] .lo-section-head') !== null);
+    const tree = treeOf(tab);
+    const [tldr, works] = sectionsOf(tree.blocks);
+    const head = view.querySelector<HTMLElement>(`[data-lo-section="${works!.heading}"]`)!;
+    const heading = { kind: 'block', block: blockId(generationOf(tree), works!.heading) };
+    const controls = [head.querySelector<HTMLElement>('h2')!, ...head.querySelectorAll('button')];
+    expect(controls).toHaveLength(3);
+    for (const control of controls) {
+      act(() => control.focus());
+      expect(focusedTarget()).toEqual(heading);
+    }
+    // The tl;dr's has no menu of its own, and folds nothing.
+    act(() => view.querySelector<HTMLElement>(`[data-lo-section="${tldr!.heading}"] h2`)!.focus());
+    expect(focusedTarget()).toEqual(NO_TARGET);
+  });
+});
+
+describe('a section collapsed', () => {
+  it('expands before the overview has drawn, as history or a note goes into it, but not for its heading', async () => {
+    const tab = tabOf();
+    tabs.active = tab;
+    onTestFinished(() => {
+      tabs.active = undefined;
+    });
+    await checkedFor(tab);
+    const tree = treeOf(tab);
+    const works = sectionsOf(tree.blocks).find((section) => section.name === 'How it works')!;
+    act(() => folds.set(tab.id, new Map([['how it works', true]])));
+    // As the feature has it from its start.
+    setOpener(openShown);
+    revealBlock(tab.id, works.heading);
+    expect(isCollapsed(tab, tree, works)).toBe(true);
+    revealBlock(tab.id, works.from);
+    expect(isCollapsed(tab, tree, works)).toBe(false);
+    // Drawn, it's open, and the block it went to has focus.
+    render(tab);
+    await until(
+      () =>
+        document.activeElement?.closest('[data-lo-block]')?.getAttribute('data-lo-block') ===
+        String(works.from),
+    );
   });
 });

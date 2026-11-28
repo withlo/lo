@@ -518,6 +518,51 @@ export const UNDO = 'Undo';
 export const NEW_SIDE_ONLY = 'New side only';
 
 /**
+ * How a new comment's lines change while its box is open, as its lines button's menu and its keys
+ * name them: a line added above its first or below its last, or its first or last taken off.
+ */
+export type LinesChange = 'lineAbove' | 'dropFirst' | 'lineBelow' | 'dropLast';
+
+/** Why a comment's lines can't take a line above, or below. */
+export const NO_LINE_ABOVE = 'No line above takes a comment';
+export const NO_LINE_BELOW = 'No line below takes a comment';
+
+/** Why a comment's lines can't lose their first or last. */
+export const ONE_LINE = 'The comment is on one line';
+
+/** Why a comment can't go on lines another draft is on: "A draft is already on lines 35–38". */
+export function draftOn(lines: Lines): string {
+  return `A draft is already on ${lineRefText({ lines }, true)}`;
+}
+
+/**
+ * The lines a comment on `lines` goes on once they change `how`, as GitHub takes them, or why they
+ * can't: the end that moves goes to the next line that way that takes a comment, over the lines
+ * between hunks if they're between, as {@link CommentableLines.moveEnd} says. A line taken off
+ * never takes the end past the other: at most the range is one line.
+ */
+export function changedLines(
+  takes: CommentableLines | undefined,
+  lines: Lines,
+  how: LinesChange,
+): Lines | string {
+  switch (how) {
+    case 'lineAbove':
+      return takes?.moveEnd(lines, 'first', -1) ?? NO_LINE_ABOVE;
+    case 'lineBelow':
+      return takes?.moveEnd(lines, 'last', 1) ?? NO_LINE_BELOW;
+    case 'dropFirst':
+      if (lines.start === undefined) return ONE_LINE;
+      return takes?.moveEnd(lines, 'first', 1) ?? ONE_LINE;
+    case 'dropLast':
+      if (lines.start === undefined) return ONE_LINE;
+      return takes?.moveEnd(lines, 'last', -1) ?? ONE_LINE;
+    default:
+      throw new Error(`a change of lines Lo doesn’t know: ${String(how satisfies never)}`);
+  }
+}
+
+/**
  * Why a comment on a code block's lines goes on their file: GitHub takes line comments only on
  * lines in its diff (`notInDiff`); Lo couldn't read which lines it takes (`noLines`); the lines
  * `changed` since the overview's commit; they're on the `older` side, which Lo doesn't map past

@@ -244,6 +244,15 @@ export interface SettingsListProps {
   description?: ReactNode;
   /** The list's own controls, at the end of its row: adding to it. */
   actions?: ReactNode;
+  /**
+   * Its controls are a field and its buttons, which need the room: where the row is narrower than
+   * 600 px, they go under its words, from its start.
+   */
+  wraps?: boolean | undefined;
+  /** What's wrong with what was typed in its controls, in a line under its description. */
+  note?: ReactNode;
+  /** The note's id, for the control it's about to name in its `aria-describedby`. */
+  noteId?: string | undefined;
   /** The list itself: a `role="list"` of `SettingsListItem`s, or an `EmptyState`. */
   children?: ReactNode;
 }
@@ -251,18 +260,27 @@ export interface SettingsListProps {
 /**
  * A row of Settings that's a list, as the accounts, the trusted repos and the toolchains are: the
  * row's label, line and controls, as any row has, then the list under them, set in a box, each item
- * a `SettingsListItem`.
+ * a `SettingsListItem`. What's wrong with what was typed in its controls is a line under its
+ * description, which comes and goes with the Open move, as a `Setting`'s does.
  */
-export function SettingsList({ label, description, actions, children }: SettingsListProps) {
+export function SettingsList({
+  label,
+  description,
+  actions,
+  wraps = false,
+  note,
+  noteId,
+  children,
+}: SettingsListProps) {
   const id = useId();
   return (
     <div
       role="group"
       aria-labelledby={`${id}-label`}
       aria-describedby={description === undefined ? undefined : `${id}-line`}
-      className="flex flex-col border-t border-border-subtle pb-12"
+      className={`flex flex-col border-t border-border-subtle pb-12 ${wraps ? '@container' : ''}`}
     >
-      <div className="setting-row py-12">
+      <div className={wraps ? 'settings-list-wraps setting-row py-12' : 'setting-row py-12'}>
         <div id={`${id}-label`} className="text-ui-strong">
           {label}
         </div>
@@ -271,6 +289,13 @@ export function SettingsList({ label, description, actions, children }: Settings
             {description}
           </div>
         )}
+        <Collapse open={note !== undefined && note !== null} className="col-start-1 min-w-0">
+          {note !== undefined && note !== null && (
+            <div id={noteId} className="text-danger text-small" role="alert">
+              {note}
+            </div>
+          )}
+        </Collapse>
         {actions !== undefined && (
           <div className="col-start-2 row-span-2 row-start-1 flex items-center justify-end gap-8">
             {actions}
