@@ -1455,7 +1455,10 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
 - `window/rows.ts` turns what main sent into rows, plain functions tested alone: the description
   card, a note of older items not read, consecutive commits as one push split where a revision ends,
   with its last commit's checks, comments and submitted reviews as cards, a force-push that can
-  compare its revisions, and every other item as a one-line event in Lo's words.
+  compare its revisions, and every other item as a one-line event in Lo's words, but the close
+  GitHub records with each merge (`closedByMerge`), which GitHub's page doesn't draw either: a
+  merged pull request can't be reopened, so a close after its merge is the merge's, as is one at the
+  merge's moment with no reopen since. A close a reopen follows is someone's own, and shows.
 - The rows are one listbox, the focusable element, with the row the keyboard is on as its active
   descendant: `j` and `k` move, staying put at the ends, and `gx` opens the row on GitHub. `Tab` and
   `⇧Tab` go through the links and buttons of that row, round through the list, and `Esc` gives focus

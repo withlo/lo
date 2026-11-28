@@ -916,9 +916,10 @@ under its header included, and the thread landed on is ringed.
 
 The PR's full GitHub timeline: the description, comments, reviews, pushes and force-pushes, CI
 results, labels, assignments, review requests, cross-references, merges, queue events and
-deployments. Markdown is rendered, GIFs play, and images load through the main process as the tab's
-account, so attachments in private repos show. The PR's title, description, labels, reviewers and
-draft status are read-only in Lo.
+deployments. A merge shows once, as GitHub's page shows it: without the close GitHub records with
+it. Markdown is rendered, GIFs play, and images load through the main process as the tab's account,
+so attachments in private repos show. The PR's title, description, labels, reviewers and draft
+status are read-only in Lo.
 
 It's the third middle view, after the overview and the diff. Lo reads it from GitHub when you first
 show it, before what it reads in the background, and keeps it current from then on. A long one shows
