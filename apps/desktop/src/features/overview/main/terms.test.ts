@@ -3,7 +3,7 @@
 // one read for every tab of a repository acting as one account; read with the tab's overview, on
 // its own cadence; and kept, so they show at once the next time.
 
-import { STORE_LIMITS } from '@lo/artifact';
+import { STORE_READ } from '@lo/artifact';
 import { RepoRef, type GithubClient, type ReadPriority, type ReadPriorityNow } from '@lo/github';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -167,7 +167,7 @@ describe("a repository's definitions", () => {
   });
 
   it('never reads a terms.json larger than the store may be, or what isn’t one', async () => {
-    expect(STORE_BYTES).toBe(STORE_LIMITS.size + 3);
+    expect(STORE_BYTES).toBe(STORE_READ);
     const cases: { name: string; made: () => FakeGithub; found: object }[] = [
       {
         name: 'too large',

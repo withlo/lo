@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { Problem, StoreState } from '../contract.ts';
-import { readStore } from '../background/index.ts';
-import type { StoreRead } from '../jobs.ts';
+import { readTerms } from '../background/index.ts';
+import type { TermsRead } from '../jobs.ts';
 import {
   failureOf,
   readTermsAgain,
@@ -66,7 +66,7 @@ const fileOf = (id: string, size = 10): StoreState['found'] => ({
 /** Files main hands over, by ID, read as the background process reads them, with each read. */
 function standIn(files: Record<string, string>) {
   const asked: string[] = [];
-  const parse = vi.fn<(bytes: Uint8Array) => Promise<StoreRead>>(async (bytes) => readStore(bytes));
+  const parse = vi.fn<(bytes: Uint8Array) => Promise<TermsRead>>(async (bytes) => readTerms(bytes));
   const stop = readTermsWith({
     file: async ({ file }) => {
       asked.push(file);

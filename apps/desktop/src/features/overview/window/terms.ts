@@ -8,7 +8,7 @@ import type { StoreProblem } from '@lo/artifact';
 import { IpcError } from '../../../ipc/contract.ts';
 import { tabState } from '../../tab/window/shared.ts';
 import type { Problem, StoreState } from '../contract.ts';
-import type { StoredTerm, StoreRead } from '../jobs.ts';
+import type { StoredTerm, TermsRead } from '../jobs.ts';
 import { main, overviewJobs } from './main.ts';
 
 /** A repository's definitions, read. */
@@ -101,7 +101,7 @@ const reads = new Map<string, Reading>();
 /** What the window reads a file with: main and the background process, unless a test says. */
 export interface TermsReads {
   file(input: { id: string; file: string }): Promise<Uint8Array>;
-  read(bytes: Uint8Array): Promise<StoreRead>;
+  read(bytes: Uint8Array): Promise<TermsRead>;
 }
 
 let reading: TermsReads = {
@@ -272,6 +272,7 @@ export function failureOf(problem: StoreProblem): StoreFailure {
       return { kind: 'tooMany' };
     case 'too-large':
       return { kind: 'tooLarge' };
+    case 'commit':
     case 'unreadable':
     case 'too-long':
     case 'encoding':

@@ -162,8 +162,8 @@ export const overviewState = z.strictObject({
 export type OverviewState = z.output<typeof overviewState>;
 
 /**
- * The most bytes of `terms.json` main reads: `@lo/artifact`'s `STORE_LIMITS.size` and a byte-order
- * mark. A larger one is past the store's limits, and isn't read.
+ * The most bytes of `terms.json` main reads: `@lo/artifact`'s `STORE_READ`, its limit and a
+ * byte-order mark. A larger one is past the store's limits, and isn't read.
  */
 export const STORE_BYTES = 2 * 1024 * 1024 + 3;
 

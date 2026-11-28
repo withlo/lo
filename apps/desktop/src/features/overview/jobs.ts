@@ -147,7 +147,7 @@ export interface StoredTerm extends Omit<StoreTerm, 'changes' | 'suggestions'>, 
  * What reading `terms.json` gave: its format, its terms in the order it holds them, and each name
  * a term goes by, its own and its aliases', with its term's key; or why it can't be used.
  */
-export type StoreRead =
+export type TermsRead =
   | { ok: true; format: number; terms: StoredTerm[]; names: [name: string, key: string][] }
   | { ok: false; problem: StoreProblem };
 
@@ -169,7 +169,7 @@ export const contract = defineJobs('overview', {
   /** Reads `terms.json`, as main read it, whole, as the repository's definitions. */
   store: {
     input: z.strictObject({ bytes: byteArray(STORE_BYTES) }),
-    reply: reply<StoreRead>(),
+    reply: reply<TermsRead>(),
   },
 });
 

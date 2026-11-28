@@ -25,7 +25,7 @@ import {
   type CheckInput,
   type Drawn,
   type Parsed,
-  type StoreRead,
+  type TermsRead,
 } from '../jobs.ts';
 
 export default defineRunner(contract, {
@@ -44,7 +44,7 @@ export default defineRunner(contract, {
     warm: true,
   },
   store: {
-    run: ({ bytes }) => readStore(bytes),
+    run: ({ bytes }) => readTerms(bytes),
     // Bounded on any input: 2 MiB of JSON, and its definitions, read once each.
     limits: { deadline: 30_000 },
   },
@@ -54,7 +54,7 @@ export default defineRunner(contract, {
  * `terms.json` read as the repository's definitions, each drawn as the overview's tree draws a
  * glossary item's.
  */
-export function readStore(bytes: Uint8Array): StoreRead {
+export function readTerms(bytes: Uint8Array): TermsRead {
   const read = parseStore(bytes);
   if (!read.ok) return read;
   const { store } = read;
