@@ -651,8 +651,18 @@ type Outcome =
       started: number;
     };
 
-/** What to do next: run a poll, chosen when its target's `forced` was `ticket`, or wait. */
-type Step = { kind: 'run'; job: Job; ticket: number } | { kind: 'wait'; wait: number | undefined };
+/**
+ * How a poll was chosen: when its target's `forced` was `ticket`, and whether it was `forced`,
+ * tried at once whatever the backoff, as opening a pull request, coming back on screen or a
+ * refresh asks.
+ */
+interface Chosen {
+  readonly ticket: number;
+  readonly forced: boolean;
+}
+
+/** What to do next: run a poll, chosen as {@link Chosen} says, or wait. */
+type Step = ({ kind: 'run'; job: Job } & Chosen) | { kind: 'wait'; wait: number | undefined };
 
 type CacheWrite = () => Promise<void>;
 
@@ -898,8 +908,9 @@ export class Poller {
 
   /**
    * Says where Lo is for the person at the computer, which sets how often each poll is due. Coming
-   * back on screen polls the open pull request at once, whatever the backoff; coming to the front
-   * from behind another window only makes it due sooner.
+   * back on screen polls the open pull request at once, whatever the backoff, which a failure
+   * before Lo's own next try leaves as it was; coming to the front from behind another window only
+   * makes it due sooner.
    */
   setPresence(presence: Presence): void {
     if (this.#presence === presence) return;
@@ -1034,8 +1045,9 @@ export class Poller {
 
   /**
    * Makes `pull` the open pull request, the one in the active tab, watching it if it wasn't, and
-   * refreshes its details. Resolves with its cached details, if there are any, once the cache has
-   * answered, before any request.
+   * refreshes its details: its poll goes at once, whatever the backoff, which a failure before Lo's
+   * own next try leaves as it was. Resolves with its cached details, if there are any, once the
+   * cache has answered, before any request.
    */
   async setOpen(
     pull: PullRef | undefined,
@@ -1074,13 +1086,14 @@ export class Poller {
 
   /**
    * Reads `pull`, the open pull request, again now, whatever its interval, as when the reader asks:
-   * its poll goes ahead of every poll that's merely due, whatever the offline backoff, and fetches
-   * its details whatever its check says, then every read kept for it runs again with what it has,
-   * as on the 5-minute refresh. Its requests take their turns in the account's queue, and the rate
-   * limit holds them as it holds every poll. Resolves once all of that has answered or failed: at
-   * once when `pull` isn't the open pull request, and as soon as the rest can't go on, with the
-   * poller stopped, the account signed out, the rate limit used up or GitHub out of reach. Asked
-   * again while one is under way, it waits on that one and asks nothing more.
+   * its poll goes ahead of every poll that's merely due, whatever the offline backoff, which a
+   * failure before Lo's own next try leaves as it was, and fetches its details whatever its check
+   * says, then every read kept for it runs again with what it has, as on the 5-minute refresh. Its
+   * requests take their turns in the account's queue, and the rate limit holds them as it holds
+   * every poll. Resolves once all of that has answered or failed: at once when `pull` isn't the
+   * open pull request, and as soon as the rest can't go on, with the poller stopped, the account
+   * signed out, the rate limit used up or GitHub out of reach. Asked again while one is under way,
+   * it waits on that one and asks nothing more.
    *
    * The reads `first` names run first, in that order, as those of what's on screen. With `list`,
    * once the reads are in, the repository's open pull requests are read again too, ahead of every
@@ -2615,7 +2628,9 @@ export class Poller {
         this.#refreshStatus();
       }
     }
-    if (at <= now) return { kind: 'run', job: chosen.job, ticket: chosen.ticket };
+    if (at <= now) {
+      return { kind: 'run', job: chosen.job, ticket: chosen.ticket, forced: chosen.forced };
+    }
     const wait = at - now;
     return { kind: 'wait', wait: untilReset === undefined ? wait : Math.min(wait, untilReset) };
   }
@@ -2633,29 +2648,29 @@ export class Poller {
         await this.#sleep(step.wait === undefined ? max : Math.min(step.wait, max));
         continue;
       }
-      const { job, ticket } = step;
+      const { job } = step;
       let client: GithubClient;
       try {
         client = await this.#accounts.client(this.#login);
       } catch (error) {
-        this.#lostClient(targetOf(job), ticket, error);
+        this.#lostClient(targetOf(job), step, error);
         continue;
       }
       if (this.#stopped) return;
       const result = await this.#run(job, client);
       if ('rest' in result) {
-        void this.#takeInAside(job, ticket, result, client).catch((error: unknown) => {
+        void this.#takeInAside(job, step, result, client).catch((error: unknown) => {
           this.#log(`reading beside the polls: ${String(error)}`);
         });
         continue;
       }
-      await this.#take(job, ticket, result, client);
+      await this.#take(job, step, result, client);
     }
   }
 
   /** Takes in a poll's answer, and makes the cache writes that come of it. */
-  async #take(job: Job, ticket: number, result: Settled<Outcome>, client: GithubClient) {
-    const writes = this.#finish(job, ticket, result, client);
+  async #take(job: Job, chosen: Chosen, result: Settled<Outcome>, client: GithubClient) {
+    const writes = this.#finish(job, chosen, result, client);
     for (const write of writes) {
       try {
         await write();
@@ -2669,11 +2684,11 @@ export class Poller {
    * Takes in a read whose run went on beside the loop once it's over, as the loop does its polls'
    * answers; the polls that waited for it may go then.
    */
-  async #takeInAside(job: Job, ticket: number, aside: Aside, client: GithubClient) {
+  async #takeInAside(job: Job, chosen: Chosen, aside: Aside, client: GithubClient) {
     const result = await aside.rest;
     this.#asides.delete(aside.priority);
     if (aside.read) aside.read.aside = false;
-    const taking = this.#take(job, ticket, result, client);
+    const taking = this.#take(job, chosen, result, client);
     this.#wake();
     await taking;
   }
@@ -2802,7 +2817,12 @@ export class Poller {
   }
 
   /** Takes in a poll's answer: updates what's known, sends events, and returns the cache writes to make. */
-  #finish(job: Job, ticket: number, result: Settled<Outcome>, client: GithubClient): CacheWrite[] {
+  #finish(
+    job: Job,
+    { ticket, forced }: Chosen,
+    result: Settled<Outcome>,
+    client: GithubClient,
+  ): CacheWrite[] {
     this.#takeIn(client);
     const now = this.#config.monotonic();
     const wall = this.#config.now();
@@ -2838,7 +2858,7 @@ export class Poller {
       if (detail.kind === 'network' || detail.kind === 'tokenUnavailable') {
         if (polls) this.#schedule(target)?.serve(ticket);
         const failure = new GithubError(detail);
-        if (!this.#refreshTried(target, ticket)) this.#backOff(failure, failure.said(), now, wall);
+        if (!this.#triedEarly(forced, now)) this.#backOff(failure, failure.said(), now, wall);
       } else if (detail.kind === 'rateLimited') {
         // Taken in from the client above, as it heard it.
       } else if (detail.kind === 'unauthorized' && this.#accounts.isSignedOut(this.#login)) {
@@ -3196,14 +3216,14 @@ export class Poller {
   }
 
   /**
-   * Whether a poll of `target`, chosen when its `forced` was `ticket`, was a refresh's, tried while
-   * GitHub was already out of reach ({@link Poller.refresh}). Its failure leaves the backoff as it
-   * was: pressing Refresh doesn't put Lo's own next try off.
+   * Whether a poll that failed at `now` was tried early: at once whatever the backoff (`forced`),
+   * as opening a pull request, coming back on screen, Try again or a refresh asks, while GitHub was
+   * already out of reach and before Lo's own next try was due. Its failure leaves the backoff as it
+   * was, so switching tabs or pressing Refresh again and again doesn't put that try off. Once that
+   * try is due, the poll tried at once is it, and its failure counts.
    */
-  #refreshTried(target: Target, ticket: number): boolean {
-    if (this.#offline === undefined || !(target instanceof PullRef)) return false;
-    const refresh = this.#refreshes.get(target.key);
-    return refresh !== undefined && refresh.ticket <= ticket;
+  #triedEarly(forced: boolean, now: number): boolean {
+    return forced && this.#offline !== undefined && now < this.#offline.retryAt;
   }
 
   /** Whether the accounts say the account is signed out, or it's gone. Only then is it signed out here. */
@@ -3217,16 +3237,15 @@ export class Poller {
    * There was no client for a poll. A signed-out account stops polling until it signs in again;
    * anything else, such as a token that can't be read now, is tried again later.
    */
-  #lostClient(target: Target, ticket: number, error: unknown): void {
+  #lostClient(target: Target, { ticket, forced }: Chosen, error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
     if (this.#accountSignedOut()) {
       this.#log(`not polling for ${this.#login}: ${message}`);
       this.#signedOut = true;
     } else {
       this.#schedule(target)?.serve(ticket);
-      if (!this.#refreshTried(target, ticket)) {
-        this.#backOff(error, message, this.#config.monotonic(), this.#config.now());
-      }
+      const now = this.#config.monotonic();
+      if (!this.#triedEarly(forced, now)) this.#backOff(error, message, now, this.#config.now());
     }
     this.#refreshStatus();
   }
