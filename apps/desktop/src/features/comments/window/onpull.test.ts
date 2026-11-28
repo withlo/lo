@@ -5,7 +5,8 @@
 import { describe, expect, test } from 'vitest';
 
 import type { DraftPlaceRow } from '../contract.ts';
-import { noted, type BoxSend, type OnPull } from './onpull.ts';
+import { noted, noteOnPull, onPull, settleOnPull, type BoxSend, type OnPull } from './onpull.ts';
+import { sentLabel } from './writing.ts';
 
 const ON_PULL: DraftPlaceRow = { kind: 'conversation' };
 
@@ -18,6 +19,8 @@ function box(changes: Partial<BoxSend> = {}): BoxSend {
     held: true,
     landing: false,
     sending: 'sending',
+    since: 5,
+    before: { had: 1, after: 'C_9' },
     ...changes,
   };
 }
@@ -31,14 +34,16 @@ describe('noted', () => {
         comment: undefined,
         text: 'Ship it.',
         state: 'sending',
-        label: 'Sending…',
+        label: sentLabel('sending', false),
         at: undefined,
+        since: 5,
+        before: { had: 1, after: 'C_9' },
       },
     ]);
     // The same again changes nothing.
     expect(noted(sending, box(), 11)).toBe(sending);
     const checking = noted(sending, box({ sending: 'checking' }), 12);
-    expect(checking[0]).toMatchObject({ state: 'checking', label: 'Checking…' });
+    expect(checking[0]).toMatchObject({ state: 'checking', label: sentLabel('checking', false) });
     const taken = noted(checking, box({ landing: true }), 13);
     expect(taken[0]).toMatchObject({ state: 'sent', at: 13 });
     // Taken, it stays as the box closes, until the timeline shows it.
@@ -56,7 +61,7 @@ describe('noted', () => {
     const place: DraftPlaceRow = { kind: 'edit', thread: null, comment: 'IC_1' };
     expect(noted([], box({ place }), 10)[0]).toMatchObject({
       comment: 'IC_1',
-      label: 'Saving…',
+      label: sentLabel('sending', true),
     });
   });
 
@@ -66,5 +71,20 @@ describe('noted', () => {
     expect(noted(before, box({ place: reply }), 10)).toBe(before);
     const edit: DraftPlaceRow = { kind: 'edit', thread: 'PRRT_1', comment: 'PRRC_1' };
     expect(noted(before, box({ place: edit }), 10)).toBe(before);
+  });
+});
+
+describe('noteOnPull', () => {
+  test('one the timeline showed never comes back for that send, as its box says it was taken', () => {
+    const view = 'view-settled';
+    noteOnPull(box({ view }));
+    expect(onPull.get(view)).toHaveLength(1);
+    settleOnPull(view, new Set(['box-1']));
+    expect(onPull.get(view)).toEqual([]);
+    noteOnPull(box({ view, landing: true }));
+    expect(onPull.get(view)).toEqual([]);
+    // Sent again, it's there again.
+    noteOnPull(box({ view, since: 6 }));
+    expect(onPull.get(view)).toMatchObject([{ key: 'box-1', since: 6 }]);
   });
 });

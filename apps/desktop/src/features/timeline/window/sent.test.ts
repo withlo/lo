@@ -7,20 +7,29 @@ import { describe, expect, test } from 'vitest';
 import type { OnPull } from '../../comments/window/shared.ts';
 import type { Item, Timeline } from '../contract.ts';
 import type { Row } from './rows.ts';
-import { beforeOf, sentKey, sentRows, type Before } from './sent.ts';
+import { beforeOf, CLOCK_SLACK, sentKey, sentRows } from './sent.ts';
 
 const AT = '2026-11-13T12:00:00Z';
+/** When the comments on their way were sent: a minute after `AT`. */
+const SENT = Date.parse(AT) + 60_000;
 const ME = { login: 'rozed-bot', type: 'User' };
+const MONA = { login: 'mona', type: 'User' };
+/** What a write's card says while it's on its way, as its box gave it. */
+const LABEL = 'On its way';
 
-function said(id: string, body: string): Item {
+function said(
+  id: string,
+  body: string,
+  changes: { author?: typeof ME; createdAt?: string; lastEditedAt?: string } = {},
+): Item {
   return {
     kind: 'comment',
     comment: {
       id,
-      author: ME,
+      author: changes.author ?? ME,
       body,
-      createdAt: AT,
-      lastEditedAt: undefined,
+      createdAt: changes.createdAt ?? AT,
+      lastEditedAt: changes.lastEditedAt,
       url: `https://github.com/rozed-dev/e2e/pull/94#${id}`,
       hidden: undefined,
       viewerCanUpdate: true,
@@ -29,9 +38,14 @@ function said(id: string, body: string): Item {
   };
 }
 
+/** A moment `ms` after the comments on their way were sent, as GitHub says the time. */
+function since(ms: number): string {
+  return new Date(SENT + ms).toISOString();
+}
+
 function timeline(items: Item[]): Timeline {
   return {
-    description: { author: { login: 'mona', type: 'User' }, body: '', createdAt: AT },
+    description: { author: MONA, body: '', createdAt: AT },
     items: items.map((item, at) => ({
       cursor: item.kind === 'comment' ? `c-${item.comment.id}` : `c${at}`,
       item,
@@ -52,8 +66,8 @@ function rows(items: Item[]): Row[] {
             kind: 'comment',
             key: `c-${item.comment.id}`,
             id: item.comment.id,
-            author: ME,
-            at: AT,
+            author: item.comment.author,
+            at: item.comment.createdAt,
             body: item.comment.body,
             url: item.comment.url,
             byAuthor: false,
@@ -72,18 +86,25 @@ function sent(changes: Partial<OnPull> = {}): OnPull {
     comment: undefined,
     text: 'Ship it.',
     state: 'sending',
-    label: 'Sending…',
+    label: LABEL,
     at: undefined,
+    since: SENT,
+    before: undefined,
     ...changes,
   };
+}
+
+/** What the timeline on screen shows of `items`, with `entry`, sent as it held them. */
+function drawn(items: Item[], entry: OnPull) {
+  return sentRows([entry], timeline(items), rows(items), ME, false);
 }
 
 describe('sentRows', () => {
   test('a comment on its way is the last row, drawn from its text, saying what’s being done', () => {
     const items = [said('IC_1', 'Looks right.')];
     const shown = timeline(items);
-    const before = new Map<string, Before>([['box-1', beforeOf(shown, 'Ship it.')]]);
-    const made = sentRows([sent()], shown, rows(items), before, ME, true);
+    const before = beforeOf(shown, 'Ship it.', ME.login);
+    const made = sentRows([sent({ before })], shown, rows(items), ME, true);
     expect(made.rows).toEqual([
       {
         kind: 'sent',
@@ -91,58 +112,82 @@ describe('sentRows', () => {
         author: ME,
         body: 'Ship it.',
         byAuthor: true,
-        sending: 'Sending…',
+        sending: LABEL,
         at: undefined,
       },
     ]);
     expect(made.shown.size).toBe(0);
     // Taken, it has its time, and says nothing more.
-    const taken = sentRows(
-      [sent({ state: 'sent', at: Date.parse(AT) })],
-      shown,
-      rows(items),
-      before,
-      ME,
-      false,
-    );
+    const taken = drawn(items, sent({ before, state: 'sent', at: Date.parse(AT) }));
     expect(taken.rows[0]).toMatchObject({ sending: undefined, at: '2026-11-13T12:00:00.000Z' });
   });
 
   test('GitHub’s copy takes its row’s place, and the keyboard on it goes to that copy', () => {
     // The timeline held a comment with the same text before: only a second one is GitHub's copy.
     const was = [said('IC_1', 'Ship it.')];
-    const before = new Map<string, Before>([['box-1', beforeOf(timeline(was), 'Ship it.')]]);
-    const taken = sent({ state: 'sent', at: Date.parse(AT) });
-    const still = sentRows([taken], timeline(was), rows(was), before, ME, false);
-    expect(still.rows.map((row) => row.kind)).toEqual(['sent']);
+    const before = beforeOf(timeline(was), 'Ship it.', ME.login);
+    const taken = sent({ before, state: 'sent', at: Date.parse(AT) });
+    expect(drawn(was, taken).rows.map((row) => row.kind)).toEqual(['sent']);
     const now = [...was, said('IC_2', 'Ship it.\r\n')];
-    const landed = sentRows([taken], timeline(now), rows(now), before, ME, false);
+    const landed = drawn(now, taken);
     expect(landed.rows).toEqual([]);
     expect([...landed.shown]).toEqual(['box-1']);
     expect(landed.landed.get(sentKey(taken))).toBe('c-IC_2');
   });
 
+  test('with nothing from before it was sent, GitHub’s copy is one of theirs made since', () => {
+    // Sent before the timeline was read, or found on its way as Lo started: an older comment of
+    // theirs with its text isn't its copy, one made since is, there already or not.
+    const older = said('IC_1', 'Ship it.', { createdAt: since(-CLOCK_SLACK - 1000) });
+    expect(drawn([older], sent()).rows.map((row) => row.kind)).toEqual(['sent']);
+    const copy = said('IC_2', 'Ship it.', { createdAt: since(-1000) });
+    const landed = drawn([older, copy], sent({ state: 'checking' }));
+    expect(landed.rows).toEqual([]);
+    expect([...landed.shown]).toEqual(['box-1']);
+    expect(landed.landed.get(sentKey(sent()))).toBe('c-IC_2');
+  });
+
+  test('someone else’s comment with the same text never takes its place', () => {
+    const theirs = said('IC_9', 'Ship it.', { author: MONA, createdAt: since(1000) });
+    // With what the timeline held before, and without.
+    const before = beforeOf(timeline([]), 'Ship it.', ME.login);
+    expect(drawn([theirs], sent({ before })).rows.map((row) => row.kind)).toEqual(['sent']);
+    expect(drawn([theirs], sent()).rows.map((row) => row.kind)).toEqual(['sent']);
+    // GitHub's copy, before theirs, takes the keyboard, not theirs after it.
+    const copy = said('IC_2', 'Ship it.', { createdAt: since(500) });
+    expect(drawn([copy, theirs], sent({ before })).landed.get(sentKey(sent()))).toBe('c-IC_2');
+  });
+
   test('an edit shows its new text in its comment’s card until the timeline has it', () => {
     const items = [said('IC_1', 'Looks right.')];
-    const saving = sent({ comment: 'IC_1', text: 'Looks right to me.', label: 'Saving…' });
-    const made = sentRows([saving], timeline(items), rows(items), new Map(), ME, false);
+    const saving = sent({ comment: 'IC_1', text: 'Looks right to me.' });
+    const made = drawn(items, saving);
     expect(made.rows).toEqual([]);
-    expect(made.edits.get('IC_1')).toEqual({ text: 'Looks right to me.', saving: 'Saving…' });
+    expect(made.edits.get('IC_1')).toEqual({ text: 'Looks right to me.', saving: LABEL });
     // Taken, it keeps the new text, saying nothing more, until the timeline shows the edit.
     const taken = { ...saving, state: 'sent' as const, at: Date.parse(AT) };
-    expect(
-      sentRows([taken], timeline(items), rows(items), new Map(), ME, false).edits.get('IC_1'),
-    ).toEqual({ text: 'Looks right to me.', saving: undefined });
-    const edited = [said('IC_1', 'Looks right to me.')];
-    const shown = sentRows([taken], timeline(edited), rows(edited), new Map(), ME, false);
+    expect(drawn(items, taken).edits.get('IC_1')).toEqual({
+      text: 'Looks right to me.',
+      saving: undefined,
+    });
+    const shown = drawn([said('IC_1', 'Looks right to me.')], taken);
+    expect(shown.edits.size).toBe(0);
+    expect([...shown.shown]).toEqual(['box-1']);
+  });
+
+  test('an edit made elsewhere after it shows: GitHub’s copy is newer, whatever its text', () => {
+    const taken = sent({ comment: 'IC_1', text: 'Mine.', state: 'sent', at: SENT });
+    // Edited before it was sent: the card keeps its text.
+    const before = [said('IC_1', 'Older.', { lastEditedAt: since(-CLOCK_SLACK - 1000) })];
+    expect(drawn(before, taken).edits.get('IC_1')).toMatchObject({ text: 'Mine.' });
+    const after = [said('IC_1', 'Theirs, since.', { lastEditedAt: since(2000) })];
+    const shown = drawn(after, taken);
     expect(shown.edits.size).toBe(0);
     expect([...shown.shown]).toEqual(['box-1']);
   });
 
   test('with no account to have sent it, a comment draws no row', () => {
     const items = [said('IC_1', 'Looks right.')];
-    expect(
-      sentRows([sent()], timeline(items), rows(items), new Map(), undefined, false).rows,
-    ).toEqual([]);
+    expect(sentRows([sent()], timeline(items), rows(items), undefined, false).rows).toEqual([]);
   });
 });

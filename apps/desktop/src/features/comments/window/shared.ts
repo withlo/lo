@@ -47,7 +47,7 @@ import {
   type UploadsHold,
 } from './uploads.ts';
 import { chooseVimKeys as chooseVim } from './vim.ts';
-import { onPull, settleOnPull, type OnPull } from './onpull.ts';
+import { onPull, readBeforeWith, settleOnPull, type OnPull, type SentBefore } from './onpull.ts';
 import { held, threadOfReview } from './threads.ts';
 import { onPullWrite, type PullWrite } from './written.ts';
 
@@ -60,7 +60,7 @@ export type { Attachable, UploadsHold } from './uploads.ts';
 export type { BoxUploads } from './Attached.tsx';
 export type { PullBoxProps, PullEditProps, PullNoteProps } from './TimelineBox.tsx';
 export type { PullWrite } from './written.ts';
-export type { OnPull } from './onpull.ts';
+export type { OnPull, SentBefore } from './onpull.ts';
 
 /**
  * The review thread review `review`'s first comment is in, by the review's ID, in pull request's
@@ -222,6 +222,15 @@ export function useSentOnPull(view: string): readonly OnPull[] {
 /** View `view`'s timeline on screen shows what `keys` sent, or lets them go. */
 export function settleSent(view: string, keys: ReadonlySet<string>): void {
   settleOnPull(view, keys);
+}
+
+/**
+ * Has `read` say what view `view`'s timeline on screen holds of the reader's comments with the
+ * text `text`, as one is sent from the box at its end, which tells GitHub's copy of it: nothing
+ * while it has none.
+ */
+export function readSentBefore(read: (view: string, text: string) => SentBefore | undefined): void {
+  readBeforeWith(read);
 }
 
 /**

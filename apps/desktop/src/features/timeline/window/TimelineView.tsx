@@ -90,7 +90,7 @@ import {
 import { main, tabs } from './main.ts';
 import { keepPlace, readingPlace, type ReadingPlace } from './place.ts';
 import { rowsOf, type Part, type Person, type Row } from './rows.ts';
-import { beforeOf, type Before, sentRows } from './sent.ts';
+import { sentRows } from './sent.ts';
 import {
   beforeShowing,
   comparisons,
@@ -349,9 +349,6 @@ function TimelineOf({ tab, shown }: { tab: PullTab; shown: boolean }) {
   }
 }
 
-/** What each view's timeline held as each comment sent from its box was first seen on its way. */
-const sentBefore = new Map<string, ReadonlyMap<string, Before>>();
-
 /** The rows of tab `tab`'s timeline, with what the reader's writes on the pull request add. */
 interface WithSent {
   readonly rows: readonly Row[] | undefined;
@@ -379,30 +376,14 @@ function useSent(
   const login = useLogin(tab);
   const added = useMemo(() => {
     if (!made || sent.length === 0) return undefined;
-    // What the timeline holds as a comment is first seen on its way tells GitHub's copy of it.
-    const before = new Map(sentBefore.get(tab));
-    for (const each of sent) {
-      if (each.comment === undefined && !before.has(each.key)) {
-        before.set(each.key, beforeOf(timeline, each.text));
-      }
-    }
     const me = login === undefined ? undefined : { login, type: 'User' };
     const byAuthor = login !== undefined && login.toLowerCase() === author?.toLowerCase();
-    return { ...sentRows(sent, timeline, made, before, me, byAuthor), before };
-  }, [tab, sent, timeline, made, login, author]);
-  // What the timeline held is kept while each is on its way, and the ones it shows are let go.
+    return sentRows(sent, timeline, made, me, byAuthor);
+  }, [sent, timeline, made, login, author]);
+  // The ones it shows are let go.
   useLayoutEffect(() => {
-    if (!added) {
-      sentBefore.delete(tab);
-      return;
-    }
-    const kept = new Map(added.before);
-    for (const key of kept.keys()) {
-      if (added.shown.has(key) || !sent.some((each) => each.key === key)) kept.delete(key);
-    }
-    sentBefore.set(tab, kept);
-    settleSent(tab, added.shown);
-  }, [tab, added, sent]);
+    if (added) settleSent(tab, added.shown);
+  }, [tab, added]);
   return useMemo(() => {
     if (!made || !added) return { rows: made, landed: NONE, saving: NONE };
     const { edits } = added;

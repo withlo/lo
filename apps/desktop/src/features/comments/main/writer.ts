@@ -1399,6 +1399,7 @@ export class Writer {
       restored: kept.restored,
       sending: this.#standing(this.#key(target, kept.place), kept) ?? null,
       sent: kept.sent,
+      sentAt: kept.sent === null || kept.sentAt === null ? null : Math.round(kept.sentAt),
       base: kept.base,
       home: kept.home,
     };

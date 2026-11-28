@@ -108,6 +108,8 @@ let VIEW = 'v0';
 // The background process prepares each file attached as it is.
 /** What a screen reader was told, in order. */
 const heard = vi.hoisted((): string[] => []);
+/** Whether a comment's tree takes longer than a send waits for it. */
+const trees = vi.hoisted(() => ({ slow: false }));
 vi.mock('./Said.tsx', async (original) => {
   const actual = await original<typeof SaidModule>();
   return {
@@ -122,9 +124,12 @@ vi.mock('./Said.tsx', async (original) => {
 vi.mock('./main.ts', async (original) => ({
   ...(await original<typeof Main>()),
   commentsJobs: () => ({
-    // What's sent is drawn from a tree made of its text first, which comes here at once.
+    // What's sent is drawn from a tree made of its text first, which comes here at once, or, as
+    // one that takes too long, never.
     render: (): Promise<Rendered> =>
-      Promise.resolve({ tree: { blocks: [], notes: [], diagnostics: [] }, images: false }),
+      trees.slow
+        ? new Promise<Rendered>(() => {})
+        : Promise.resolve({ tree: { blocks: [], notes: [], diagnostics: [] }, images: false }),
     prepare: ({ name, bytes }: PrepareInput): Promise<Prepared> =>
       Promise.resolve({
         kind: 'prepared',
@@ -494,6 +499,7 @@ function row(place: DraftPlaceRow, text: string, changes: Partial<DraftRow> = {}
     restored: false,
     sending: null,
     sent: null,
+    sentAt: null,
     base: null,
     home: null,
     ...changes,
@@ -549,6 +555,7 @@ beforeEach(() => {
   overview.has.clear();
   overview.onScreen = true;
   threadsShow.mode = 'between';
+  trees.slow = false;
 });
 
 afterEach(() => {
@@ -1581,6 +1588,44 @@ async function onItsWay(box: Box, how: Send): Promise<{ done: Promise<void> }> {
 }
 
 describe('sending', () => {
+  test('a box is held while its comment’s tree is made, its typing saved as it goes', async () => {
+    vi.useFakeTimers();
+    trees.slow = true;
+    const { drawn, box } = await opened();
+    const target = { kind: 'box', box: box.id } as const;
+    drawn[0]!.on.change('Ship it.');
+    const going = send(box, 'review');
+    // What was typed is saved as it goes, in case it doesn't.
+    expect(asked('comments.draft').at(-1)).toMatchObject({ text: 'Ship it.' });
+    expect(box.saving).toBe(false);
+    // Neither "Discard draft" nor what a note offers takes it meanwhile.
+    expect(discarding.enabled?.(target)).toBe(discardable({ ...box.state, busy: true }));
+    act(box, 'discard');
+    expect(drawn[0]!.composer.closed).toBeUndefined();
+    expect(asked('comments.discard')).toEqual([]);
+    expect(lastDiscarded()).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(150);
+    await going;
+    expect(asked('comments.send')).toEqual([
+      { id: VIEW, place: onLines(null, 5), text: 'Ship it.', how: 'review' },
+    ]);
+  });
+
+  test('a box whose tab closes as its comment’s tree is made sends nothing, its typing saved', async () => {
+    vi.useFakeTimers();
+    trees.slow = true;
+    const { drawn, box } = await opened();
+    drawn[0]!.on.change('Ship it.');
+    const going = send(box, 'review');
+    keepBoxesOf(new Set());
+    await vi.advanceTimersByTimeAsync(150);
+    await going;
+    expect(asked('comments.send')).toEqual([]);
+    expect(asked('comments.draft')).toEqual([
+      { id: VIEW, place: onLines(null, 5), text: 'Ship it.', home: null },
+    ]);
+  });
+
   test.each([
     ['as the diff is drawn again', false],
     ['as its tab goes to the background', true],

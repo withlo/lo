@@ -283,7 +283,7 @@ export type Sending = z.output<typeof sending>;
 
 /**
  * A comment box's draft: where it is, its text, when it was last saved, whether it was saved before
- * Lo started, and how sending it stands, with the text sent when GitHub's answer was lost. An
+ * Lo started, and how sending it stands, with the text sent, and when, while it may be on GitHub. An
  * edit's has `base`, the comment's text on GitHub when the edit started. One written on an
  * overview's code block has `home`, the block.
  */
@@ -294,6 +294,7 @@ export const draftRow = z.strictObject({
   restored: z.boolean(),
   sending: sending.nullable(),
   sent: z.string().max(BODY_LIMIT).nullable(),
+  sentAt: z.number().int().nonnegative().nullable(),
   base: z.string().max(BODY_LIMIT).nullable(),
   home: draftHome.nullable(),
 });

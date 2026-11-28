@@ -105,6 +105,17 @@ describe('holding', () => {
     );
   });
 
+  test('a post of an account’s counts only its comments, never another’s with the same text', () => {
+    const before = timeline([said('IC_1', 'Ship it.', 'mona')]);
+    expect(holding(before, 'Ship it.', 'rozed-bot')).toBe(0);
+    const mine: Claim = { ...posted(0), by: 'Rozed-Bot' };
+    expect(shows(before, mine)).toBe(false);
+    // After what was on screen as it went, too.
+    const after = timeline([said('IC_1', 'Two.'), said('IC_2', 'Ship it.', 'mona')]);
+    expect(shows(after, { ...mine, after: 'c-IC_1' })).toBe(false);
+    expect(shows(timeline([said('IC_2', 'Ship it.')]), mine)).toBe(true);
+  });
+
   test('a post made while the newest page is drawn shows once it comes after that page', () => {
     // The newest page holds no comment with its text, but the older items the rest brings do.
     const newest = timeline([said('IC_2', 'Two.')]);

@@ -10,14 +10,18 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
 
+import { createRegistry } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
 import type * as OverviewShared from '../../overview/window/shared.ts';
 import { blockKey, type WritingBlock } from '../../overview/window/shared.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab, PullView } from '../../tab/window/shared.ts';
-import type { DraftHomeRow, DraftRow } from '../contract.ts';
-import { keepBoxesOf, reopenAll, restoreBlock, takeDrafts } from './boxes.ts';
+import type { DraftHomeRow, DraftRow, SendOutcome } from '../contract.ts';
+import type { Rendered } from '../jobs.ts';
+import { keepBoxesOf, reopenAll, restoreBlock, send, takeDrafts, timelineBox } from './boxes.ts';
+import type * as Main from './main.ts';
 import { PullBox } from './TimelineBox.tsx';
+import { ON_PULL } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
 const OLDER = 'b'.repeat(40);
@@ -63,6 +67,15 @@ vi.mock('@lo/ui/code', () => ({
   },
 }));
 
+// What's sent is drawn from a tree made of its text first, which comes here at once.
+vi.mock('./main.ts', async (original) => ({
+  ...(await original<typeof Main>()),
+  commentsJobs: () => ({
+    render: (): Promise<Rendered> =>
+      Promise.resolve({ tree: { blocks: [], notes: [], diagnostics: [] }, images: false }),
+  }),
+}));
+
 /** How threads show: these tests are between lines, but where one says otherwise. */
 const threadsShow = vi.hoisted(() => ({ mode: 'between' as 'beside' | 'between' }));
 vi.mock('./mode.ts', () => ({ threadsMode: () => threadsShow.mode }));
@@ -98,6 +111,8 @@ installBridge(answers);
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
+  // The box's keys, as it shows them, are this system's.
+  createRegistry([], 'mac');
   // The box keeps its room from what it measures, which jsdom never changes.
   globalThis.ResizeObserver ??= class {
     observe(): void {}
@@ -142,6 +157,7 @@ function draft(): DraftRow {
     restored: true,
     sending: null,
     sent: null,
+    sentAt: null,
     base: null,
     home: HOME,
   };
@@ -202,11 +218,11 @@ const unmounts: (() => void)[] = [];
  * The box drawn at the end of the timeline, once the page's nonce has come, and what takes the
  * timeline away.
  */
-async function drawBox(): Promise<{ box: HTMLElement; unmount: () => void }> {
+async function drawBox(leave = () => {}): Promise<{ box: HTMLElement; unmount: () => void }> {
   const box = document.createElement('div');
   document.body.append(box);
   const root = createRoot(box);
-  act(() => root.render(<PullBox tab={tab()} leave={() => {}} />));
+  act(() => root.render(<PullBox tab={tab()} leave={leave} />));
   let mounted = true;
   const unmount = () => {
     if (!mounted) return;
@@ -314,4 +330,61 @@ test('the box is held as tall as it is at the reader’s next key, a key Lo take
   vi.spyOn(inner, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 600, 120));
   document.body.dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
   expect(outer.style.minHeight).toBe('120px');
+});
+
+/**
+ * Sends `text` from the box at the end of the timeline, focused, its focus going to `list` as the
+ * comment goes, as the timeline gives it; `meanwhile` runs while it's on its way, and GitHub then
+ * refuses it. What had focus then.
+ */
+async function sendRefused(list: HTMLElement, meanwhile: () => void): Promise<Element | null> {
+  let answer!: (outcome: SendOutcome) => void;
+  answers['comments.send'] = () =>
+    new Promise<SendOutcome>((resolve) => {
+      answer = resolve;
+    });
+  onTestFinished(() => {
+    delete answers['comments.send'];
+  });
+  takeDrafts({ id: VIEW, drafts: [] });
+  await drawBox(() => list.focus());
+  const box = timelineBox(VIEW, ON_PULL)!;
+  const [drawn] = editors.drawn;
+  drawn!.field.focus();
+  box.set({ focused: true, text: 'Ship it.' });
+  let sending!: Promise<void>;
+  await act(async () => {
+    sending = send(box, 'now');
+    await vi.waitFor(() => expect(answer).toBeDefined());
+  });
+  expect(document.activeElement).toBe(list);
+  // As its frame says once focus has left it.
+  box.set({ focused: false });
+  meanwhile();
+  await act(async () => {
+    answer({ kind: 'refused', refusal: { kind: 'github', message: 'Validation failed' } });
+    await sending;
+  });
+  expect(box.state.text).toBe('Ship it.');
+  return document.activeElement;
+}
+
+/** A focusable element on the page, gone once the test is. */
+function focusable(tag: string): HTMLElement {
+  const element = document.createElement(tag);
+  element.tabIndex = 0;
+  document.body.append(element);
+  onTestFinished(() => element.remove());
+  return element;
+}
+
+test('a comment that couldn’t be sent is back in the box, and so is focus still in the list it went to', async () => {
+  const list = focusable('ol');
+  expect(await sendRefused(list, () => {})).toBe(editors.drawn[0]?.field);
+});
+
+test('a comment that couldn’t be sent leaves focus where the reader took it from the list', async () => {
+  const list = focusable('ol');
+  const elsewhere = focusable('button');
+  expect(await sendRefused(list, () => elsewhere.focus())).toBe(elsewhere);
 });

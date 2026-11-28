@@ -2,12 +2,22 @@
 // comment from the box at the timeline's end, which the timeline draws as its last row from the
 // moment it's sent, and an edit of one of their comments there, whose card shows the new text. Each
 // stays until the timeline shows GitHub's copy, which takes its place, so the text never leaves
-// the screen and never goes back to what it was. Each view's, in the window's memory, until its tab
-// closes.
+// the screen and never goes back to what it was, and once it has, it never comes back. Each
+// view's, in the window's memory, until its tab closes.
 
 import { tabState } from '../../tab/window/shared.ts';
 import type { DraftPlaceRow, Sending } from '../contract.ts';
 import { sentLabel } from './writing.ts';
+
+/**
+ * What the timeline on screen held as a comment on the pull request itself was sent, which tells
+ * GitHub's copy of it from one of the reader's with the same text before: how many of theirs it
+ * held with that text, and its newest item's cursor.
+ */
+export interface SentBefore {
+  readonly had: number;
+  readonly after: string | undefined;
+}
 
 /** A comment on a pull request itself, or an edit of one, sent from the window. */
 export interface OnPull {
@@ -26,13 +36,42 @@ export interface OnPull {
   readonly label: string;
   /** When GitHub took it, by the window's clock. */
   readonly at: number | undefined;
+  /** When it was sent, by this computer's clock. */
+  readonly since: number;
+  /**
+   * What the timeline on screen held as it was sent, for a comment sent while there was one:
+   * nothing for one sent before the timeline was read, or found on its way as Lo started.
+   */
+  readonly before: SentBefore | undefined;
 }
 
 /** Each view's comments and edits on its pull request that its timeline doesn't show yet. */
 export const onPull = tabState<readonly OnPull[]>(() => []);
 
+/**
+ * When each of a view's entries the timeline showed, or let go, was sent, by its key: what its box
+ * says after of that send, as that GitHub took it, brings nothing back.
+ */
+const settled = tabState<ReadonlyMap<string, number>>(() => new Map());
+
 /** How long one GitHub took waits for the timeline to show it before it's let go. */
 export const ON_PULL_KEPT = 5 * 60_000;
+
+/** What reads the timeline on screen as a comment is sent: nothing until the timeline says. */
+let readBefore: (view: string, text: string) => SentBefore | undefined = () => undefined;
+
+/**
+ * Has `read` say what view `view`'s timeline on screen holds of the reader's comments with the
+ * text `text`, as one is sent: nothing while it has none.
+ */
+export function readBeforeWith(read: (view: string, text: string) => SentBefore | undefined): void {
+  readBefore = read;
+}
+
+/** What view `view`'s timeline on screen holds now of the reader's comments with text `text`. */
+export function beforeOnPull(view: string, text: string): SentBefore | undefined {
+  return readBefore(view, text);
+}
 
 /** The comment an edit at `place` is of, when it's of a comment on the pull request itself. */
 function editOf(place: DraftPlaceRow): string | undefined {
@@ -55,6 +94,10 @@ export interface BoxSend {
   /** GitHub took it. */
   readonly landing: boolean;
   readonly sending: Sending | null;
+  /** When it was last sent, by this computer's clock. */
+  readonly since: number;
+  /** What the timeline on screen held as it was sent, when it was sent here with one on screen. */
+  readonly before: SentBefore | undefined;
 }
 
 /**
@@ -68,6 +111,7 @@ export function noted(before: readonly OnPull[], box: BoxSend, now: number): rea
   const was = at === -1 ? undefined : before[at];
   if (was?.state === 'sent') return before;
   const comment = editOf(box.place);
+  const { since, before: held } = box;
   const next: OnPull | undefined = !box.held
     ? undefined
     : box.landing
@@ -78,6 +122,8 @@ export function noted(before: readonly OnPull[], box: BoxSend, now: number): rea
           state: 'sent',
           label: sentLabel(null, comment !== undefined),
           at: now,
+          since,
+          before: held,
         }
       : {
           key: box.key,
@@ -86,13 +132,16 @@ export function noted(before: readonly OnPull[], box: BoxSend, now: number): rea
           state: box.sending === 'checking' ? 'checking' : 'sending',
           label: sentLabel(box.sending, comment !== undefined),
           at: undefined,
+          since,
+          before: held,
         };
   if (next === undefined) return was === undefined ? before : before.filter((_, i) => i !== at);
   if (
     was !== undefined &&
     was.state === next.state &&
     was.text === next.text &&
-    was.label === next.label
+    was.label === next.label &&
+    was.since === next.since
   ) {
     return before;
   }
@@ -101,10 +150,11 @@ export function noted(before: readonly OnPull[], box: BoxSend, now: number): rea
 
 /**
  * Notes how the comment of a box writing on view `view`'s pull request itself stands. One GitHub
- * took is let go once it has waited `ON_PULL_KEPT` for the timeline to show it.
+ * took is let go once it has waited `ON_PULL_KEPT` for the timeline to show it. One the timeline
+ * showed, or let go, is done: what its box says of it after, as that it was taken, adds nothing.
  */
 export function noteOnPull(box: BoxSend): void {
-  if (!writesOnPull(box.place)) return;
+  if (!writesOnPull(box.place) || settled.get(box.view).get(box.key) === box.since) return;
   const before = onPull.get(box.view);
   const after = noted(before, box, Date.now());
   if (after === before) return;
@@ -115,8 +165,17 @@ export function noteOnPull(box: BoxSend): void {
   }
 }
 
-/** The timeline on screen shows what `keys` sent on view `view`'s pull request, or let them go. */
+/**
+ * The timeline on screen shows what `keys` sent on view `view`'s pull request, or let them go: they
+ * never come back.
+ */
 export function settleOnPull(view: string, keys: ReadonlySet<string>): void {
-  if (keys.size === 0) return;
+  const going = onPull.get(view).filter((each) => keys.has(each.key));
+  if (going.length === 0) return;
+  settled.update(view, (done) => {
+    const next = new Map(done);
+    for (const each of going) next.set(each.key, each.since);
+    return next;
+  });
   onPull.update(view, (before) => before.filter((each) => !keys.has(each.key)));
 }

@@ -102,7 +102,7 @@ import { screenOf } from './placing.ts';
 import type { PostPull } from './Post.tsx';
 import { tell } from './Said.tsx';
 import { landed } from './landed.ts';
-import { noteOnPull } from './onpull.ts';
+import { beforeOnPull, noteOnPull, type SentBefore } from './onpull.ts';
 import { drawWritten } from './store.ts';
 import { held, shownAt } from './threads.ts';
 import {
@@ -393,6 +393,13 @@ export class Box {
   closedSending = false;
   /** What its view's threads held as it was last sent, to tell its comment's card by as it comes. */
   before: Before | undefined;
+  /** When it was last sent, by this computer's clock, as it says or as main kept it. */
+  sentSince = 0;
+  /**
+   * What its view's timeline on screen held as its comment on the pull request itself was last
+   * sent, while it had one, to tell GitHub's copy by.
+   */
+  sentBefore: SentBefore | undefined;
   retries = 0;
   /** Where it would rather be drawn. */
   home: Home = IN_DIFF;
@@ -448,7 +455,17 @@ export class Box {
     // A comment on the pull request itself, or an edit of one there, is the timeline's to show
     // from the moment it's sent until the timeline has GitHub's copy.
     const { place, text, landing, sending } = this.#state;
-    noteOnPull({ key: this.id, view: this.view, place, text, held: holding, landing, sending });
+    noteOnPull({
+      key: this.id,
+      view: this.view,
+      place,
+      text,
+      held: holding,
+      landing,
+      sending,
+      since: this.sentSince,
+      before: this.sentBefore,
+    });
     for (const listener of this.#listeners) listener();
     told(this, was);
   }
@@ -1216,6 +1233,8 @@ export function takeDrafts(given: DraftsView): void {
  */
 function takeRow(box: Box, row: DraftRow): void {
   box.sentMark = row.sent !== null;
+  // On its way from before this box was made, as after a restart: it went when main says.
+  if (row.sentAt !== null && box.sentSince === 0) box.sentSince = row.sentAt;
   const { composer } = box;
   const blank = composer !== undefined && !box.saving && composer.text === '' && row.text !== '';
   const typed = (composer !== undefined || box.saving) && !blank;
@@ -1581,7 +1600,10 @@ export async function commentOnFile(tab: PullTab, key: string): Promise<void> {
   await comment(tab, { kind: 'header', file: file.id, side: 'new' }, 'review');
 }
 
-/** Boxes whose comment's tree is being made as they're sent, which a second send waits out. */
+/**
+ * Boxes whose comment's tree is being made as they're sent: held, as one on its way is, from the
+ * send, so nothing their notes offer, nor "Discard draft", nor a second send, takes them meanwhile.
+ */
 const drawing = new WeakSet<Box>();
 
 /** How long a box's comment waits for its tree as it's sent, at most, before it goes as it is. */
@@ -1626,19 +1648,23 @@ export async function send(box: Box, how: Send): Promise<void> {
   // frame, as its card from GitHub then does: the box shows it as it is meanwhile.
   const pull = pullIn(view);
   if (pull) {
-    box.dropSave();
+    // Saved as it is, in case it doesn't go.
+    box.saveNow();
     drawing.add(box);
     try {
       await within(drawWritten(view, box.state.text, pull), TREE_WAIT);
     } finally {
       drawing.delete(box);
     }
-    if (!sendable(box)) return;
+    // Gone meanwhile, as with its tab: nothing goes.
+    if (boxesOf(view).get(box.key) !== box || !sendable(box)) return;
   }
   const { place, text } = box.state;
   box.dropSave();
   box.lastHow = how;
   box.before = beforeOf(view, place);
+  box.sentSince = Date.now();
+  box.sentBefore = place.kind === 'conversation' ? beforeOnPull(view, text) : undefined;
   box.set({ busy: true, refusal: undefined });
   try {
     const outcome: SendOutcome | ActOutcome =
@@ -2059,6 +2085,8 @@ function drawnAs(box: Box, rows: readonly ThreadRow[]): boolean {
 /** Does what a box's note offers. */
 export function act(box: Box, offer: Offer): void {
   const { view } = box;
+  // Being sent: it's held.
+  if (drawing.has(box)) return;
   switch (offer) {
     case 'discard':
       drop(box);
@@ -2739,7 +2767,8 @@ export const discarding: Handler<BoxTarget> = {
   enabled: (target) => {
     const box = boxNamed(target.box);
     if (box === undefined) return 'The comment box has closed.';
-    return discardable(box.state);
+    // Being sent, it's held as one on its way is.
+    return discardable(drawing.has(box) ? { ...box.state, busy: true } : box.state);
   },
   listed: (target) => boxNamed(target.box) !== undefined,
 };

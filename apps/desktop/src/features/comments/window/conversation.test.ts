@@ -4,7 +4,7 @@
 // there are edited and deleted only where Lo would, others refused in Lo's words before anything
 // is asked.
 
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 
 import { notice } from '../../../window/commands/notices.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
@@ -26,6 +26,7 @@ import {
   timelineEvents,
 } from './boxes.ts';
 import { editOnPull, type PullComment, pullChangeRefusal, removeOnPull } from './conversation.ts';
+import { onPull, readBeforeWith, settleOnPull } from './onpull.ts';
 import { ON_PULL } from './writing.ts';
 
 let VIEW = 'p0';
@@ -115,6 +116,7 @@ function draft(changes: Partial<DraftRow> = {}): DraftRow {
     restored: true,
     sending: null,
     sent: null,
+    sentAt: null,
     base: null,
     home: null,
     ...changes,
@@ -203,6 +205,46 @@ describe('the box at the end of the timeline', () => {
     catchUpDrafts(VIEW);
     await vi.waitFor(() => expect(box.state).toMatchObject({ text: 'Ship it.' }));
     expect(box.state.sending).toBe('notPosted');
+  });
+});
+
+describe('what the timeline draws of a comment sent', () => {
+  test('a comment sent says when it went, and what the timeline on screen held then', async () => {
+    readBeforeWith((view, text) => (view === VIEW ? { had: 2, after: `c-${text}` } : undefined));
+    onTestFinished(() => readBeforeWith(() => undefined));
+    let answer!: (outcome: unknown) => void;
+    answers['comments.send'] = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const box = ownBox();
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
+    const from = Date.now();
+    const sending = send(box, 'now');
+    await vi.waitFor(() => expect(answer).toBeDefined());
+    const [entry] = onPull.get(VIEW);
+    expect(entry).toMatchObject({
+      key: box.id,
+      state: 'sending',
+      text: 'Ship it.',
+      before: { had: 2, after: 'c-Ship it.' },
+    });
+    expect(entry?.since).toBeGreaterThanOrEqual(from);
+    // The timeline shows GitHub's copy before the answer comes: the answer brings nothing back.
+    settleOnPull(VIEW, new Set([box.id]));
+    answer({ kind: 'sent', pending: false, joined: false, thread: null, landedOn: null });
+    await sending;
+    expect(box.state.landing).toBe(true);
+    expect(onPull.get(VIEW)).toEqual([]);
+  });
+
+  test('one found on its way as Lo starts went when main sent it, with nothing from before', () => {
+    ownBox();
+    takeDrafts({
+      id: VIEW,
+      drafts: [draft({ sending: 'checking', sent: 'Ship it.', sentAt: 1234 })],
+    });
+    expect(onPull.get(VIEW)).toMatchObject([{ state: 'checking', since: 1234, before: undefined }]);
   });
 });
 

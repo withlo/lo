@@ -2,26 +2,22 @@
 // as its rows draw it: a comment sent from the box at its end is its last row, drawn as its card
 // will be, from the moment it's sent until the timeline shows GitHub's copy, which takes its place;
 // an edit of one of their comments shows its new text in that comment's card until the timeline
-// has it. Plain functions, tested alone.
+// has it, or newer. Plain functions, tested alone.
 
-import type { OnPull } from '../../comments/window/shared.ts';
+import type { OnPull, SentBefore } from '../../comments/window/shared.ts';
 import type { Timeline } from '../contract.ts';
-import { holding, shows } from './holding.ts';
+import { holding, madeSince, pullComment, shows } from './holding.ts';
 import type { Person, Row } from './rows.ts';
 
 /**
- * What the timeline on screen held as a comment was first seen on its way, which tells GitHub's
- * copy of it from one with the same text before: how many comments it held with that text, and its
- * newest item's cursor.
+ * How much earlier than it was sent, by this computer's clock, GitHub may say a comment was made
+ * or edited: its times are to the second, and the two clocks needn't agree.
  */
-export interface Before {
-  readonly had: number;
-  readonly after: string | undefined;
-}
+export const CLOCK_SLACK = 5_000;
 
-/** What `timeline` holds, as a comment of `text` is first seen on its way. */
-export function beforeOf(timeline: Timeline | null | undefined, text: string): Before {
-  return { had: holding(timeline, text), after: timeline?.items.at(-1)?.cursor };
+/** What `timeline` holds of account `login`'s comments with the text `text`, as one is sent. */
+export function beforeOf(timeline: Timeline, text: string, login: string): SentBefore {
+  return { had: holding(timeline, text, login), after: timeline.items.at(-1)?.cursor };
 }
 
 /** The key of the row a comment on its way draws as. */
@@ -29,25 +25,36 @@ export function sentKey(sent: OnPull): string {
   return `sent:${sent.key}`;
 }
 
-/** Whether `timeline` shows the comment `sent`, as it was before as `before` says. */
-function showsComment(timeline: Timeline, sent: OnPull, before: Before): boolean {
+/**
+ * Whether `timeline` shows `login`'s comment `sent`: one more of theirs with its text than the
+ * timeline on screen held as it was sent, or, with nothing to go by from then, one of theirs with
+ * its text made since.
+ */
+function showsComment(timeline: Timeline, sent: OnPull, login: string): boolean {
+  const { before } = sent;
+  if (before === undefined) return madeSince(timeline, sent.text, login, sent.since, CLOCK_SLACK);
   return shows(timeline, {
     write: { kind: 'posted', text: sent.text },
     until: Number.POSITIVE_INFINITY,
     had: before.had,
     after: before.after,
+    by: login,
   });
 }
 
-/** Whether `timeline` shows the edit `sent`, or no longer has its comment. */
+/**
+ * Whether `timeline` shows the edit `sent`, which GitHub took: its comment has its text, or was
+ * edited since, as elsewhere after it, or is gone.
+ */
 function showsEdit(timeline: Timeline, sent: OnPull): boolean {
   const { comment } = sent;
   if (comment === undefined) return true;
-  return shows(timeline, {
-    write: { kind: 'edited', comment, text: sent.text },
-    until: Number.POSITIVE_INFINITY,
-    had: 0,
-  });
+  const shown = pullComment(timeline, comment);
+  if (shown === undefined) return true;
+  const edited = { kind: 'edited', comment, text: sent.text } as const;
+  if (shows(timeline, { write: edited, until: Number.POSITIVE_INFINITY, had: 0 })) return true;
+  const at = shown.lastEditedAt === undefined ? Number.NaN : Date.parse(shown.lastEditedAt);
+  return at >= sent.since - CLOCK_SLACK;
 }
 
 /** What the reader's writes on the pull request itself add to the timeline's rows. */
@@ -70,15 +77,13 @@ export interface SentRows {
 
 /**
  * The reader's writes `sent` as the timeline `timeline` on screen, drawn as `rows`, adds to them:
- * each comment it doesn't show as a row of `author`'s, `byAuthor` when they opened the pull
- * request, and each edit it doesn't show as the comment's new text. `before` is what the timeline
- * held as each comment was first seen on its way.
+ * each comment it doesn't show as a row of `author`'s, the account that wrote them, `byAuthor`
+ * when they opened the pull request, and each edit it doesn't show as the comment's new text.
  */
 export function sentRows(
   sent: readonly OnPull[],
   timeline: Timeline | null | undefined,
   rows: readonly Row[],
-  before: ReadonlyMap<string, Before>,
   author: Person | undefined,
   byAuthor: boolean,
 ): SentRows {
@@ -92,15 +97,14 @@ export function sentRows(
       else edits.set(each.comment, { text: each.text, saving: sentLabel(each) });
       continue;
     }
-    const was = before.get(each.key) ?? { had: 0, after: undefined };
-    if (timeline && showsComment(timeline, each, was)) {
+    // Who sent it is the tab's account: with none, nothing could have been sent.
+    if (author === undefined) continue;
+    if (timeline && showsComment(timeline, each, author.login)) {
       shown.add(each.key);
-      const copy = newest(rows, each.text);
+      const copy = newest(rows, each.text, author.login);
       if (copy !== undefined) landed.set(sentKey(each), copy);
       continue;
     }
-    // Who sent it is the tab's account: with none, nothing could have been sent.
-    if (author === undefined) continue;
     extra.push({
       kind: 'sent',
       key: sentKey(each),
@@ -124,8 +128,14 @@ function plain(text: string): string {
   return text.replaceAll(/\r\n?/g, '\n').trim();
 }
 
-/** The key of the newest comment row of `rows` whose text is `text`. */
-function newest(rows: readonly Row[], text: string): string | undefined {
+/** The key of the newest comment row of `rows` of account `login`'s whose text is `text`. */
+function newest(rows: readonly Row[], text: string, login: string): string | undefined {
   const wanted = plain(text);
-  return rows.findLast((row) => row.kind === 'comment' && plain(row.body) === wanted)?.key;
+  const by = login.toLowerCase();
+  return rows.findLast(
+    (row) =>
+      row.kind === 'comment' &&
+      row.author?.login.toLowerCase() === by &&
+      plain(row.body) === wanted,
+  )?.key;
 }
