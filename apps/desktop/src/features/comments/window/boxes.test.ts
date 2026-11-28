@@ -99,10 +99,11 @@ import {
   type Box,
 } from './boxes.ts';
 import { landed } from './landed.ts';
+import { onPull } from './onpull.ts';
 import type * as Main from './main.ts';
 import type * as SaidModule from './Said.tsx';
 import * as threads from './threads.ts';
-import { CHECK_FIRST, NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF, offersOf } from './writing.ts';
+import { CHECK_FIRST, NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF, notesOf, offersOf } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
 const OLDER = 'b'.repeat(40);
@@ -196,20 +197,44 @@ const overview = vi.hoisted(() => ({
   found: undefined as unknown,
   /** Where the lines are at the head on screen. */
   onHead: undefined as unknown,
+  /** Where the lines are at the head on screen, by the lines, where it says. */
+  mapping: undefined as
+    ((lines: { side: string; from: number; to: number }) => unknown) | undefined,
+  /** Whether Lo has yet to work out how the block's file changed, which it then waits for. */
+  cold: false,
+  /** While it's set, where lines are at the head is said only as the test lets each answer go. */
+  held: undefined as (() => void)[] | undefined,
   /** Whether the tab's overview is on screen. */
   onScreen: true,
 }));
 vi.mock('../../overview/window/shared.ts', async (original) => ({
   ...(await original<typeof OverviewShared>()),
   blockLines: () => overview.found,
-  commentOnHead: () => Promise.resolve(overview.onHead),
+  commentOnHead: (
+    _tab: string,
+    _commit: string,
+    _path: string,
+    lines: { side: string; from: number; to: number },
+  ) => {
+    const { held } = overview;
+    const answer = () => overview.mapping?.(lines) ?? overview.onHead;
+    if (!held) return Promise.resolve(answer());
+    return new Promise<unknown>((resolve) => held.push(() => resolve(answer())));
+  },
+  commentOnHeadNow: (
+    _tab: string,
+    _commit: string,
+    _path: string,
+    lines: { side: string; from: number; to: number },
+  ) => (overview.cold ? undefined : (overview.mapping?.(lines) ?? overview.onHead)),
   writingBlock: (_tab: string, key: string) =>
     [...overview.blocks.values()].find((each) => each.block.key === key),
   writingBlocks: () => [...overview.blocks.values()],
   overviewOnScreen: () => overview.onScreen,
   blockInOverview: (_tab: string, key: string) =>
     overview.has.get(key) ?? [...overview.blocks.values()].some((each) => each.block.key === key),
-  revisionName: (_tab: string, commit: string) => (commit === HEAD ? 'r2' : 'r1'),
+  revisionName: (_tab: string, commit: string) =>
+    commit === HEAD ? 'r2' : commit === NEWER ? 'r3' : 'r1',
 }));
 
 /** Presses letter `key` with nothing focused, as the system would. */
@@ -376,6 +401,8 @@ function fakeBlock(commit = OLDER, file = 'x0') {
     setDrafts(drafts) {
       marks.splice(0, marks.length, ...drafts);
     },
+    // Lines 3 to 9 on the newer side, and on the older a line the change there removed.
+    lines: (side) => (side === 'new' ? [3, 4, 5, 6, 7, 8, 9] : [5]),
     openDraft(at) {
       const mark = marks.find((each) => JSON.stringify(each.at) === JSON.stringify(at));
       mark?.open();
@@ -2147,6 +2174,508 @@ describe('changing a new comment’s lines', () => {
     expect(moves.at(-1)).toEqual({ file: 'f0', side: 'new', line: 7 });
     box.lines!({ file: 'f0', side: 'new', from: 7, to: 40 });
     expect(notice()?.title).toBe(NOT_IN_DIFF);
+    expect(moves).toHaveLength(2);
+  });
+});
+
+/** Lets a change of a code block box's lines, which waits for where they are at the head, land. */
+function relined(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Lines of `src/backoff.ts` at the head, where they're the same lines as in the block. */
+function sameAtHead(lines: { side: string; from: number; to: number }): CommentOnHead {
+  const side = lines.side === 'old' ? 'old' : 'new';
+  return { kind: 'lines', path: PATH, side, from: lines.from, to: lines.to };
+}
+
+/** Lines at the head as in the block, but for line 6 on, which changed: a comment goes on the file. */
+function changedFromSix(lines: { side: string; from: number; to: number }): CommentOnHead {
+  return lines.to >= 6 ? { kind: 'file', path: PATH, why: 'changed' } : sameAtHead(lines);
+}
+
+/** The block's file, deleted at the head. */
+function goneAtHead(): CommentOnHead {
+  return { kind: 'gone', path: PATH };
+}
+
+/** Lines at the head as in the block, but up to line 5, which changed. */
+function changedToFive(lines: { side: string; from: number; to: number }): CommentOnHead {
+  return lines.from <= 5 ? { kind: 'file', path: PATH, why: 'changed' } : sameAtHead(lines);
+}
+
+describe('changing a new comment’s lines on a code block', () => {
+  let block: ReturnType<typeof fakeBlock>;
+
+  beforeEach(() => {
+    block = fakeBlock();
+    // Every line of the file takes a comment at the head.
+    answers['comments.commentable'] = () => ({
+      kind: 'diff',
+      hunks: [{ old: 1, new: 1, kinds: ' '.repeat(20) }],
+    });
+  });
+
+  afterEach(() => {
+    overview.mapping = undefined;
+    overview.cold = false;
+    overview.held = undefined;
+  });
+
+  /**
+   * `c` on the block's lines `from` to `to` of `side`, which are those lines at the head, or where
+   * `mapping` says: its box, which the block moves as it's asked, what it was asked, and the
+   * target its lines button's menu acts on.
+   */
+  async function blockOn(
+    from: number,
+    to: number,
+    side: 'old' | 'new' = 'new',
+    mapping: (lines: { side: string; from: number; to: number }) => CommentOnHead = sameAtHead,
+  ) {
+    overview.mapping = mapping;
+    await onBlock(block.writing, { from, to, side }, mapping({ side, from, to }));
+    const drawn = block.drawn.at(-1)!;
+    const moves: unknown[] = [];
+    drawn.composer.move = (at) => {
+      moves.push(at);
+      return true;
+    };
+    const id = drawn.options!.name!;
+    return { drawn, moves, id, box: boxIn(drawn), target: { kind: 'lines', box: id } as const };
+  }
+
+  test('a key takes the next line that way the block shows, the box and its draft going there together', async () => {
+    const { drawn, moves, target, id, box } = await blockOn(4, 5);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    bridge.calls.length = 0;
+    heard.length = 0;
+    expect(linesChange(id)).toBe(true);
+    expect(changingLines('lineBelow').enabled!(target)).toBe(true);
+    void changingLines('lineBelow').run(target);
+    // At once, as Lo knows where lines 4–6 are at the head, as it did for `c`.
+    expect(moves).toEqual([{ file: 'x0', side: 'new', from: 4, to: 6 }]);
+    // Saved at its new place before it leaves its old one.
+    expect(asked('comments.draft')).toEqual([
+      { id: VIEW, place: onLines(4, 6), text: 'Look here', home: blockHome(4, 6) },
+      { id: VIEW, place: onLines(4, 5), text: '', home: null },
+    ]);
+    expect(box.state).toMatchObject({ place: onLines(4, 6), where: { head: 'Lines 4–6 · r2' } });
+    expect(box.home).toEqual({ kind: 'block', block: blockHome(4, 6) });
+    expect(heard).toEqual(['Lines 4–6 · r2']);
+    void changingLines('dropFirst').run(target);
+    await relined();
+    expect(moves.at(-1)).toEqual({ file: 'x0', side: 'new', from: 5, to: 6 });
+    expect(box.state.place).toEqual(onLines(5, 6));
+  });
+
+  test('two keys pressed at once move the lines twice', async () => {
+    const { moves, target } = await blockOn(5, 5);
+    void changingLines('lineBelow').run(target);
+    void changingLines('lineBelow').run(target);
+    await relined();
+    expect(moves).toEqual([
+      { file: 'x0', side: 'new', from: 5, to: 6 },
+      { file: 'x0', side: 'new', from: 5, to: 7 },
+    ]);
+  });
+
+  test('the lines stay within those the block shows, its ends never passing each other', async () => {
+    const { moves, target } = await blockOn(3, 3);
+    // Line 3 is the block's first.
+    expect(changingLines('lineAbove').enabled!(target)).toBe('No line above takes a comment');
+    expect(changingLines('dropFirst').enabled!(target)).toBe('The comment is on one line');
+    void changingLines('lineAbove').run(target);
+    await relined();
+    expect(notice()?.title).toBe('No line above takes a comment');
+    expect(moves).toEqual([]);
+    const below = await blockOn(8, 9);
+    // Line 9 is its last.
+    expect(changingLines('lineBelow').enabled!(below.target)).toBe('No line below takes a comment');
+    void changingLines('dropLast').run(below.target);
+    await relined();
+    expect(below.moves).toEqual([{ file: 'x0', side: 'new', line: 8 }]);
+    expect(changingLines('dropLast').enabled!(below.target)).toBe('The comment is on one line');
+  });
+
+  test('a removed line’s box stays among the removed lines the block shows', async () => {
+    const { target } = await blockOn(5, 5, 'old');
+    expect(changingLines('lineAbove').enabled!(target)).toBe('No line above takes a comment');
+    expect(changingLines('lineBelow').enabled!(target)).toBe('No line below takes a comment');
+  });
+
+  test('a box whose comment may be on GitHub already keeps its lines, every row saying why', async () => {
+    const { target, moves } = await blockOn(4, 5);
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onLines(4, 5), 'Ship it?', {
+          sending: 'unknown',
+          sent: 'Ship it?',
+          home: blockHome(4, 5),
+        }),
+      ],
+    });
+    await marked();
+    bridge.calls.length = 0;
+    for (const how of ['lineAbove', 'lineBelow', 'dropFirst', 'dropLast'] as const) {
+      expect(changingLines(how).enabled!(target)).toBe(CHECK_FIRST);
+    }
+    void changingLines('lineBelow').run(target);
+    await relined();
+    expect(notice()?.title).toBe(CHECK_FIRST);
+    expect(moves).toEqual([]);
+    expect(asked('comments.draft')).toEqual([]);
+  });
+
+  test('a box of the block already on the line they’d end on keeps them where they are', async () => {
+    const other = await blockOn(6, 6);
+    other.drawn.on.change('Mine');
+    const { target, moves } = await blockOn(4, 5);
+    expect(changingLines('lineBelow').enabled!(target)).toBe('A draft is already on line 6');
+    void changingLines('lineBelow').run(target);
+    await relined();
+    expect(notice()?.title).toBe('A draft is already on line 6');
+    expect(moves).toEqual([]);
+  });
+
+  test('lines that changed at the head take the comment to the file, the box staying on them in the block', async () => {
+    const { drawn, moves, target, box } = await blockOn(4, 5, 'new', changedFromSix);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    bridge.calls.length = 0;
+    void changingLines('lineBelow').run(target);
+    await relined();
+    expect(moves).toEqual([{ file: 'x0', side: 'new', from: 4, to: 6 }]);
+    expect(box.state).toMatchObject({
+      place: onTheFile(),
+      where: { head: 'File', why: 'These lines changed since r1.' },
+    });
+    expect(asked('comments.draft')).toEqual([
+      { id: VIEW, place: onTheFile(), text: 'Look here', home: blockHome(4, 6, 'changed') },
+      { id: VIEW, place: onLines(4, 5), text: '', home: null },
+    ]);
+    // Its lines still change; it isn't on lines to move to its file.
+    expect(changingLines('dropLast').enabled!(target)).toBe(true);
+    expect(movingToFile.listed!(target)).toBe(false);
+  });
+
+  test('another draft where the comment would go keeps the box where it is', async () => {
+    const onFile = await blockOn(4, 4, 'new', changedToFive);
+    onFile.drawn.on.change('Mine');
+    const { target, moves, box } = await blockOn(6, 6, 'new', changedToFive);
+    // Lo knows where they'd go, as it did for `c`: the row is dimmed, saying why.
+    expect(changingLines('lineAbove').enabled!(target)).toBe('A draft is already on this file');
+    void changingLines('lineAbove').run(target);
+    expect(notice()?.title).toBe('A draft is already on this file');
+    expect(moves).toEqual([]);
+    expect(box.state.place).toEqual(onLines(null, 6));
+  });
+
+  test('where Lo has yet to work out where the comment would go, the box goes at once, and back if it can’t go there', async () => {
+    const onFile = await blockOn(4, 4, 'new', changedToFive);
+    onFile.drawn.on.change('Mine');
+    const { drawn, target, moves, box } = await blockOn(6, 6, 'new', changedToFive);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    bridge.calls.length = 0;
+    overview.cold = true;
+    expect(changingLines('lineAbove').enabled!(target)).toBe(true);
+    void changingLines('lineAbove').run(target);
+    // At once, its comment where it was meanwhile.
+    expect(moves).toEqual([{ file: 'x0', side: 'new', from: 5, to: 6 }]);
+    expect(box.state.place).toEqual(onLines(null, 6));
+    await relined();
+    // Lines 5–6 go on the file, which another draft is on: the box goes back, its draft with it.
+    expect(notice()?.title).toBe('A draft is already on this file');
+    expect(moves.at(-1)).toEqual({ file: 'x0', side: 'new', line: 6 });
+    expect(box.home).toEqual({ kind: 'block', block: blockHome(6) });
+    expect(box.state.place).toEqual(onLines(null, 6));
+    expect(asked('comments.draft')).toEqual([
+      { id: VIEW, place: onLines(null, 6), text: 'Look here', home: blockHome(6) },
+    ]);
+  });
+
+  test('while Lo works out where the comment goes, its bracket and its head follow the box, and go back with it', async () => {
+    const onFile = await blockOn(4, 4, 'new', changedToFive);
+    onFile.drawn.on.change('Mine');
+    const { target, box } = await blockOn(6, 6, 'new', changedToFive);
+    const was = box.state.where;
+    overview.cold = true;
+    void changingLines('lineAbove').run(target);
+    // The block's lines, as it names them: which revision its comment goes on isn't known yet.
+    expect(box.state.where).toEqual({ head: 'Lines 5–6' });
+    expect(block.marks).toContainEqual(
+      expect.objectContaining({ at: { file: 'x0', side: 'new', from: 5, to: 6 }, shown: true }),
+    );
+    await relined();
+    expect(notice()?.title).toBe('A draft is already on this file');
+    expect(box.state.where).toEqual(was);
+    expect(block.marks).toContainEqual(
+      expect.objectContaining({ at: { file: 'x0', side: 'new', line: 6 }, shown: true }),
+    );
+  });
+
+  test('where Lo couldn’t work out where the comment goes, the box goes back, and a toast says why', async () => {
+    const { drawn, target, moves, box } = await blockOn(5, 5);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    const was = box.state.where;
+    overview.cold = true;
+    overview.mapping = () => {
+      throw new Error('GitHub returned an error.');
+    };
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    void changingLines('lineBelow').run(target);
+    await relined();
+    logged.mockRestore();
+    expect(notice()?.title).toBe('Couldn’t follow lines 5–6 to r2');
+    expect(moves.at(-1)).toEqual({ file: 'x0', side: 'new', line: 5 });
+    expect(box.home).toEqual({ kind: 'block', block: blockHome(5) });
+    expect(box.state).toMatchObject({ place: onLines(null, 5), where: was });
+  });
+
+  test('where another head came into view before Lo worked out where the comment goes, the box goes back, and a toast says why', async () => {
+    const { drawn, target, moves, box } = await blockOn(5, 5);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    overview.cold = true;
+    const held: (() => void)[] = [];
+    overview.held = held;
+    void changingLines('lineBelow').run(target);
+    said.pull = pull({ shown: NEWER });
+    held[0]!();
+    await relined();
+    expect(notice()?.title).toBe('Couldn’t follow lines 5–6 to r3');
+    expect(moves.at(-1)).toEqual({ file: 'x0', side: 'new', line: 5 });
+    expect(box.home).toEqual({ kind: 'block', block: blockHome(5) });
+  });
+
+  test('a box discarded while Lo works out where its comment goes leaves nothing behind', async () => {
+    const { drawn, target, moves, id } = await blockOn(5, 5);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    overview.cold = true;
+    void changingLines('lineBelow').run(target);
+    void discarding.run({ kind: 'box', box: id });
+    bridge.calls.length = 0;
+    await relined();
+    expect(asked('comments.draft')).toEqual([]);
+    expect(moves).toHaveLength(1);
+  });
+
+  test('a box moved to its file while Lo works out where its comment goes is on the file alone', async () => {
+    const { drawn, target } = await blockOn(4, 5);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    overview.cold = true;
+    void changingLines('lineBelow').run(target);
+    void movingToFile.run(target);
+    const moved = block.drawn.at(-1)!;
+    expect(boxIn(moved).state.place).toEqual(onTheFile());
+    bridge.calls.length = 0;
+    const told = notice();
+    await relined();
+    // Nothing saved for the box that's gone, and no toast for it.
+    expect(asked('comments.draft')).toEqual([]);
+    expect(notice()).toBe(told);
+    expect(boxIn(moved).state.place).toEqual(onTheFile());
+  });
+
+  test('a send while Lo works out where the comment goes holds the box from the press, and posts it on the lines the box ends up on', async () => {
+    const { drawn, target, moves, box, id } = await blockOn(5, 5);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    overview.cold = true;
+    const held: (() => void)[] = [];
+    overview.held = held;
+    answers['comments.send'] = () => new Promise<SendOutcome>(() => {});
+    void changingLines('lineBelow').run(target);
+    void send(box, 'review');
+    // Held at once, as one on its way is, its button saying so: nothing typed then goes in it, and
+    // nothing moves it or takes it, however long the answer takes.
+    expect(drawn.composer.held).toBe(true);
+    expect(box.state.busy).toBe(true);
+    expect(box.lastHow).toBe('review');
+    expect(changingLines('lineBelow').enabled!(target)).toBe('Sending…');
+    expect(movingToFile.enabled!(target)).toBe('Sending…');
+    expect(discarding.enabled!({ kind: 'box', box: id })).toBe('Sending…');
+    void changingLines('lineBelow').run(target);
+    expect(notice()?.title).toBe('Sending…');
+    void movingToFile.run(target);
+    void discarding.run({ kind: 'box', box: id });
+    void send(box, 'now');
+    expect(moves).toEqual([{ file: 'x0', side: 'new', from: 5, to: 6 }]);
+    expect(block.drawn.at(-1)).toBe(drawn);
+    expect(held).toHaveLength(1);
+    held[0]!();
+    await vi.waitFor(() => expect(asked('comments.send')).toHaveLength(1));
+    expect(asked('comments.send')).toEqual([
+      { id: VIEW, place: onLines(5, 6), text: 'Look here', how: 'review' },
+    ]);
+    expect(drawn.composer.held).toBe(true);
+  });
+
+  test('a send while its comment goes from the pull request to the file leaves the timeline nothing of it', async () => {
+    // The file is deleted at the head, and which of its lines take a comment isn't known yet.
+    answers['comments.commentable'] = () => ({ kind: 'unknown' });
+    const { drawn, target, box } = await blockOn(5, 5, 'new', goneAtHead);
+    expect(box.state.place).toEqual({ kind: 'conversation' });
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    overview.cold = true;
+    const held: (() => void)[] = [];
+    overview.held = held;
+    answers['comments.send'] = () => new Promise<SendOutcome>(() => {});
+    void changingLines('lineBelow').run(target);
+    void send(box, 'review');
+    // Now main can tell: the file takes a comment, as GitHub takes one on a file it deletes.
+    answers['comments.commentable'] = () => ({
+      kind: 'diff',
+      hunks: [{ old: 1, new: 1, kinds: ' '.repeat(20) }],
+    });
+    held[0]!();
+    await vi.waitFor(() => expect(asked('comments.send')).toHaveLength(1));
+    expect(asked('comments.send')).toEqual([
+      { id: VIEW, place: onTheFile(), text: 'Look here', how: 'review' },
+    ]);
+    expect(onPull.get(VIEW)).toEqual([]);
+  });
+
+  test('a send that can’t go once its lines are placed lets the box go, which says why', async () => {
+    const { drawn, target, box } = await blockOn(5, 5);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    overview.cold = true;
+    const held: (() => void)[] = [];
+    overview.held = held;
+    void changingLines('lineBelow').run(target);
+    void send(box, 'review');
+    said.pull = pull({
+      connection: { kind: 'offline', retryAt: null, cause: { kind: 'offline' }, error: 'down' },
+    });
+    held[0]!();
+    await vi.waitFor(() => expect(drawn.composer.held).toBe(false));
+    expect(asked('comments.send')).toEqual([]);
+    expect(box.state).toMatchObject({ busy: false, place: onLines(5, 6) });
+    expect(notesOf(box.state)[0]).toMatchObject({
+      title: 'Couldn’t send the comment',
+      text: 'Offline.',
+    });
+  });
+
+  test('a send while the box moves back posts it on the lines it went back to', async () => {
+    const onFile = await blockOn(4, 4, 'new', changedToFive);
+    onFile.drawn.on.change('Mine');
+    const { drawn, target, box } = await blockOn(6, 6, 'new', changedToFive);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    overview.cold = true;
+    answers['comments.send'] = () => new Promise<SendOutcome>(() => {});
+    void changingLines('lineAbove').run(target);
+    void send(box, 'review');
+    await vi.waitFor(() => expect(asked('comments.send')).toHaveLength(1));
+    expect(asked('comments.send')).toEqual([
+      { id: VIEW, place: onLines(null, 6), text: 'Look here', how: 'review' },
+    ]);
+  });
+
+  test('keys pressed before Lo knows where the comment goes each move the lines from where the last left them', async () => {
+    const { drawn, moves, target, box } = await blockOn(5, 5);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    bridge.calls.length = 0;
+    overview.cold = true;
+    void changingLines('lineBelow').run(target);
+    // On two lines now, its last can come off.
+    expect(changingLines('dropLast').enabled!(target)).toBe(true);
+    void changingLines('dropLast').run(target);
+    void changingLines('lineAbove').run(target);
+    expect(moves).toEqual([
+      { file: 'x0', side: 'new', from: 5, to: 6 },
+      { file: 'x0', side: 'new', line: 5 },
+      { file: 'x0', side: 'new', from: 4, to: 5 },
+    ]);
+    await relined();
+    // The last one's answer places it; the others' count for nothing.
+    expect(moves).toHaveLength(3);
+    expect(box.state.place).toEqual(onLines(4, 5));
+    expect(asked('comments.draft')).toEqual([
+      { id: VIEW, place: onLines(4, 5), text: 'Look here', home: blockHome(4, 5) },
+      { id: VIEW, place: onLines(null, 5), text: '', home: null },
+    ]);
+  });
+
+  test('on one line, a line added and then taken off by key, each judged on the lines the last left', async () => {
+    const { moves, target } = await blockOn(5, 5);
+    void changingLines('lineBelow').run(target);
+    expect(changingLines('dropLast').enabled!(target)).toBe(true);
+    void changingLines('dropLast').run(target);
+    expect(moves).toEqual([
+      { file: 'x0', side: 'new', from: 5, to: 6 },
+      { file: 'x0', side: 'new', line: 5 },
+    ]);
+  });
+
+  test('a box in the second of two blocks drawn the same changes its lines there', async () => {
+    const second = fakeBlock(OLDER, 'x1');
+    overview.mapping = sameAtHead;
+    const at = { file: 'x1', side: 'new', line: 5 } as const;
+    overview.found = { writing: second.writing, at };
+    overview.onHead = sameAtHead({ side: 'new', from: 5, to: 5 });
+    await commentOnBlock(tab(), { kind: 'line', at }, 'review');
+    const drawn = second.drawn.at(-1)!;
+    const moves: unknown[] = [];
+    drawn.composer.move = (to) => {
+      moves.push(to);
+      return true;
+    };
+    const target = { kind: 'lines', box: drawn.options!.name! } as const;
+    expect(changingLines('lineBelow').enabled!(target)).toBe(true);
+    void changingLines('lineBelow').run(target);
+    expect(moves).toEqual([{ file: 'x1', side: 'new', from: 5, to: 6 }]);
+    expect(boxIn(drawn).state.place).toEqual(onLines(5, 6));
+  });
+
+  test('a box emptied, whose comment stays where it was, leaves no draft with the words it had', async () => {
+    const { drawn, target } = await blockOn(6, 7, 'new', changedFromSix);
+    vi.useFakeTimers();
+    drawn.composer.replace(0, 0, 'abc');
+    vi.advanceTimersByTime(SAVE_AFTER);
+    drawn.composer.replace(0, 3, '');
+    bridge.calls.length = 0;
+    // Lines 6–8 go on the file too.
+    void changingLines('lineBelow').run(target);
+    vi.advanceTimersByTime(SAVE_AFTER);
+    vi.useRealTimers();
+    expect(asked('comments.draft')).toEqual([
+      { id: VIEW, place: onTheFile(), text: '', home: blockHome(6, 8, 'changed') },
+    ]);
+  });
+
+  test('moved to its file from the lines button’s menu, its head says only where it is', async () => {
+    const { drawn, target } = await blockOn(4, 5);
+    drawn.composer.replace(0, 0, 'Look here');
+    void movingToFile.run(target);
+    const moved = block.drawn.at(-1)!;
+    expect(moved).not.toBe(drawn);
+    expect(boxIn(moved).state).toMatchObject({ place: onTheFile(), where: undefined });
+    expect(moved.composer.text).toBe('Look here');
+  });
+
+  test('an end dragged in the block’s gutter moves the box to those lines, if the block shows them', async () => {
+    const { drawn, moves } = await blockOn(4, 6);
+    // Let go, it's there at once.
+    drawn.on.lines!({ file: 'x0', side: 'new', from: 7, to: 4 });
+    expect(moves).toEqual([{ file: 'x0', side: 'new', from: 4, to: 7 }]);
+    drawn.on.lines!({ file: 'x0', side: 'new', from: 7, to: 7 });
+    await relined();
+    expect(moves.at(-1)).toEqual({ file: 'x0', side: 'new', line: 7 });
+    // Lines it doesn't show, and the other side's, aren't the block's to give.
+    drawn.on.lines!({ file: 'x0', side: 'new', from: 7, to: 12 });
+    drawn.on.lines!({ file: 'x0', side: 'old', from: 5, to: 5 });
+    await relined();
     expect(moves).toHaveLength(2);
   });
 });

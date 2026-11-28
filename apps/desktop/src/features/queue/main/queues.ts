@@ -8,7 +8,7 @@ import { IpcError } from '../../../ipc/contract.ts';
 import type { AccountState, GithubEvent } from '../../accounts/service.ts';
 import type { QueueTab, Tabs } from '../../tab/contract.ts';
 import type { PullTabInfo, TabService } from '../../tab/service.ts';
-import type { QueueState } from '../contract.ts';
+import type { Looked, QueueState } from '../contract.ts';
 import { QueueWatch, type Heard, type QueueSource } from './watch.ts';
 
 /** What a merge queue's tab reads from, which can drop what it kept of its account. */
@@ -102,20 +102,22 @@ export class Queues {
   }
 
   /**
-   * Reads merge queue tab `id`'s queue and those waiting to join it again, both begun now, and
-   * says why one failed, if one did: what "Check again" looks at.
+   * Reads merge queue tab `id`'s queue and those waiting to join it again, both begun now: what
+   * the tab has read once they answered, and why one failed, if one did, which "Check again" looks
+   * at. What they read goes on `queue` too, but that can reach the window after this answer.
    */
-  async look(id: string): Promise<string | undefined> {
+  async look(id: string): Promise<Looked> {
     const followed = this.#followed.get(id);
-    if (!followed) return undefined;
+    if (!followed) return { read: undefined, failed: undefined };
     // A read under way began before now, and may not show what changed since.
     const since = Date.now() - 1;
     const [queue, waiting] = await Promise.all([
       followed.watch.fresh(0, since),
       followed.watch.freshWaiting(0, since),
     ]);
-    if (typeof queue === 'string') return queue;
-    return typeof waiting === 'string' ? waiting : undefined;
+    const failed =
+      typeof queue === 'string' ? queue : typeof waiting === 'string' ? waiting : undefined;
+    return { read: followed.watch.state().read, failed };
   }
 
   /** The merge queue's tab `id`, while it's open, and what reads its queue. */

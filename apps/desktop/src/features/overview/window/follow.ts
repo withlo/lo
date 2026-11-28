@@ -378,8 +378,9 @@ function leadIn(overview: DrawnOverview): (HTMLElement | SVGElement)[] {
       (first === undefined || after(element, first)) &&
       element.tabIndex >= 0 &&
       !(element instanceof HTMLButtonElement && element.disabled) &&
-      // Not a section's chevron or `⋯`: `z a` and the menu key work there.
-      element.closest('[hidden], [data-lo-hints], [data-lo-section]') === null &&
+      // Not a section's chevron or `⋯`: `z a` and the menu key work there. Nor what's out of
+      // reach, as the room the banner holds for its widest button is.
+      element.closest('[hidden], [inert], [data-lo-hints], [data-lo-section]') === null &&
       drawnOnPage(element),
   );
 }
@@ -467,6 +468,10 @@ export function followOf(overview: DrawnOverview, block: HTMLElement): Follow | 
   const own = focusTargetOf(block);
   const active = document.activeElement;
   if (active && active !== own && (linksIn(block) as Element[]).includes(active)) {
+    // A term's row's term is a stop, for its menu's keys, and goes nowhere.
+    if (active.hasAttribute('data-lo-stop') && !active.hasAttribute('role')) {
+      return 'Nothing to open on a term';
+    }
     return { kind: 'activate', element: active };
   }
   if (block.localName === 'details') return { kind: 'activate', element: own };

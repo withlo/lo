@@ -5,7 +5,7 @@
 // an edit of your comment on it are; and what a box's frame says of where it is and how sending it
 // stands, and why a change to a thread, or to a comment, wasn't made.
 
-import { CommentableLines, Line, lineRefText, type Lines, type Screen } from '@lo/review';
+import { CommentableLines, Line, lineRefText, Lines, type Screen } from '@lo/review';
 import { clock } from '@lo/ui';
 import type { HeaderTarget, LineTarget } from '@lo/ui/commands';
 import type { OnFile, Place, Span } from '@lo/ui/code';
@@ -533,6 +533,74 @@ export const ONE_LINE = 'The comment is on one line';
 /** Why a comment can't go on lines another draft is on: "A draft is already on lines 35–38". */
 export function draftOn(lines: Lines): string {
   return `A draft is already on ${lineRefText({ lines }, true)}`;
+}
+
+/**
+ * Why a box on a code block went back from lines `lines` it was moved to: Lo couldn't work out
+ * where a comment on them goes at `now`, the head in view, as that failed, or as another head came
+ * into view first. "Couldn’t follow lines 5–6 to r2"
+ */
+export function notFollowed(lines: Lines, now: string | undefined): string {
+  const words = lineRefText({ lines }, true);
+  return now === undefined ? `Couldn’t follow ${words}` : `Couldn’t follow ${words} to ${now}`;
+}
+
+/**
+ * Why a comment can't go on `place`, which another draft is on: its lines, as {@link draftOn} says,
+ * or its file, or the pull request.
+ */
+export function draftOnPlace(place: DraftPlaceRow): string {
+  if (place.kind === 'thread' && place.lines !== null) {
+    return `A draft is already on ${lineRefText({ lines: place.lines }, true)}`;
+  }
+  return place.kind === 'thread'
+    ? 'A draft is already on this file'
+    : 'A draft is already on this pull request';
+}
+
+/** Lines of a code block a comment is written on, on one side, as its draft's home has them. */
+export interface BlockSpan {
+  readonly side: 'old' | 'new';
+  readonly from: number;
+  readonly to: number;
+}
+
+/** Code block lines `at`, as their words name them: "Lines 3–5", "Line 8, removed". */
+export function linesOfBlock({ side, from, to }: BlockSpan): Lines {
+  const github = githubSide(side);
+  return Lines.range(Line.of(github, from), Line.of(github, to));
+}
+
+/**
+ * The lines of a code block a comment on `at` goes on once they change `how`, within `shown`, the
+ * lines the block shows on their side, in order, or why they can't: as in the diff, a line added
+ * is the next one that way, and a line taken off leaves the next as the end, never past the other.
+ * Rows of the other side between them aren't in them.
+ */
+export function changedOnBlock(
+  shown: readonly number[],
+  at: BlockSpan,
+  how: LinesChange,
+): BlockSpan | string {
+  const { side, from, to } = at;
+  const above = (line: number) => shown.findLast((each) => each < line);
+  const below = (line: number) => shown.find((each) => each > line);
+  switch (how) {
+    case 'lineAbove': {
+      const line = above(from);
+      return line === undefined ? NO_LINE_ABOVE : { side, from: line, to };
+    }
+    case 'lineBelow': {
+      const line = below(to);
+      return line === undefined ? NO_LINE_BELOW : { side, from, to: line };
+    }
+    case 'dropFirst':
+      return from === to ? ONE_LINE : { side, from: Math.min(below(from) ?? to, to), to };
+    case 'dropLast':
+      return from === to ? ONE_LINE : { side, from, to: Math.max(above(to) ?? from, from) };
+    default:
+      throw new Error(`a change of lines Lo doesn’t know: ${String(how satisfies never)}`);
+  }
 }
 
 /**

@@ -23,8 +23,9 @@ export interface BlockHint {
 
 /**
  * Whether the block keys stop at `block`: it holds something to act on. Code, figures,
- * walkthroughs, tabs and folds always do; prose, the glossary among it, does when it holds a link:
- * to code, a term, a section, a note or a web page Lo opens.
+ * walkthroughs, tabs and folds always do, and so does a glossary with a term, whose rows are stops
+ * for `Tab`; prose does when it holds a link: to code, a term, a section, a note or a web page Lo
+ * opens.
  */
 export function isStop(block: OverviewBlock): boolean {
   switch (block.kind) {
@@ -40,8 +41,9 @@ export function isStop(block: OverviewBlock): boolean {
     case 'quote':
     case 'alert':
     case 'footnotes':
-    case 'glossary':
       return holdsLink(block);
+    case 'glossary':
+      return block.terms.length > 0 || holdsLink(block);
     case 'heading':
     case 'code':
     case 'rule':

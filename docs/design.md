@@ -596,17 +596,18 @@ A repo's or a user's instructions can drop, add or reorder everything except the
   the diff's threads, say to go to the diff first. An out-of-date overview's blocks show only the
   threads on that commit's lines. `c` on a block, or on lines of its code, writes a comment on them,
   in the same box as the diff's, where its threads show: beside lines in the popover, under their
-  last line, and between lines under them. Beside lines, Reply and Edit in a block's popover, by
-  key, button or menu, write there too, in its thread, with the same held send, and a box closed
-  with words in it is a mark beside its lines, or the dot on its thread's, as in the diff (section
-  10). A box opened on a block is the block's: one open for the same comment in the diff comes to
-  the block, and while it's in the diff, the block's popover still offers Reply and shows the
-  comment. Between lines, or where the block can't draw the box, Reply and Edit from a block write
-  in the diff while it's on screen, as with the code beside, and otherwise say to go to the diff
-  first and open nothing. An edit opens nothing if the reader moved on while its text was read, and
-  keeps no draft. A new comment is an ordinary review comment on those lines at the head, where
-  they're there unchanged and in the diff. Otherwise it goes on the file when the PR changes or
-  deletes it, and on the PR itself when it doesn't touch the file. The box says where the comment
+  last line, and between lines under them. Its lines change there as in the diff, within the lines
+  the block shows, and where the comment goes follows them. Beside lines, Reply and Edit in a
+  block's popover, by key, button or menu, write there too, in its thread, with the same held send,
+  and a box closed with words in it is a mark beside its lines, or the dot on its thread's, as in
+  the diff (section 10). A box opened on a block is the block's: one open for the same comment in
+  the diff comes to the block, and while it's in the diff, the block's popover still offers Reply
+  and shows the comment. Between lines, or where the block can't draw the box, Reply and Edit from a
+  block write in the diff while it's on screen, as with the code beside, and otherwise say to go to
+  the diff first and open nothing. An edit opens nothing if the reader moved on while its text was
+  read, and keeps no draft. A new comment is an ordinary review comment on those lines at the head,
+  where they're there unchanged and in the diff. Otherwise it goes on the file when the PR changes
+  or deletes it, and on the PR itself when it doesn't touch the file. The box says where the comment
   goes and why: GitHub takes line comments only in the diff, the lines changed after the overview's
   revision, or Lo can't tell where they are now. Once sent, a comment that won't show under the
   block says where it went. A comment on the PR itself is posted at once, since it joins no review.

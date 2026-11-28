@@ -313,6 +313,24 @@ export async function commentLinesOnHead(
 }
 
 /**
+ * Where lines `from` to `to` on `side` of the file at `path`, at `commit`, are for a comment at the
+ * head on screen, as {@link commentLinesOnHead} says, if Lo knows yet: nothing while it's still
+ * working out how the file changed.
+ */
+export function commentLinesOnHeadNow(
+  tab: string,
+  commit: string,
+  path: string,
+  lines: { readonly side: 'old' | 'new'; readonly from: number; readonly to: number },
+): CommentOnHead | undefined {
+  if (pullOf(tab)?.shown === commit) return commentOnHead('same', path, lines);
+  const compared = comparedIn(tab);
+  if (compared?.commit !== commit) return { kind: 'file', path, why: 'unknown' };
+  const since = knownSince(tab, commit, compared.head, path);
+  return since && commentOnHead(since, path, lines);
+}
+
+/**
  * How the file at `path` at `commit` is at `head`, in tab `tab`, if Lo has worked it out: nothing
  * while it hasn't, which `fileSince` asks for.
  */

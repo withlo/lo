@@ -1,7 +1,8 @@
 /**
  * The overview's glossary, as its document reads it: each defined term by its key, with ids of the
- * document's own for its entry; what shows for each with the repo's definitions; and the term the
- * reader last went to from the text.
+ * document's own for its entry; what shows for each with the repo's definitions, and whether the
+ * reader ignores it; the term's menu and its card's hints; and the term the reader last went to
+ * from the text.
  */
 
 import { createContext, useContext, type ReactNode, type RefObject } from 'react';
@@ -10,6 +11,7 @@ import type { Definition, OverviewBlock } from '@lo/artifact';
 
 import type { Anchors } from '../markdown/index.ts';
 import type { TermBylineShown } from './TermByline.tsx';
+import type { TermHint } from './TermCard.tsx';
 import type { TermMarks } from './TermTags.tsx';
 
 export interface Glossary {
@@ -76,6 +78,31 @@ export interface TermShown {
    * they don't hold.
    */
   readonly byline?: TermBylineShown | undefined;
+  /**
+   * The reader ignores it, in this repo or every repo: it's plain text wherever it's used, with no
+   * underline, card or stop for `Tab`, and its row waits in the Glossary section's Ignored group.
+   */
+  readonly ignored?: boolean | undefined;
+}
+
+/**
+ * A term's menu, kept by whoever shows the overview: what a right-click on a term or its row lists,
+ * and what its card's `⋯` and a right-click on its card open, since the card is put elsewhere in
+ * the page. A term's card stays open while its menu is.
+ */
+export interface TermMenu {
+  /**
+   * Opens the menu of the term `key` names at `at`, for the term `from`, as drawn in the text. Says
+   * whether it did.
+   */
+  readonly open: (key: string, from: Element | null, at: { x: number; y: number }) => boolean;
+  /**
+   * Whether the menu of the term `key` names is open now, for its use `element` in the text: a term
+   * used more than once has its menu on one use at a time.
+   */
+  readonly isOpen: (key: string, element: Element | null) => boolean;
+  /** Calls `listener` as a term's menu opens or closes. Returns a function that stops it. */
+  readonly subscribe: (listener: () => void) => () => void;
 }
 
 /** The repo's definitions, as an overview shows its terms with them. */
@@ -90,6 +117,43 @@ export interface OverviewTerms {
    * definitions can't be used, so each definition is the overview's own.
    */
   readonly note?: ReactNode;
+  /** The terms' menu. Without it, a term has none, and its card and row no `⋯`. */
+  readonly menu?: TermMenu | undefined;
+  /**
+   * The hints in the foot of the card of the term `key` names: "Edit…" `i`. Each shows only while
+   * its command can run.
+   */
+  readonly hints?: ((key: string) => readonly TermHint[]) | undefined;
+  /**
+   * "Stop ignoring" was pressed on the row of the term `key` names, in the Ignored group: both its
+   * switches turn off.
+   */
+  readonly stopIgnoring?: ((key: string) => void) | undefined;
+}
+
+/** What marks a term the reader can act on, in the text or as a glossary's row: its key. */
+export const TERM_ATTRIBUTE = 'data-lo-term';
+
+/** A term as a key or a right-click finds it in the page. */
+export interface TermAt {
+  /** Its key, as `term:` links name it. */
+  readonly key: string;
+  /** What's drawn for it: the term in the text, or its row. */
+  readonly element: HTMLElement;
+  /** It's a glossary's row, not a use in the text. */
+  readonly row: boolean;
+}
+
+/**
+ * The term `element` is, or is in: a use of one in the text, or a glossary's row, the innermost,
+ * as a term in a row's definition is. A term shown as plain text, which the reader ignores, isn't
+ * one.
+ */
+export function termAt(element: Element | null): TermAt | undefined {
+  const found = element?.closest<HTMLElement>(`[${TERM_ATTRIBUTE}]`);
+  const key = found?.getAttribute(TERM_ATTRIBUTE);
+  if (!found || key === null || key === undefined) return undefined;
+  return { key, element: found, row: found.hasAttribute('data-lo-term-row') };
 }
 
 /** What the overview's glossary is, and where its terms' cards go. */

@@ -6,7 +6,8 @@
 // failed, with why; or not known, which "Check again" settles by reading the store, sending
 // nothing.
 
-import { ago, type DialogState } from '@lo/ui';
+import { ago, land, type DialogState } from '@lo/ui';
+import { TERM_ATTRIBUTE } from '@lo/ui/overview';
 import { createStore } from 'zustand/vanilla';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -474,6 +475,7 @@ function settle(asked: EditOpen, outcome: EditOutcome): void {
     case 'saved':
       drafts.delete(draftKey(open.repository, open.key));
       editStore.setState({ open: undefined });
+      landOnceShown(open.tab, open.key, asked.definition.trim());
       return;
     case 'changed':
       editStore.setState({
@@ -531,6 +533,39 @@ function settle(asked: EditOpen, outcome: EditOutcome): void {
       outcome satisfies never;
       failed(undefined, null);
   }
+}
+
+/** How long a saved term's row waits to show its new definition before it Lands, at most. */
+const LAND_WAIT = 10_000;
+
+/**
+ * Lands term `key`'s row in tab `tab`'s Glossary section, once the definitions it shows hold
+ * `definition`, as main says they do when it's saved and the file's read again.
+ */
+function landOnceShown(tab: string, key: string, definition: string): void {
+  if (typeof document === 'undefined') return;
+  const shows = () => {
+    const known = readTerms(tab);
+    return known !== undefined && known.terms.terms.get(key)?.definition === definition;
+  };
+  const go = () =>
+    requestAnimationFrame(() => {
+      const row = document.querySelector(
+        `[data-lo-term-row][${TERM_ATTRIBUTE}="${CSS.escape(key)}"]`,
+      );
+      if (row) land(row);
+    });
+  if (shows()) {
+    go();
+    return;
+  }
+  const stop = terms.subscribe(() => {
+    if (!shows()) return;
+    stop();
+    clearTimeout(timer);
+    go();
+  });
+  const timer = setTimeout(stop, LAND_WAIT);
 }
 
 /** Why GitHub refused an edit, `why`, as the failure over the buttons says it. */

@@ -125,6 +125,38 @@
 }
 
 /*
+ * The Glossary section's Ignored group, at its list's end: a fold's row, its chevron, "Ignored" and
+ * how many, which opens and closes the rows of the terms the reader ignores under it.
+ */
+.lo-glossary__fold {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--lo-border-subtle);
+  font: 600 14px/20px var(--lo-font-ui);
+  color: var(--lo-fg);
+  text-align: start;
+}
+.lo-glossary__fold:hover {
+  background-color: var(--lo-hover);
+}
+.lo-glossary__fold:focus-visible {
+  box-shadow: var(--lo-ring-inset);
+}
+
+/* A term the reader ignores, in the text: its words, as those around it, with nothing to point at. */
+.lo-term.is-plain,
+.lo-term.is-plain:hover {
+  color: inherit;
+  text-decoration-color: transparent;
+  background-color: transparent;
+  cursor: inherit;
+}
+
+/*
  * An overview section's heading (`SectionHead`): where an `h2` of the article would be, with its
  * room above and below, its chevron in the article's 20 px of room at its left, and its `⋯` at the
  * measure's right edge, both centred on the heading's first line. Collapsed, the heading is
@@ -546,11 +578,38 @@
 .lo-ov .lo-ov-stale {
   margin-top: 0;
 }
-.lo-ov-stale__title {
+.lo-ov-stale__title,
+.lo-ov-stale__head > .lo-ov-stale__widest {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/*
+ * Its title and its button are laid out for what they say at their widest, the commits by their
+ * short ids, drawn out of sight under them in the same place, so it's beside or one column by its
+ * width alone, and the button keeps its place as its label shortens: at the line's end beside the
+ * text, on the text's left edge under it.
+ */
+.lo-ov-stale__head,
+.lo-ov-stale__actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.lo-ov-stale__head > *,
+.lo-ov-stale__actions > * {
+  grid-area: 1 / 1;
+}
+.lo-ov-stale__buttons {
+  display: flex;
+  justify-self: end;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.lo-ov-stale__widest {
+  visibility: hidden;
 }
 .lo-ov-stale__sub {
   display: -webkit-box;
@@ -588,7 +647,10 @@
   overflow: clip;
   overflow-clip-margin: 4px;
 }
-.lo-ov .lo-ov-stale[data-gave-up~='beside'] .lo-ov-stale__actions > button {
+.lo-ov .lo-ov-stale[data-gave-up~='beside'] .lo-ov-stale__buttons {
+  justify-self: start;
+}
+.lo-ov .lo-ov-stale[data-gave-up~='beside'] .lo-ov-stale__buttons > button {
   justify-content: flex-start !important;
   max-width: 100%;
   overflow: hidden;
@@ -596,27 +658,50 @@
 
 /*
  * A code block's flag: what changed on one line, then the way to the comparison at its end, while
- * the text shows whole beside it, as `useGiveUp` measures it (`CodeFlag`).
+ * the text shows whole beside it, as `useGiveUp` measures it (`CodeFlag`). As the banner's, its text
+ * and button are laid out for what they say at their widest, drawn out of sight under them: one
+ * column or beside by its width alone, and as tall whatever they say.
  */
 .lo-codeblock__flag {
   flex-wrap: nowrap;
 }
-.lo-codeblock__flagtext {
+.lo-codeblock__flagwords,
+.lo-codeblock__flagaction {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.lo-codeblock__flagwords {
   flex: 1 1 auto;
+}
+.lo-codeblock__flagaction {
+  flex: none;
+}
+.lo-codeblock__flagwords > *,
+.lo-codeblock__flagaction > * {
+  grid-area: 1 / 1;
+}
+.lo-codeblock__flagtext {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lo-codeblock__flagaction {
+.lo-codeblock__flagbutton {
   display: flex;
-  flex: none;
+  justify-self: end;
+  min-width: 0;
+  max-width: 100%;
+}
+.lo-codeblock__widest {
+  visibility: hidden;
 }
 /*
  * Where the button doesn't fit beside the text (`CodeFlag` gives up `beside`), one column, as the
  * out-of-date callout's: the icon centred on the first line, the text wrapping beside it, and the
- * button `lo-sp-8` under its last line, its left edge on the text's. No more room is held. Too narrow
- * for its whole label, the button is cut at its end, keeping its focus ring.
+ * button `lo-sp-8` under its last line, its left edge on the text's. No more room is held than its
+ * widest words take. Too narrow for its whole label, the button is cut at its end, keeping its
+ * focus ring.
  */
 .lo-codeblock__flag[data-gave-up~='beside'] {
   display: grid;
@@ -637,7 +722,10 @@
   overflow: clip;
   overflow-clip-margin: 4px;
 }
-.lo-codeblock__flag[data-gave-up~='beside'] .lo-codeblock__flagaction > button {
+.lo-codeblock__flag[data-gave-up~='beside'] .lo-codeblock__flagbutton {
+  justify-self: start;
+}
+.lo-codeblock__flag[data-gave-up~='beside'] .lo-codeblock__flagbutton > button {
   justify-content: flex-start !important;
   max-width: 100%;
   overflow: hidden;

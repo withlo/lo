@@ -4,7 +4,8 @@
 // its sections, folded by hand and by the setting; the prompt `ya` copies; the overview skill's
 // rows, with the command that installs it from a terminal, which `yc` copies; and the setting that
 // turns overviews off, which takes every one of these away, and on again, with the reader's rows
-// for writing them automatically and for the sections that start collapsed.
+// for writing them automatically, for the sections that start collapsed and for the glossary terms
+// ignored.
 
 import { handlers, type Target } from '@lo/ui/commands';
 import type { OverviewSection } from '@lo/ui/overview';
@@ -31,7 +32,7 @@ import {
 import { overviewRows, setup } from '../../welcome/window/shared.ts';
 import keys from '../keys.ts';
 import { auto, on } from '../settings.ts';
-import CollapsedRow from './Collapsed.tsx';
+import { CollapsedRow, IgnoredRow } from './Lists.tsx';
 import { copyPrompt, promptNow } from './copy.ts';
 import { EditTermDialog } from './EditTerm.tsx';
 import { blockCode } from './copying.ts';
@@ -499,9 +500,11 @@ export default {
     // to turn them on again.
     settingRow(on, { order: 5 }),
     // After it: whether agents write them, which stays with overviews off, since it's about what
-    // agents do, not what Lo shows; then the sections that start collapsed, which goes with them.
+    // agents do, not what Lo shows; then the sections that start collapsed and the terms ignored,
+    // which go with them.
     settingRow(auto, { order: 6 }),
     CollapsedRow,
+    IgnoredRow,
     // The welcome's step that says what an overview is: first, before what a tab opens on (20).
     defineView(overviewRows, {
       id: 'overview.onRow',

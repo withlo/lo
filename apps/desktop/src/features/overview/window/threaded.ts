@@ -17,6 +17,7 @@ import type {
   Place,
   RenderPopover,
   RenderThread,
+  Side,
   Span,
   ThreadsMode,
   ThreadView,
@@ -71,6 +72,8 @@ export interface WritingBlock {
   ): Composer;
   /** Replaces the drafts its marks show beside lines, those whose boxes open in it. */
   setDrafts(drafts: readonly DraftMark[]): void;
+  /** The lines of `side` it shows, in order, as a new comment's lines change within them. */
+  lines(side: Side): readonly number[];
   /**
    * Beside lines, opens the box of the draft whose mark is on line `at`, or on thread `thread`'s
    * line, as a click on the mark does. Says whether there was one.
@@ -229,6 +232,7 @@ export function drawBlock(block: DrawnBlock, view: ExcerptView, element: HTMLEle
     block,
     compose: (at, draft, on, frame, options) => view.compose(at, draft, on, frame, options),
     setDrafts: (drafts) => view.setDrafts(drafts),
+    lines: (side) => view.lines(side),
     openDraft: (at) => view.openDraft(at),
   };
   const entry: Drawn = { writing, view, element };

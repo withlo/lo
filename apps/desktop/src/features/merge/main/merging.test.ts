@@ -1602,7 +1602,9 @@ describe('a stack’s merge', () => {
       expect(run.published.at(-1)?.state).toMatchObject({ kind: 'unknown', shows: 'open' }),
     );
     expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]);
-    run.merging.askAgain(plan.key);
+    // It says so, having said on `jobs` that the merge is pending again.
+    expect(run.merging.askAgain(plan.key)).toBe(true);
+    expect(run.published.at(-1)?.state.kind).toBe('pending');
     expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([137, 138]);
     // A poll of the pull request, while GitHub still says it's merging.
     run.emit({ kind: 'read', pull: PULL, name: MERGE_FACTS.name });
@@ -1616,9 +1618,10 @@ describe('a stack’s merge', () => {
     await run.merging.confirm(plan.key);
     await run.ended('unknown');
     await vi.waitFor(() => expect(run.turns.busy(PULL.repo, [137, 138])).toEqual([]));
-    // The read that settles it waits, while another pull request's write ends.
+    // The read that settles it waits, while another pull request's write ends: a read, which
+    // says nothing till it's made.
     run.hold.reads();
-    run.merging.askAgain(plan.key);
+    expect(run.merging.askAgain(plan.key)).toBe(false);
     const other = run.turns.take(PULL.repo, [500]);
     if ('busy' in other) throw new Error('taken');
     other.give();

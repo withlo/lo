@@ -59,7 +59,7 @@ import { DefinitionsLine, useOverviewTerms } from './Glossary.tsx';
 import { useDefinitions, useNow } from './hooks.ts';
 import { openings } from './opening.ts';
 import { OutOfDateBanner } from './OutOfDate.tsx';
-import { useFolds } from './sections.ts';
+import { repoOf, useFolds } from './sections.ts';
 import { AuthorPicture, WhoWrote } from './Author.tsx';
 import { authorOf, copyLabel, linesOf, shortId } from './says.ts';
 import { labelOf, staleAgainst } from './stale.ts';
@@ -484,8 +484,8 @@ export function Shown({
     return afterHold(openings.get(tab.id).since ?? Date.now(), () => first.open());
   }, [first, tab.id]);
   // What each term shows with the repo's definitions.
-  const definitions = useDefinitions(tab.id, stack ? 'stack' : 'pull');
-  const terms = useOverviewTerms(tab.id, definitions);
+  const definitions = useDefinitions(tab, stack ? 'stack' : 'pull');
+  const terms = useOverviewTerms(tab.id, repoOf(tab), definitions);
   // Seen once it's drawn and the middle view on screen, as `first.seen` says, but as it renders,
   // so its place on the page is held from the frame that shows it. Drawn behind another view, it's
   // seen only once it's shown.

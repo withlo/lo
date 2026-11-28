@@ -40,6 +40,9 @@ test('Tab goes from each term to the next link and back, its card opening and cl
     { focus: 'tokens', card: 'Token' },
     { focus: 'the limiter', card: undefined },
     { focus: 'the docs', card: undefined },
+    // The glossary's rows' terms, which open no card.
+    { focus: 'Bucket', card: undefined },
+    { focus: 'Token', card: undefined },
     { focus: 'End', card: undefined },
   ];
   for (const stop of forward) {
@@ -48,11 +51,11 @@ test('Tab goes from each term to the next link and back, its card opening and cl
   }
 
   const back = [];
-  for (let step = 0; step < 5; step += 1) {
+  for (let step = 0; step < 7; step += 1) {
     await page.keyboard.press('Shift+Tab');
     back.push((await where()).focus);
   }
-  expect(back).toEqual(['the docs', 'the limiter', 'tokens', 'bucket', 'Start']);
+  expect(back).toEqual(['Token', 'Bucket', 'the docs', 'the limiter', 'tokens', 'bucket', 'Start']);
 });
 
 test('Esc closes a term’s card and leaves focus on the term, and Tab still goes on', async () => {

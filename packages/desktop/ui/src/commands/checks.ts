@@ -460,6 +460,8 @@ function sampleTarget(kind: TargetKind): Target {
       return { kind, layer: 1 };
     case 'block':
       return { kind, block: 'b' };
+    case 'term':
+      return { kind, term: 't', block: 'b' };
     case 'tab':
       return { kind, tab: 't' };
     case 'row':

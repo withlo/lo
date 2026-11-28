@@ -1005,7 +1005,8 @@ text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" di
   Preview is at the right, then the control that closes the box (`close`), which keeps the draft.
   "as login" shows only when more than one account is signed in. On a new comment on lines those
   words are a button: its menu, its keys and the bracket's two ends in the gutter change the lines,
-  and the box keeps its text.
+  and the box keeps its text. In an overview's code block they're a button on any new comment,
+  wherever it goes, and the lines change within those the block shows.
 - **Body.** The editor, or its preview. The box has one ring, which is its focus; nothing inside it
   has another. An empty box under the pull request says what it's for in a quiet hint (`hint`):
   "Comment on #264"; one whose head says it, as a reply's does, has none.
@@ -1104,7 +1105,14 @@ them.
   Where the button doesn't fit beside the text, there or in a code block's flag, measured as
   `useGiveUp` measures, never at a width, it's one column: the icon centred on the first line, the
   button `lo-sp-8` under the last line, its left edge on the text's, and no more room held than its
-  lines take.
+  widest lines take. Both name the commits by their short ids until the revisions are read, then as
+  "r1" and "r2", so each is laid out for its short ids (`widest`, drawn out of sight under what it
+  says): beside or one column, and as tall, by its width alone, and nothing under it moves as the
+  names come.
+- **A row whose words change as names come is laid out for its widest.** Where what a row says waits
+  on a read, as a commit's short id waits on its revision's name, give it the words at their widest
+  to hold the room of (`widest` on `OutOfDate` and `CodeFlag`), so what it gives up, and its height,
+  never change as the names come.
 - Figures use the `fig-*` colors only. `figures.md` is the contract for agents that draw them.
 - A term's card shows its definition, who it's by and what can be done to it. It takes no focus: the
   term's keys and menu do what its buttons do. History and suggestions open in the term's row.

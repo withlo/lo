@@ -6,7 +6,14 @@ import { definitionBlocks, parseArtifact, type ParsedArtifact } from '@lo/artifa
 import { describe, expect, it } from 'vitest';
 
 import type { StoredTerm } from '../jobs.ts';
-import { definitionsOf, glossaryOf, sameDefinition, type Subject } from './definitions.ts';
+import {
+  definitionsOf,
+  glossaryOf,
+  ignoredBy,
+  namesOf,
+  sameDefinition,
+  type Subject,
+} from './definitions.ts';
 import type { RepoTerms, Terms } from './terms.ts';
 
 const REPO = { owner: 'rozed-dev', name: 'e2e' };
@@ -355,6 +362,57 @@ describe('who a definition is by', () => {
     // Edited in Lo since, or locked at the merge: who wrote a definition nothing here shows.
     const edited = stored('Bucket', 'Tokens, now.', { from: 'lo', written: 'human' });
     expect(shown(parsed, read(edited), MERGED).of('bucket')?.byline).toBeUndefined();
+  });
+});
+
+/** The keys of a list of the terms ignored that holds `entries`. */
+const keys = (...entries: string[]) => new Set(entries.map((each) => each.toLowerCase()));
+
+describe('the terms the reader ignores', () => {
+  it('go by the repository’s name for the term, with its aliases and the overview’s own as others', () => {
+    const parsed = overviewOf('- **Buckets**: Old words.', '- **Lease**: How long.');
+    const definitions = shown(
+      parsed,
+      read(stored('Bucket', 'The tokens.', { aliases: ['buckets', 'token bucket'] })),
+    );
+    expect(namesOf(definitions.of('buckets')!)).toEqual({
+      name: 'Bucket',
+      also: ['Buckets', 'token bucket'],
+    });
+    expect(namesOf(definitions.of('lease')!)).toEqual({ name: 'Lease', also: [] });
+  });
+
+  it('are matched by any of those names, and still listed and counted, plain', () => {
+    const parsed = overviewOf('- **Buckets** (new): Old words.', '- **Lease**: How long.');
+    const terms = read(stored('Bucket', 'The tokens.', { aliases: ['buckets', 'token bucket'] }));
+    for (const entry of ['bucket', 'BUCKETS', 'token  bucket']) {
+      const definitions = definitionsOf(
+        glossaryOf(parsed.tree.blocks),
+        parsed.glossary,
+        terms,
+        OPEN,
+        keys(entry.replace(/\s+/gu, ' ')),
+      );
+      expect(definitions.of('buckets')?.ignored).toBe(true);
+      expect(definitions.of('lease')?.ignored).toBe(false);
+      expect(definitions.marked.map(({ name }) => name)).toEqual(['Buckets']);
+    }
+    expect(shown(parsed, terms).of('buckets')?.ignored).toBe(false);
+    expect(ignoredBy(keys('lease'), { name: 'Lease', also: [] })).toBe(true);
+  });
+
+  it('take in a term only the repository’s definitions hold, as the text links it', () => {
+    const parsed = parseArtifact(
+      `---\nformat: 1\npr: 264\ncommit: ${'c'.repeat(40)}\n---\n\n## tl;dr\n\nA [quota](term:quota).\n`,
+    );
+    const definitions = definitionsOf(
+      [],
+      parsed.glossary,
+      read(stored('Quota', 'How much.')),
+      OPEN,
+      keys('quota'),
+    );
+    expect(definitions.of('quota')?.ignored).toBe(true);
   });
 });
 

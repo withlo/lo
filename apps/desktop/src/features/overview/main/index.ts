@@ -19,7 +19,7 @@ import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { contract as overviewJobs } from '../jobs.ts';
 import { overviews } from '../service.ts';
-import { auto, collapsed, on as overviewsOn } from '../settings.ts';
+import { auto, collapsed, ignored, on as overviewsOn } from '../settings.ts';
 import { Blobs } from './blobs.ts';
 import { codeReply, readKey } from './code.ts';
 import { Edits } from './edits.ts';
@@ -389,6 +389,7 @@ export default defineFeature(contract, {
     // `overview.auto` from the file itself.
     context.use(settings).declare(auto);
     context.use(settings).declare(collapsed);
+    context.use(settings).declare(ignored);
   },
   stop() {
     for (const stop of stops.splice(0)) stop();

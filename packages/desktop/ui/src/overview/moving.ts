@@ -100,16 +100,20 @@ export function focusTargetOf(block: HTMLElement): HTMLElement {
   return block;
 }
 
-/** What `Tab` goes between inside a block: links, figures' parts and controls. */
-const STOPS = '[role="link"], button, summary';
+/**
+ * What `Tab` goes between inside a block: links, figures' parts, controls, and what's marked a stop
+ * of its own (`data-lo-stop`), as a term's row's term is.
+ */
+const STOPS = '[role="link"], button, summary, [data-lo-stop]';
 
 /** The chip a focused block shows, whose buttons run the keys `Tab` goes beside. */
 const CHIP = '.lo-block__hints';
 
 /**
- * The links, figure parts and controls in `block` that `Tab` goes between, in order: those shown
- * now, which a closed fold or a tab not chosen hides, that can take focus. The block's own focus,
- * such as a fold's title, isn't one of them, nor are its chip's buttons, which do what keys do.
+ * The links, figure parts, controls and stops in `block` that `Tab` goes between, in order: those
+ * shown now, which a closed fold or a tab not chosen hides, that can take focus. The block's own
+ * focus, such as a fold's title, isn't one of them, nor are its chip's buttons, which do what keys
+ * do.
  */
 export function linksIn(block: HTMLElement): (HTMLElement | SVGElement)[] {
   const own = focusTargetOf(block);
@@ -124,11 +128,14 @@ export function linksIn(block: HTMLElement): (HTMLElement | SVGElement)[] {
   );
 }
 
-/** Whether `element` is hidden inside `block`: in a panel not shown, or in a closed fold's body. */
+/**
+ * Whether `element` is hidden inside `block`: in a panel not shown, in a closed fold's body, or out
+ * of reach, as the room a code block's flag holds for its widest button is.
+ */
 function hiddenIn(block: Element, element: Element): boolean {
   let child: Element = element;
   for (let at = element.parentElement; at; at = at.parentElement) {
-    if (at.hasAttribute('hidden')) return true;
+    if (at.hasAttribute('hidden') || at.hasAttribute('inert')) return true;
     if (at.localName === 'details' && !at.hasAttribute('open') && child.localName !== 'summary') {
       return true;
     }

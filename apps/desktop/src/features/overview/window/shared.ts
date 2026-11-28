@@ -2,17 +2,20 @@
 // Settings turns off and on, and every view and command of the overview comes and goes with; what
 // one looks like, for the welcome to show; its mark for a tab, as the header's view switch shows
 // it, which the stack's tree shows for the layer on screen; the review threads another feature
-// places and draws on its code blocks, with their popover and the comments written there; and
-// whether a tab's overview has a block now, and when that may have changed; and the stack's
-// overview, which the stack's tree has a row for, shown in place of the layer's own and back.
+// places and draws on its code blocks, with their popover and the comments written there; whether
+// a tab's overview has a block now, and when that may have changed; the stack's overview, which the
+// stack's tree has a row for, shown in place of the layer's own and back; what a term's
+// switches, "Ignore in this repo" and "Ignore in every repo", do to a term in the overview on
+// screen; and Edit term, opened on a term there.
 
 import type { StackTreeOverview } from '@lo/ui';
-import type { Target } from '@lo/ui/commands';
+import type { Target, TermTarget } from '@lo/ui/commands';
 import { createElement, type ReactNode } from 'react';
 
 import type { Presence } from '../../../window/slots.tsx';
 import { settingNow, watchSetting } from '../../settings/window/shared.ts';
 import {
+  activeTab,
   showMiddle,
   useMiddle,
   usePull,
@@ -25,9 +28,11 @@ import { Example } from './Example.tsx';
 import { markOf, newestHead, standingOf, type MarkKind } from './facts.ts';
 import { blockAt, drawnIn, onDrawn } from './follow.ts';
 import { useStanding } from './hooks.ts';
+import type { IgnoredWhere } from './ignored.ts';
+import { ignoreTerm, termIgnored, termReady } from './ignoring.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import type { CommentOnHead } from './mapping.ts';
-import { commentLinesOnHead } from './since.ts';
+import { commentLinesOnHead, commentLinesOnHeadNow } from './since.ts';
 import {
   hasStackOverview as stackOverviewIn,
   readLayers,
@@ -295,6 +300,20 @@ export function commentOnHead(
 }
 
 /**
+ * Where lines of a file at an overview's commit are at the head on screen, as
+ * {@link commentOnHead} says, if Lo knows yet: nothing while it's still working out how the file
+ * changed.
+ */
+export function commentOnHeadNow(
+  tab: string,
+  commit: string,
+  path: string,
+  lines: { readonly side: 'old' | 'new'; readonly from: number; readonly to: number },
+): CommentOnHead | undefined {
+  return commentLinesOnHeadNow(tab, commit, path, lines);
+}
+
+/**
  * Whether view `id`'s stack has an overview Lo has read, which its row in the stack's tree then
  * offers.
  */
@@ -342,15 +361,42 @@ export function showOwnOverview(id: string): void {
   setSubject(id, 'pull');
 }
 
+/** Where a term's switch ignores it: in the repo it's read in (`repo`), or in every repo. */
+export type TermIgnored = IgnoredWhere;
+
 /**
- * Opens Edit term on the term `name` names, by any name it goes by, in the definitions of pull
- * request's tab `tab`'s repository, as `terms.edit` does. Says whether it opened.
+ * Whether a term's switches can act on the term `target` names, in the overview of the pull
+ * request on screen, or why not.
  */
-export function editTermIn(tab: PullTab, name: string): boolean {
-  return editRefusal(tab, name) === true && openEdit(tab.id, name);
+export function termSwitchReady(target: TermTarget): true | string {
+  return termReady(target);
 }
 
-/** Whether Edit term can open on the term `name` names in tab `tab`, or why not, in a few words. */
-export function termEditableIn(tab: PullTab, name: string): true | string {
-  return editRefusal(tab, name);
+/** Whether the term `target` names is ignored `where`: its switch there is on. */
+export function isTermIgnored(target: TermTarget, where: TermIgnored): boolean {
+  return termIgnored(target, where);
+}
+
+/**
+ * Turns "Ignore in this repo" or "Ignore in every repo" for the term `target` names: on, it's plain
+ * text at once, wherever it's used, and a toast says so, with Undo; off, it's a term again.
+ */
+export function turnTermIgnored(target: TermTarget, where: TermIgnored): void {
+  ignoreTerm(target, where);
+}
+
+/**
+ * Whether Edit term can open on the term `target` names, by any name it goes by, in the definitions
+ * of the repository of the pull request on screen, or why not, in a few words.
+ */
+export function termEditReady(target: TermTarget): true | string {
+  const tab = activeTab();
+  if (tab?.kind !== 'pull') return '';
+  return editRefusal(tab, target.term);
+}
+
+/** Opens Edit term on the term `target` names, as `terms.edit` does, where it can. */
+export function editTerm(target: TermTarget): void {
+  const tab = activeTab();
+  if (tab?.kind === 'pull' && editRefusal(tab, target.term) === true) openEdit(tab.id, target.term);
 }
