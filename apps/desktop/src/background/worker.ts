@@ -62,11 +62,15 @@ interface Ended {
  */
 export function workers(entry: URL, options: WorkerOptions = {}): Execute {
   const { startLimit = START_LIMIT, warm: runsWarm } = options;
-  const start = (data: unknown, memory: number) =>
-    new Worker(entry, {
+  const start = (data: unknown, memory: number) => {
+    const worker = new Worker(entry, {
       workerData: data,
       resourceLimits: { maxOldGenerationSizeMb: memory, maxYoungGenerationSizeMb: 16 },
     });
+    // A failure after its job has its answer, as the worker stops, is no one's to hear.
+    worker.on('error', () => {});
+    return worker;
+  };
 
   let warm: Warm | undefined;
   const startWarm = (): Warm => {
@@ -92,6 +96,8 @@ export function workers(entry: URL, options: WorkerOptions = {}): Execute {
       warm = kept;
       kept.busy = true;
       const ended = await runOn(kept.worker, job, limits, startLimit, signal, () =>
+        // A worker thread's port, not a window: it has no origin to name.
+        // oxlint-disable-next-line unicorn/require-post-message-target-origin
         kept.worker.postMessage({ job, input }),
       );
       if (ended.answered) {
@@ -172,7 +178,11 @@ function runOn(
     worker.on('message', message);
     worker.once('error', error);
     worker.once('exit', exit);
-    send?.();
+    try {
+      send?.();
+    } catch (thrown) {
+      error(thrown);
+    }
   });
 }
 
@@ -213,8 +223,15 @@ async function runJob(
         : { ok: false, error: { code: 'failed', message: `${job} failed.` } };
     if (!(error instanceof IpcError)) console.error(`${job} failed:`, error);
   }
-  // oxlint-disable-next-line unicorn/require-post-message-target-origin
-  parentPort?.postMessage(result);
+  try {
+    // oxlint-disable-next-line unicorn/require-post-message-target-origin
+    parentPort?.postMessage(result);
+  } catch (error) {
+    // An answer that can't be sent, as one holding a function: the job failed.
+    console.error(`${job}'s answer couldn't be sent:`, error);
+    // oxlint-disable-next-line unicorn/require-post-message-target-origin
+    parentPort?.postMessage({ ok: false, error: { code: 'failed', message: `${job} failed.` } });
+  }
 }
 
 function jobData(data: unknown): { job: string; input: unknown } {

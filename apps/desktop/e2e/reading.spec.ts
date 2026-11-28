@@ -1373,10 +1373,10 @@ const SEEN_LATE = 100;
  * seen within `bound` from when the tab opened, the tab's placeholder showing until then and
  * nothing of the overview before its article; gives the tab's id, and how each code block on
  * screen was as the article was first seen, by its head. The bound is the one Lo was started with,
- * the suite's: whether Lo knows within it that the overview shows depends on the machine, since Lo
- * checks an overview on two background workers, each started for it, which a busy CI runner can
- * take most of the real bound to start. That isn't what's tested: a tab that doesn't know in time
- * opens on its timeline, and the test fails.
+ * the suite's: whether Lo knows within it that the overview shows depends on the machine, since
+ * main reads the overview and the window checks it in the background process, which a busy CI
+ * runner can take most of the real bound over. That isn't what's tested: a tab that doesn't know in
+ * time opens on its timeline, and the test fails.
  */
 async function openInTime(
   page: Page,

@@ -87,17 +87,18 @@ describe('workers', () => {
   });
 });
 
-describe('the warm worker', () => {
-  const entry = new URL('./test/entry.ts', import.meta.url);
-  /** Workers that keep one warm for every job but those `cold` names. */
-  const warmFor = (cold: readonly string[] = []) =>
-    workers(entry, { warm: (job) => !cold.includes(job) });
-  const thread = async (execute: ReturnType<typeof workers>, busy = 0, signal?: AbortSignal) => {
-    const result = await execute('sample.thread', busy, limits('sample.thread'), signal);
-    if (!result.ok) throw new Error(JSON.stringify(result));
-    return result.value as number;
-  };
+/** Workers that keep one warm for every job but those `cold` names. */
+const warmFor = (cold: readonly string[] = []) =>
+  workers(new URL('./test/entry.ts', import.meta.url), { warm: (job) => !cold.includes(job) });
 
+/** The worker `sample.thread` ran on, through `on`, after keeping it busy for `busy` ms. */
+async function thread(on: ReturnType<typeof workers>, busy = 0): Promise<number> {
+  const result = await on('sample.thread', busy, limits('sample.thread'));
+  if (!result.ok || typeof result.value !== 'number') throw new Error(JSON.stringify(result));
+  return result.value;
+}
+
+describe('the warm worker', () => {
   it('runs the jobs it names one after another on one worker, kept between them', async () => {
     const warm = warmFor();
     const first = await thread(warm);
@@ -142,6 +143,21 @@ describe('the warm worker', () => {
     const second = await thread(warm);
     expect(second).not.toBe(first);
     expect(await thread(warm)).toBe(second);
+  });
+
+  it('keeps it through a job whose answer can’t be sent, which fails', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const warm = warmFor();
+      const first = await thread(warm);
+      expect(await warm('sample.unsendable', undefined, limits('sample.unsendable'))).toEqual({
+        ok: false,
+        error: { code: 'failed', message: 'sample.unsendable failed.' },
+      });
+      expect(await thread(warm)).toBe(first);
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it('replaces it as the window cancels the job it runs', async () => {

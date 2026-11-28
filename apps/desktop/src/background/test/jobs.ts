@@ -16,6 +16,7 @@ export const sample = defineJobs('sample', {
   refuse: { input: z.undefined(), reply: reply<never>() },
   crash: { input: z.undefined(), reply: reply<never>() },
   thread: { input: z.number(), reply: reply<number>() },
+  unsendable: { input: z.undefined(), reply: reply<unknown>() },
 });
 
 export default defineRunner(sample, {
@@ -64,5 +65,9 @@ export default defineRunner(sample, {
       }
       return threadId;
     },
+  },
+  // An answer a port can't carry.
+  unsendable: {
+    run: () => () => 'a function',
   },
 });
