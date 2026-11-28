@@ -242,6 +242,7 @@ export function linkOf(tab: PullTab, row: Row): string {
       return row.url ?? pullPage(tab);
     case 'description':
     case 'older':
+    case 'sent':
       return pullPage(tab);
     default:
       row satisfies never;

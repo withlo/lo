@@ -308,7 +308,9 @@ test.describe('in the timeline', () => {
     const timeline = page.getByRole('listbox', { name: 'Timeline' });
     await expect(timeline).toBeFocused({ timeout: 20_000 });
     const box = page.locator('[data-lo-timeline="box"]');
-    const editor = box.locator('.cm-content');
+    // The box's editor, by its role: while a comment is on its way, the box stands as an empty copy
+    // of itself that readers and their keys skip, and its editor is hidden.
+    const editor = box.getByRole('textbox', { name: 'Comment on #94' });
     const comment = timeline
       .locator('li[data-key]')
       .filter({ hasText: 'Posted from the timeline’s box.' });

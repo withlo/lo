@@ -29,7 +29,7 @@ import { HTML_LIMIT, MARKDOWN_LIMIT, type Rendered } from '../jobs.ts';
 import { STALE_AFTER, type PostRef } from './bodies.ts';
 import { commentsJobs } from './main.ts';
 import { seen, watchNear } from './near.ts';
-import { bodies, drawnOf, keepDrawn, wroteHere } from './store.ts';
+import { bodies, type Drawn, drawnOf, keepDrawn, writtenDrawn, wroteHere } from './store.ts';
 
 /** A pull request on github.com. */
 export interface PostPull {
@@ -128,6 +128,16 @@ export const FIRST_RETRY = 1_000;
 export const RETRIES = 4;
 
 /**
+ * The tree post `post` of `text` on view `view` starts from: the one drawn of this text before, or,
+ * for one the window just sent or saved, the one its sent card drew; else the one drawn before.
+ */
+function keptFor(view: string, post: PostRef, text: string): Drawn | undefined {
+  const drawn = drawnOf(view, post);
+  if (drawn?.markdown === text) return drawn;
+  return writtenDrawn(view, text) ?? drawn;
+}
+
+/**
  * The trees a post couldn't make: from its HTML, with the Markdown it was made with, when it's made
  * from its Markdown instead; and from its Markdown, which then shows as its text.
  */
@@ -148,7 +158,9 @@ export function Post({ view, post: given, markdown, pull, replaced }: PostProps)
   const { held, missing } = useHeld(view, post, text);
   const html = held !== undefined && held.html.length <= HTML_LIMIT ? held.html : null;
   const { owner, repo, number } = pull;
-  const [made, setMade] = useState(() => drawnOf(view, post));
+  // One the window just sent or saved starts from the tree its sent card drew, so nothing changes
+  // as this card takes that one's place.
+  const [made, setMade] = useState(() => keptFor(view, post, text));
   const [near, setNear] = useState(false);
   const image = useCallback((url: string) => postImage(view, url), [view]);
   // What it couldn't make a tree of: from its HTML, it's made from its Markdown instead.
@@ -169,8 +181,9 @@ export function Post({ view, post: given, markdown, pull, replaced }: PostProps)
   // stays until the new one is made, unless the post was edited since: then its new Markdown shows
   // at once, as text.
   useEffect(() => {
-    const kept = drawnOf(view, post);
+    const kept = keptFor(view, post, text);
     if (kept && kept.html === from && kept.markdown === text) {
+      keepDrawn(view, post, kept);
       setMade(kept);
       return undefined;
     }

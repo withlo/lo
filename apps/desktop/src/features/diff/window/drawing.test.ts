@@ -801,6 +801,26 @@ describe('viewed files', () => {
 });
 
 describe('review threads', () => {
+  it('with none, the view is given how to draw them all the same, which a box beside lines opens in', async () => {
+    const stop = setThreader({
+      threadsIn: () => ({ threads: [], counts: new Map() }),
+      render: () => () => ({ update: () => undefined, destroy: () => undefined }),
+      popover: () => () => ({ update: () => undefined, destroy: () => undefined }),
+      settled: () => true,
+    });
+    try {
+      await drawnGithub(work, ['src/a.ts']);
+      expect(threadsTold).toEqual([' now']);
+      // Asked again with nothing new, the view is told nothing.
+      threadsChanged(TAB.id);
+      expect(threadsTold).toHaveLength(1);
+    } finally {
+      stop();
+      threadsTold.length = 0;
+      counted.length = 0;
+    }
+  });
+
   it('are placed as the threader says, those of a new view at once, and counted on headers', async () => {
     const asked: DrawnDiff[] = [];
     let placed: ThreadView[] = [

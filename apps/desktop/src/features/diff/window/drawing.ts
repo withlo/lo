@@ -527,6 +527,8 @@ export function draw(options: DrawOptions): Drawing {
       arrived() {
         threader()?.arrived?.(tab.id);
       },
+      // Which lines take a comment, for a drag from the `+`: the comments' to say.
+      commentLines: (file) => threader()?.commentLines?.(tab.id, file),
       // "Show in overview": a jump, from the line the note is under.
       explained(block, line) {
         // Beside a reading view, the overview takes its place, and `⌃o` back to the line puts
@@ -585,14 +587,17 @@ export function draw(options: DrawOptions): Drawing {
   const showThreads = (now = false) => {
     const given = threader();
     const next = given?.threadsIn(tab.id, threaded()) ?? NO_THREADS;
-    if (given && rendering?.from !== given) {
+    // What draws the threads, and the popover's, goes to the view as it's made, threads or none: a
+    // pull request with no threads yet still takes a new comment's box in the popover.
+    const drawer = given !== undefined && rendering?.from !== given;
+    if (drawer) {
       rendering = { from: given, render: given.render(tab, toggle), popover: given.popover?.(tab) };
     }
     // Beside lines or between them, as the threader says now.
     view.setThreadsMode(given?.mode?.() ?? 'between');
     const before = placed;
     placed = next;
-    if (!sameThreads(before.threads, next.threads) && rendering) {
+    if ((drawer || !sameThreads(before.threads, next.threads)) && rendering) {
       view.setThreads(next.threads, rendering.render, { now, popover: rendering.popover });
     }
     const counted = new Set([...before.counts.keys(), ...next.counts.keys()]);

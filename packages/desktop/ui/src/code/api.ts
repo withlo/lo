@@ -460,9 +460,10 @@ export interface Composer {
   /**
    * Holds the text as it is, as while it's being sent, so that nothing typed then is lost as the
    * box closes once it's sent: no key changes it, and insert mode ends. While it's held the box
-   * shows only its `sent` part, the comment as a card, in the room it took: it's as tall as it
-   * was. `Esc` in it then leaves it where it is, and gives focus back to its line. `false` lets it
-   * go, and the box is back as it was, with its text.
+   * shows only its `sent` part, the comment as its card will draw it, as tall as that card, its
+   * frame stepping aside where a card or a popover holds it. `Esc` in it then leaves it where it
+   * is, and gives focus back to its line. `false` lets it go, and the box is back as it was, with
+   * its text.
    *
    * Held with `text`, as a review's summary is while the review is sent, the box stays as it was
    * written, in the room it took, head and foot too: only its text is held, read-only and muted.
@@ -1025,6 +1026,22 @@ export interface DiffEvents {
    * the label says the code went or came from.
    */
   moved?(to: Place): void;
+  /**
+   * Which lines of file `file` take a comment, as GitHub says, for a drag from the `+` over lines,
+   * which holds its far end on one and names the lines in its tip as the box will: nothing while
+   * the caller can't tell yet, as it asks. The view asks before a drag needs it, as the `+` comes
+   * to a file's lines. Without it, a drag holds its ends only to lines drawn on its side.
+   */
+  commentLines?(file: string): CommentLines | undefined;
+}
+
+/** Which lines of one file take a comment, as the caller knows: see `DiffEvents.commentLines`. */
+export interface CommentLines {
+  /**
+   * What a comment on `span`'s lines goes on, in the words its box's head says ("Lines 35–38",
+   * "Line 3, removed, to line 5"): nothing where GitHub takes none on one of its ends.
+   */
+  on(span: Span): string | undefined;
 }
 
 /**

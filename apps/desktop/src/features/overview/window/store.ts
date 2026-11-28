@@ -11,6 +11,7 @@ import { Checking, type CheckedOverview } from './checking.ts';
 import { standingOf } from './facts.ts';
 import { main, overviewJobs } from './main.ts';
 import { steady } from './steady.ts';
+import { catchUpTerms, keepTermsOnly, takeTerms } from './terms.ts';
 
 /** What main last said of each tab's overview: none until it has. */
 export const states = tabState<OverviewState | undefined>(() => undefined);
@@ -105,10 +106,11 @@ export function takeRevisions(view: ComparisonView): void {
 }
 
 /**
- * Asks main for the overview and the revisions of each of `ids`, once, for a tab main spoke of
- * before the window listened: what main says meanwhile comes first.
+ * Asks main for the overview, its definitions and the revisions of each of `ids`, once, for a tab
+ * main spoke of before the window listened: what main says meanwhile comes first.
  */
 export function catchUp(ids: readonly string[]): void {
+  catchUpTerms(ids);
   for (const id of ids) {
     if (checkings.has(id)) continue;
     main()
@@ -128,11 +130,12 @@ export function catchUp(ids: readonly string[]): void {
 
 /**
  * Takes what main says of overviews again as Settings turns them on, catching up on the tabs
- * `open`; or as it turns them off, forgets every tab's, its checking and its revision's mark, and
- * takes nothing more until they're on.
+ * `open`; or as it turns them off, forgets every tab's, its definitions, its checking and its
+ * revision's mark, and takes nothing more until they're on.
  */
 export function takeOverviews(on: boolean, open: readonly string[]): void {
   taking = on;
+  takeTerms(on);
   if (on) {
     catchUp(open);
     return;
@@ -148,6 +151,7 @@ export function takeOverviews(on: boolean, open: readonly string[]): void {
 
 /** Stops checking the overviews of tabs that closed: those not in `open`. */
 export function keepOnly(open: ReadonlySet<string>): void {
+  keepTermsOnly(open);
   for (const [id, checking] of checkings) {
     if (open.has(id)) continue;
     checking.stop();

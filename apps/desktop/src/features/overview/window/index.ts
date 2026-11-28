@@ -84,6 +84,7 @@ import {
   takeRevisions,
   takeState,
 } from './store.ts';
+import { takeStore } from './terms.ts';
 
 /** Every command of the overview's, which Settings takes out of the app with overviews. */
 const COMMANDS = Object.keys(keys.commands).map((name) => `${keys.feature}.${name}`);
@@ -466,6 +467,7 @@ export default {
         .catch((error: unknown) => console.error("Lo couldn't list the tabs:", error));
     });
     main().subscribe('state', takeState);
+    main().subscribe('store', takeStore);
     client(revisionsContract).subscribe('comparison', takeRevisions);
     // Each view of a pull request's tab keeps its overview until the tab closes.
     tabs().subscribe('tabs', ({ tabs: open }) => {

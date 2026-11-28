@@ -152,6 +152,7 @@ export default defineFeature(contract, {
         return !patch.binary && patch.hunks.length === 0;
       },
       log: (line) => log(`writing: ${line}`),
+      ahead: async (login) => (await use(github).client(login)).githubAhead(),
     });
     writer = writing;
     uploads = new Uploads({

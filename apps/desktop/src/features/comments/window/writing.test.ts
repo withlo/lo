@@ -13,6 +13,8 @@ import {
   blockWhere,
   boxAt,
   commentableOn,
+  commentedOn,
+  commentOnText,
   hunksOf,
   linesAt,
   notesOf,
@@ -233,6 +235,30 @@ describe('a draft’s place', () => {
     expect(whereText({ ...onLines, lines: null })).toBe('File');
     expect(whereText({ kind: 'reply', thread: 'T1' })).toBe('Reply');
     expect(whereText({ kind: 'edit', thread: 'T1', comment: 'C1' })).toBe('Edit');
+  });
+
+  test('names the lines selected on Comment’s row of their menu, as a box on them says them', () => {
+    const span = { file: 'f1', side: 'new' as const, from: 35, to: 38 };
+    expect(commentOnText(span, undefined)).toBe('Comment on lines 35–38');
+    expect(commentOnText({ ...span, side: 'old' }, undefined)).toBe(
+      'Comment on lines 35–38, removed',
+    );
+    // Where an unchanged line picked in the older column goes on the newer.
+    expect(commentOnText({ ...span, side: 'old' }, 'Line 35, removed, to line 40')).toBe(
+      'Comment on line 35, removed, to line 40',
+    );
+  });
+
+  test('the commands that comment take the lines selected a right-click was inside, and the rest what it was on', () => {
+    const clicked = { file: 'f1', side: 'new' as const, line: 36, column: 4 };
+    const selected = { file: 'f1', side: 'new' as const, from: 35, to: 38 };
+    expect(commentedOn({ kind: 'line', at: clicked, selected })).toEqual({
+      kind: 'line',
+      at: selected,
+    });
+    expect(commentedOn({ kind: 'line', at: clicked })).toEqual({ kind: 'line', at: clicked });
+    const header = { kind: 'header' as const, file: 'f1', side: 'new' as const };
+    expect(commentedOn(header)).toBe(header);
   });
 
   test('a reply’s is its thread’s, and an edit’s its comment’s, whatever the revision', () => {
