@@ -39,6 +39,8 @@ import {
   follow,
   followName,
   followOf,
+  glossaryOf,
+  goToGlossary,
   keepPlaces,
   loadNewer,
   looseControl,
@@ -247,6 +249,14 @@ export default {
     bottom: scrolling('bottom'),
     pageDown: scrolling('pageDown'),
     pageUp: scrolling('pageUp'),
+    goGlossary: {
+      run: withOverview(goToGlossary),
+      enabled: () => {
+        const overview = onScreen();
+        if (typeof overview === 'string') return overview;
+        return glossaryOf(overview) ? true : 'This overview has no glossary';
+      },
+    },
     loadNewer: {
       run: () => {
         const tab = activeTab();
