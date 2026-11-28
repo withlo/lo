@@ -187,6 +187,11 @@ mark isn't an icon.
   something. A button that takes focus by itself, as a dialog's main button does when the dialog
   opens, shows its hint under the pointer only (`hintOn="hover"`, or `on="hover"` on `Tooltip`), so
   nothing opens with a tooltip already over it.
+- **A tooltip says more than its control.** A control whose words are all its tooltip would say,
+  with no key and no reason, has none: under the pointer it reads as a second copy of the control.
+  Its hint is `null` while its words show, as `CommandButton`'s is for a command with no key, and a
+  segment's `tip` is while its words show; it comes back where it adds a key, a reason, or the words
+  a control gave up for its icon.
 - A mark with no words, such as a file's change letter or a thread count, names itself in a
   `Tooltip` with no key: "Added", "2 unresolved threads". A screen reader hears the same words, as
   the mark's `aria-label` with `role="img"`, since a tooltip is never read. A name cut short with an
@@ -652,8 +657,8 @@ that floats.
   it again. When copying throws or rejects, it reads "Couldn’t copy" instead. A live region beside
   it says the same to a screen reader. Any other control that copies says it the same way:
   `useCopySaid()` gives what to say and `say`, `<CopyFaces said={said}>` draws the three faces in
-  the button at the widest one's width, and `<CopyStatus said={said} />` is the live region beside
-  it.
+  the button at the widest one's width, each with the key's chip after it (`chip`), and
+  `<CopyStatus said={said} />` is the live region beside it.
 - **`CopyRoute`** gives everything inside it the window's way to copy. The window is refused every
   permission, so it can't use the browser's clipboard: it copies through main's `tab.copy`, and one
   `CopyRoute` around the window (`Window.tsx`) says so. `Problem`'s Copy goes through it, and a
@@ -688,13 +693,18 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
 - Focus and "current" are different: focus is where the keyboard is; current (`lo-current`, a Powder
   ball) is what's on screen. They can sit on different rows.
 - Show a control's key on the control with `Key` (`lo-kbd`, or `lo-keys` for a sequence). The chip
-  comes last, after the label; in menus it sits at the right.
+  comes last, after the label, the control's gap apart; in menus it sits at the right. Where a
+  control draws its words in a box of their own, as a Copy button's faces are, the chip goes in that
+  box after them, with the same gap (`CopyButton`'s `keys`, `CopyFaces`' `chip`): put after the box,
+  it sits past the room the box keeps for its widest words, and put in it with no gap, it touches
+  them.
 - **A key with a symbol is an icon in its chip; a key with a name is its letters.** `Key` does this
   from the string the keymap gives. On macOS `⌘ ⌃ ⌥ ⇧ ⏎ ⇥ ⌫ ⌦` and the arrows are icons; letters,
   digits, punctuation, Esc, Space, Home, End, PgUp, PgDn and Menu are Fragment Mono. On Linux only
   the arrows are icons, and the rest are words (`Ctrl+Shift+P`). The icons are 12 px at a 1.25 px
-  stroke, centred on the capitals, in the chip's color. Never draw a chip without `Key`; a code
-  view's tooltip takes `keyCap`.
+  stroke, centred on the capitals, in the chip's color. Two side by side, as in `⌘⏎`, sit `lo-sp-2`
+  further apart than an icon and a letter do, so a chord reads as its symbols, not one shape. Never
+  draw a chip without `Key`; a code view's tooltip takes `keyCap`.
 - **A chip shows where its key works now.** Always on a surface's main button, dialog buttons, menu
   and palette rows and `HintButton`. On a control that every card or row repeats, only on the one
   the keyboard is on: give those `Key` `when="focus"`, and mark the card or row `data-key-scope`
