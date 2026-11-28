@@ -1,8 +1,8 @@
 // The background process: one Electron utility process that runs pure work, such as parsing and
 // diffing, for the window, which talks to it over a MessagePort that main hands both of them, and
 // for main, over a port of its own whose jobs wait behind the window's. It gets no tokens and never
-// reads files or the network. Each job runs on a worker thread of its own, and this same script is
-// that worker's entry.
+// reads files or the network. Each job runs on a worker thread of its own, or the few that ask for
+// it on one kept warm, and this same script is each worker's entry.
 
 import { availableParallelism } from 'node:os';
 import { isMainThread } from 'node:worker_threads';
@@ -53,7 +53,11 @@ if (isMainThread) {
     memoryCap: memoryCap(process.env.LO_BACKGROUND_MEMORY_CAP_MB),
     jobHeap: largestHeap(runners) * 1024 ** 2,
   });
-  const workerPool = pool(workers(new URL(import.meta.url)), size);
+  // The jobs that ask for it run on a worker kept warm, which starts loading now.
+  const execute = workers(new URL(import.meta.url), {
+    warm: (job) => findJob(runners, job)?.warm === true,
+  });
+  const workerPool = pool(execute, size);
   // Main's jobs that answer the reader take a queue of their own, so none waits behind the index.
   const mainJobs = mainWay(workerPool, (job) => findJob(runners, job)?.asked === true);
   // Main sends a port for each connection to the window, and a new one whenever the window loads;

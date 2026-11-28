@@ -479,6 +479,15 @@ reads files or the network.
   when too many jobs are waiting. Every message with an id gets an answer, and the window gives up
   on one after a minute (`unanswered`). The window can cancel a job it sent (`run`'s `signal`): one
   still waiting never starts, and one running has its worker stopped; either fails as `cancelled`.
+- A short job the reader waits on, whose worker's load would be most of its time, asks to run on the
+  worker kept warm (`warm` in the runner), as the overview's `parse` and `check` do, so a tab knows
+  within the bound whether its overview shows. The process starts that worker as it starts, so it
+  has loaded before the first such job, and keeps it between jobs, which it runs one at a time, each
+  under its own deadline and the default heap's cap; while it runs one, the next runs on a worker of
+  its own, as does one that asks for another heap. A job its worker had to stop (past its deadline
+  or heap, cancelled, or failing other than with its own answer) stops the warm worker too, and a
+  fresh one starts loading in its place, unless that one never loaded: then the next such job starts
+  it. Idle, it costs about 20 MB.
 - Main's jobs wait behind the window's: they run one at a time, and only once a worker is free and
   none of the window's jobs is waiting for one, so main's work never slows what the reader asked
   for. Main waits for each one longer than the window does, since its wait doesn't count against its
