@@ -602,7 +602,8 @@ that floats.
   `ThreadTarget`'s `collapsed`). A focused overview block's chip names its buttons the same way:
   "Open link" for `⏎` on prose that links to a page, "Next tab" for `→` on tabs. A menu that can
   list more than the window holds, such as the tabs that don't fit, takes `long`: it grows to a
-  palette's list at most, and scrolls.
+  palette's list at most, and scrolls. A switch of Lo's in a menu shows a check: "Ignore in this
+  repo".
 - **Keyboard shortcuts** lists a run of commands that differ only by number, such as Tab 1 to Tab 8,
   as one row, "Tab 1–8" with `⌘1`–`⌘8`: each declares the same `series`. The palette still lists
   each.
@@ -851,6 +852,8 @@ A preference is a setting with a row. The menu bar and the palette may toggle it
   in a box under them, each item a `SettingsListItem` with its own lead, label, line and buttons.
   Accounts, trusted repos and toolchains share it. An empty list is an `EmptyState` `list` in the
   box, with what to do about it.
+- **A list kept per repo is a `ScopedList`:** "Every repo", then each repo with a list of its own,
+  which replaces every repo's there.
 - **A row's button for a command is `SettingsCommand`,** which takes the command's label, key and
   reason as any control does. A row that stands for one thing, such as a pull request's language
   servers, gives it the `target` the command runs on.
@@ -868,18 +871,18 @@ A preference is a setting with a row. The menu bar and the palette may toggle it
 Lo's components are React components in `packages/desktop/ui`, styled with Tailwind CSS on these
 tokens. Their code is the source for how each one looks.
 
-| Group            | Components                                                                                      |
-| ---------------- | ----------------------------------------------------------------------------------------------- |
-| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner, Offer, DismissButton, Panes, Splitter      |
-| Panels           | StackTree, FileTree                                                                             |
-| Controls         | Button, CommandButton, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input |
-| Marks            | Icon, Glyphs, StatePill, Tag, Avatar, Marks                                                     |
-| Floating         | Dialog, Popover, ThreadPopover, ContextMenu, Palette, Tooltip, ToastStack                       |
-| Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem, EmptyState                     |
-| Review           | Thread, Diff, CodeView, CommentBox                                                              |
-| Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary                        |
-| Flows            | Choice, Checklist, Composer, Peek, Timeline, SetupList, SetupItem, SetupDone                    |
-| Settings         | SettingsPage, SettingsGroup, Setting, SettingsList, SettingsListItem, SettingsCommand           |
+| Group            | Components                                                                                                                          |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner, Offer, DismissButton, Panes, Splitter                                          |
+| Panels           | StackTree, FileTree                                                                                                                 |
+| Controls         | Button, CommandButton, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input                                     |
+| Marks            | Icon, Glyphs, StatePill, Tag, Avatar, Marks                                                                                         |
+| Floating         | Dialog, Popover, ThreadPopover, ContextMenu, Palette, Tooltip, ToastStack                                                           |
+| Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem, EmptyState                                                         |
+| Review           | Thread, Diff, CodeView, CommentBox                                                                                                  |
+| Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary, TermCard, TermRow, SectionHead, OverviewLine, StackLayers |
+| Flows            | Choice, Checklist, Composer, Peek, Timeline, SetupList, SetupItem, SetupDone                                                        |
+| Settings         | SettingsPage, SettingsGroup, Setting, SettingsList, SettingsListItem, SettingsCommand, ScopedList                                   |
 
 Build new screens from these. If something new is needed, make it from the same tokens and keep it
 to one job.
@@ -995,16 +998,19 @@ text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" di
 - **Actions.** "Add to review" and "Send now" under a line or a thread, "Send" under the pull
   request, "Save" in an edit. While a review is pending GitHub adds every comment to it, so the box
   has "Add to review" alone. A dimmed action says why in its tooltip.
-- **Sending.** A comment is its card from the moment it's sent: the box draws the text as it will
-  read, with "Sending…" where its time will be (`SentPost`; "Saving…" for an edit), in the room the
-  box had. The box keeps that height, and the comment on it, until the card from GitHub is drawn,
-  and gives way to it in one frame: the text never leaves the screen, and what's under it moves
-  once. A send that fails turns back into the open box with the text as it was, under a note that
-  says what wasn't sent and why, in the danger tone. The box's own action sends it again: a note
-  never offers a second button for what a button under it does. A screen reader hears each step from
-  the comments' one live region (`tell`): that it's sending, that it was sent, or the note. A note
-  takes focus back into its box only from a reader still there, or with focus nowhere: one who left
-  for the code keeps their place.
+- **Sending.** A comment is its card from the moment it's sent, where that card will be: the box
+  draws the text as it will read, formatted from its first frame, with "Sending…" where its time
+  will be (`SentPost`; "Saving…" for an edit), as tall as the card and no taller. A new thread's has
+  the head row its thread will have, and a reply is the next comment of its thread's card, each over
+  the row that offers a reply. A comment on the pull request itself is the timeline's last row,
+  drawn as its card, while the box at the end stays as it is, empty; an edit there is the comment's
+  card, saying "Saving…". Each stays until the card from GitHub is drawn, and gives way to it in one
+  frame with nothing moving: the text never leaves the screen. A send that fails turns back into the
+  open box with the text as it was, under a note that says what wasn't sent and why, in the danger
+  tone. The box's own action sends it again: a note never offers a second button for what a button
+  under it does. A screen reader hears each step from the comments' one live region (`tell`): that
+  it's sending, that it was sent, or the note. A note takes focus back into its box only from a
+  reader still there, or with focus nowhere: one who left for the code keeps their place.
 - **An edit's box is the comment.** From an edit opening to its card showing what was saved, the
   comment's text shows once, in the box: the thread's card draws without that comment and offers no
   reply meanwhile.
@@ -1073,6 +1079,14 @@ them.
   button `lo-sp-8` under the last line, its left edge on the text's, and no more room held than its
   lines take.
 - Figures use the `fig-*` colors only. `figures.md` is the contract for agents that draw them.
+- A term's card shows its definition, who it's by and what can be done to it. It takes no focus: the
+  term's keys and menu do what its buttons do. History and suggestions open in the term's row.
+- A term is drawn by `TermRow` wherever it's listed, with one menu. A term the reader ignores is
+  plain text, and waits in the "Ignored" group at the list's end.
+- A section's heading folds it. Nothing is hidden: a collapsed section keeps its heading, and the
+  tl;dr never collapses. What goes into a collapsed section expands it first.
+- The stack overview is a subject of the Overview view, not a layer. Its list of layers is Lo's,
+  drawn live from the stack.
 
 ## Writing
 

@@ -129,6 +129,23 @@ export type Row =
       readonly at: string;
       /** Where it points on GitHub, when that's somewhere other than the pull request. */
       readonly url: string | undefined;
+    }
+  /**
+   * A comment the reader sent from the box at the timeline's end that the timeline doesn't show
+   * yet, drawn as its card will be: on its way (`sending`, `checking`, with what its card says in
+   * its time's place), or taken by GitHub at `at`. GitHub's copy takes its place once the timeline
+   * has it.
+   */
+  | {
+      readonly kind: 'sent';
+      readonly key: string;
+      readonly author: Person;
+      readonly body: string;
+      readonly byAuthor: boolean;
+      /** What its card says in its time's place while it's on its way: "Sending…". */
+      readonly sending: string | undefined;
+      /** When GitHub took it, as an ISO time. */
+      readonly at: string | undefined;
     };
 
 /** What the rows are made from besides the timeline. */
