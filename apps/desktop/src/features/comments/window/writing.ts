@@ -569,7 +569,7 @@ export function changedLines(
       return changed ?? ONE_LINE;
     }
     default:
-      throw new Error(`a change of lines Lo doesn’t know: ${how satisfies never}`);
+      throw new Error(`a change of lines Lo doesn’t know: ${String(how satisfies never)}`);
   }
 }
 

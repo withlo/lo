@@ -447,6 +447,11 @@ describe('a box’s notes', () => {
   });
 });
 
+/** New lines `from` to `to`, as GitHub names them. */
+function right(from: number, to: number): Lines {
+  return Lines.range(Line.right(from), Line.right(to));
+}
+
 describe('changing a new comment’s lines', () => {
   /** Two hunks: new lines 3–7, then new lines 20–24, with 12 lines between them. */
   const two: Commentable = {
@@ -457,7 +462,6 @@ describe('changing a new comment’s lines', () => {
     ],
   };
   const takes = commentableOn(Screen.full(HEAD), two);
-  const right = (from: number, to: number) => Lines.range(Line.right(from), Line.right(to));
 
   test('a line added is the next that way that takes a comment, over the lines between hunks', () => {
     expect(changedLines(takes, right(4, 5), 'lineAbove')).toEqual(right(3, 5));

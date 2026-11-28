@@ -354,6 +354,11 @@ const HANDLE_TIPS = {
   both: { label: 'First and last line', commands: ['comments.lineAbove', 'comments.lineBelow'] },
 } as const;
 
+/** The lane's name for the draft of a box under `place`, from line `from` where it starts above. */
+function boxDraftKey(place: At, from: { line: number } | undefined): string {
+  return draftKey(place.file, place.side, from?.line ?? place.line, place.line);
+}
+
 /** Replaces one file's decorations. */
 /** How long a line put back at the top stays there once it's settled, in milliseconds. */
 const HOLD_AFTER = 2_000;
@@ -3860,7 +3865,7 @@ class View implements DiffView {
         this.#aligner.anchorHere();
       },
       move: (moved, to) => this.#moveBox(moved, to),
-      lines: on.lines,
+      lines: (to) => on.lines?.(to),
     });
     const first = 'from' in at ? Math.min(at.from, at.to) : place.line;
     const from = first < place.line ? { side: place.side, line: first } : undefined;
@@ -4759,15 +4764,13 @@ class View implements DiffView {
   #handled(
     key: string,
   ): { box: CommentBox; place: At; from: { side: Side; line: number } | undefined } | undefined {
-    const keyOf = (place: At, from: { line: number } | undefined): string =>
-      draftKey(place.file, place.side, from?.line ?? place.line, place.line);
     if (this.#mode === 'beside') {
       const picked = this.#beside.pickedBox();
-      return picked && keyOf(picked.place, picked.from) === key ? picked : undefined;
+      return picked && boxDraftKey(picked.place, picked.from) === key ? picked : undefined;
     }
     for (const { box, place, from } of this.#boxes.values()) {
       if (box.thread !== undefined || place.line === 0) continue;
-      if (keyOf(place, from) === key) return { box, place, from };
+      if (boxDraftKey(place, from) === key) return { box, place, from };
     }
     return undefined;
   }

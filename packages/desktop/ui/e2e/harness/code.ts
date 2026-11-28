@@ -432,12 +432,14 @@ const harness = {
       change: ignore,
       submit: ignore,
       close: ignore,
-      lines: (to) => {
+      lines: (asked) => {
         const span =
-          'from' in to ? to : { file: to.file, side: to.side, from: to.line, to: to.line };
+          'from' in asked
+            ? asked
+            : { file: asked.file, side: asked.side, from: asked.line, to: asked.line };
         relined.push(span);
         if (takes(span.file, span.side, span.from) && takes(span.file, span.side, span.to)) {
-          if (composer.move(to)) diff.setDrafts([mark(span)]);
+          if (composer.move(asked)) diff.setDrafts([mark(span)]);
         }
       },
     });

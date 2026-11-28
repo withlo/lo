@@ -1847,7 +1847,7 @@ function suggestionOf(diff: WritingDiff, at: Place | Span, lines: Lines): string
  * A command that changes a new comment's lines `how`, from its box, as its lines button's menu
  * and its keys do: dimmed, with why, where they can't change that way.
  */
-export function relining(how: LinesChange): Handler<LinesTarget> {
+export function changingLines(how: LinesChange): Handler<LinesTarget> {
   return {
     run(target) {
       const box = boxNamed(target.box);

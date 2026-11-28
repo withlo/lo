@@ -1379,7 +1379,7 @@ export class Beside {
       // Where the box put itself is where things belong: nothing holds the line it left.
       shown: () => host.boxShown(),
       move: (moved, to) => host.moveBox?.(moved, to) ?? false,
-      lines: on.lines,
+      lines: (to) => on.lines?.(to),
     });
     const popBox: PopBox = {
       box,
