@@ -116,11 +116,15 @@ export interface BoxSend {
  * `before` once a box writing on the pull request itself says how its comment stands, at `now`: on
  * its way or looked for, it's there, with its text; taken, it stays until the timeline shows it;
  * neither, as when the send failed or its answer was lost, it goes, and the box has its text again.
+ * One whose place left the pull request before GitHub took it, as a code block's comment's can
+ * while its send waits for where its lines go, goes too.
  */
 export function noted(before: readonly OnPull[], box: BoxSend, now: number): readonly OnPull[] {
-  if (!writesOnPull(box.place)) return before;
   const at = before.findIndex((each) => each.key === box.key);
   const was = at === -1 ? undefined : before[at];
+  if (!writesOnPull(box.place)) {
+    return was === undefined || was.state === 'sent' ? before : before.filter((_, i) => i !== at);
+  }
   if (was?.state === 'sent') {
     // Taken, it stays as it is, but for what GitHub's answer says of it, which may come after.
     const copy = was.copy ?? box.copy;
@@ -181,7 +185,7 @@ export function noted(before: readonly OnPull[], box: BoxSend, now: number): rea
  * showed, or let go, is done: what its box says of it after, as that it was taken, adds nothing.
  */
 export function noteOnPull(box: BoxSend): void {
-  if (!writesOnPull(box.place) || settled.get(box.view).get(box.key) === box.send) return;
+  if (settled.get(box.view).get(box.key) === box.send) return;
   const before = onPull.get(box.view);
   const after = noted(before, box, Date.now());
   if (after === before) return;

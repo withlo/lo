@@ -91,6 +91,15 @@ describe('noted', () => {
     const edit: DraftPlaceRow = { kind: 'edit', thread: 'PRRT_1', comment: 'PRRC_1' };
     expect(noted(before, box({ place: edit }), 10)).toBe(before);
   });
+
+  test('one whose place leaves the pull request before GitHub took it goes', () => {
+    const onFile: DraftPlaceRow = { kind: 'thread', commit: 'abc', path: 'a.ts', lines: null };
+    const sending = noted([], box(), 10);
+    expect(noted(sending, box({ place: onFile }), 11)).toEqual([]);
+    // Taken there, it stays until the timeline shows it.
+    const taken = noted([], box({ landing: true }), 10);
+    expect(noted(taken, box({ place: onFile }), 11)).toBe(taken);
+  });
 });
 
 describe('noteOnPull', () => {
@@ -105,5 +114,13 @@ describe('noteOnPull', () => {
     // Sent again, it's there again.
     noteOnPull(box({ view, send: 2 }));
     expect(onPull.get(view)).toMatchObject([{ key: 'box-1', send: 2 }]);
+  });
+
+  test('one whose box’s place leaves the pull request on its way is gone from the timeline', () => {
+    const view = 'view-left';
+    noteOnPull(box({ view }));
+    expect(onPull.get(view)).toHaveLength(1);
+    noteOnPull(box({ view, place: { kind: 'thread', commit: 'abc', path: 'a.ts', lines: null } }));
+    expect(onPull.get(view)).toEqual([]);
   });
 });

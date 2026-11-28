@@ -70,6 +70,7 @@ import {
   type Pane,
 } from './beside.ts';
 import { CommentBox, placeKey } from './comments.ts';
+import { boxDraftKey, handleEnd, HandleTips, handleTip, linesWords } from './handles.ts';
 import { fileMarks } from './decorations.ts';
 import { askToShowLine, codeEditor } from './editor.ts';
 import { type FileTokens, highlighting, lineStarts, tokensChanged } from './highlight.ts';
@@ -90,6 +91,7 @@ import {
 } from './keys.ts';
 import { laneUpdate, setLane, threadLane } from './lanes.ts';
 import { marking } from './marks.ts';
+import { type Band, pickLines, restingEnd } from './pick.ts';
 import { type PopRoom, sharedPop } from './popover.ts';
 import {
   type LaneUpdate,
@@ -275,6 +277,28 @@ const TOUCH = ['pointerdown', KEY_EVENT] as const;
 /** An excerpt's one editor, with both sides' lines: its one pane. */
 const PANES: readonly Pane[] = ['inline'];
 
+/**
+ * A drag from an end of an open box's bracket, a handle: the end at `anchor` stays and the one at
+ * `end` follows the pointer, on the box's side, both lines of it the excerpt shows; `way` holds the
+ * end to its side of the other, or, on one line, lets it go either way.
+ */
+interface EndDrag {
+  readonly box: CommentBox;
+  /** The lane's name for the box's lines, its handles' range. */
+  readonly key: string;
+  readonly side: Side;
+  readonly anchor: number;
+  end: number;
+  readonly way: -1 | 0 | 1;
+  /** The box's last line as the drag began, and its first. */
+  readonly place: At;
+  readonly first: number;
+  /** What had focus as it was pressed, which gets it back. */
+  readonly had: Element | null;
+  started: boolean;
+  stop: (() => void) | undefined;
+}
+
 /** The nearest box around `element` that scrolls up and down, or else its page's body. */
 function scrollerOf(element: HTMLElement): HTMLElement {
   for (let at = element.parentElement; at; at = at.parentElement) {
@@ -337,6 +361,22 @@ class Excerpt implements ExcerptView {
   #drawn = false;
   /** While the mode changes: its boxes close, focus going to a line only from one that had it. */
   #switching = false;
+  /**
+   * Between lines, each new comment's box open, by where it is: its last line, and its first where
+   * it starts above.
+   */
+  readonly #boxPlaces = new Map<
+    CommentBox,
+    { place: At; from: { side: Side; line: number } | undefined }
+  >();
+  /** A drag from an end of an open box's bracket, while one is on. */
+  #drag: EndDrag | undefined;
+  /** Between lines, the box that stepped aside for a drag, and the document line it was under. */
+  #aside: { box: CommentBox; line: number } | undefined;
+  /** Where that box waits, unseen, until it's drawn again. */
+  readonly #parked = document.createElement('div');
+  /** The handles' tips, which wait after a drag from one. */
+  readonly #handleTips: HandleTips;
 
   constructor(parent: HTMLElement, init: ExcerptInit, on: ExcerptEvents) {
     installVim();
@@ -452,6 +492,10 @@ class Excerpt implements ExcerptView {
       tips(this.dom, (control) => this.#tipOf(control)),
     );
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
+    // An end of an open box's bracket drags, and its click does nothing.
+    this.dom.addEventListener('pointerdown', this.#pressHandle);
+    this.#handleTips = new HandleTips(this.dom);
+    this.#stops.push(() => this.#handleTips.destroy());
     this.dom.addEventListener('click', this.#clicked);
     // Across a lane's cell, the mark it's on is the stem nearest it, which a move can change.
     this.dom.addEventListener('pointerover', this.#hoverMark, { passive: true });
@@ -523,12 +567,13 @@ class Excerpt implements ExcerptView {
    * line shown where the excerpt starts after it. The excerpt runs its bubbles' clicks itself.
    */
   #lane(): LaneUpdate {
-    const { ranges, bubbles } = this.#beside.lane('inline', 0);
+    const { ranges, bubbles, handles } = this.#beside.lane('inline', 0);
     const { doc } = this.#view.state;
     return laneUpdate(doc, { from: 0, to: doc.length }, ranges, bubbles, {
       command: false,
       beside: this.#mode === 'beside',
       lit: this.#lit.stems.threads,
+      handles,
     });
   }
 
@@ -551,9 +596,12 @@ class Excerpt implements ExcerptView {
     for (const box of this.#boxSpans.keys()) if (box.hasFocus) this.#pickedBox = box;
     if (this.#pickedBox && !this.#boxSpans.has(this.#pickedBox)) this.#pickedBox = undefined;
     const between = this.#mode === 'between' && this.#pickedBox !== undefined;
+    // A drag from an end of a box's bracket keeps the bracket lit, and picks the lines it's on.
+    const dragged = this.#drag?.started === true ? this.#drag : undefined;
     const lit = lightOf({
-      pinned:
-        this.#mode === 'beside'
+      pinned: dragged
+        ? { picked: { lane: 'threads', key: dragged.key } }
+        : this.#mode === 'beside'
           ? this.#beside.pinnedLight()
           : between
             ? { picked: undefined }
@@ -574,7 +622,14 @@ class Excerpt implements ExcerptView {
   #litRows(lit: Lit): LitRows | null {
     let lines:
       { from: { side: Side; line: number }; end: { side: Side; line: number } } | undefined;
-    if (lit.picked) {
+    const drag = this.#drag;
+    if (lit.picked && drag?.started) {
+      const { side, anchor, end } = drag;
+      lines = {
+        from: { side, line: Math.min(anchor, end) },
+        end: { side, line: Math.max(anchor, end) },
+      };
+    } else if (lit.picked) {
       if (this.#mode === 'beside') {
         const box = this.#beside.pickedBox();
         lines = box && { from: box.from ?? box.place, end: box.place };
@@ -710,6 +765,8 @@ class Excerpt implements ExcerptView {
       keep: () => {},
       showLine: () => {},
       boxShown: () => {},
+      moveBox: (moved, at) => this.#moveBox(moved, at),
+      handles: true,
     };
   }
 
@@ -728,6 +785,8 @@ class Excerpt implements ExcerptView {
    * pointer resting on it shows is its thread.
    */
   #tipOf(control: HTMLElement): Tip | undefined {
+    const end = handleEnd(control);
+    if (end !== undefined) return this.#handleTips.quiet ? undefined : handleTip(end);
     const { tip, command } = control.dataset;
     if (control.dataset.beside !== undefined) return undefined;
     if (command === undefined) return tip === undefined ? undefined : { label: tip };
@@ -1013,17 +1072,22 @@ class Excerpt implements ExcerptView {
         this.#closeBox(closed, this.#switching ? 'dismiss' : 'escape');
         on.close(keep);
       },
-      // Held, the box stays, and focus goes back to its line.
+      // Held, the box stays, and focus goes back to its line: the one it's under now, where its
+      // lines changed.
       leave: (left) => {
-        if (left.dom.contains(document.activeElement)) this.#focusLine(line);
+        if (!left.dom.contains(document.activeElement)) return;
+        this.#focusLine(this.#lineOfBox(left) ?? line);
       },
       close: (closed, landed) => this.#closeBox(closed, landed ? 'landed' : 'sent'),
       dismiss: (closed) => this.#closeBox(closed, 'dismiss'),
+      move: (moved, to) => this.#moveBox(moved, to),
+      lines: (to) => on.lines?.(to),
     });
     // A box opened where one's room is kept takes its place.
     this.#rooms.get(line)?.destroy();
     this.#rooms.delete(line);
     this.#boxes.set(line, box);
+    if (!('thread' in at)) this.#boxPlaces.set(box, this.#placesOf(at));
     // A new comment's lines are picked while it has focus, or had it last, from the top where they
     // start above the first line shown. A box on a thread's line is a reply.
     if (thread === undefined && !('thread' in at)) {
@@ -1078,6 +1142,76 @@ class Excerpt implements ExcerptView {
     return this.#beside.compose({ key, place, from, target, written }, draft, on, frame, options);
   }
 
+  /** Where a new comment's box on `at` is: its last line, and its first where it starts above. */
+  #placesOf(at: Place | Span): { place: At; from: { side: Side; line: number } | undefined } {
+    const last = 'line' in at ? at.line : Math.max(at.from, at.to);
+    const first = 'line' in at ? at.line : Math.min(at.from, at.to);
+    return {
+      place: { file: 0, side: at.side, line: last },
+      from: first < last ? { side: at.side, line: first } : undefined,
+    };
+  }
+
+  /** Between lines, the document line box `box` is under, or was as it stepped aside. */
+  #lineOfBox(box: CommentBox): number | undefined {
+    for (const [line, open] of this.#boxes) if (open === box) return line;
+    return this.#aside?.box === box ? this.#aside.line : undefined;
+  }
+
+  /**
+   * Moves a new comment's box, `box`, to lines `at` the excerpt shows, as `Composer.move` says:
+   * beside lines in the popover, placed again under the new last line; between lines from under its
+   * last line to under the new one in one change, the box's element moved into the new block, so
+   * the lines above both stay where they are. Then the scroll around it scrolls the least that shows
+   * the box whole. Says whether it moved: not to a line another box is under.
+   */
+  #moveBox(box: CommentBox, at: Place | Span): boolean {
+    if (box.thread !== undefined || at.file !== this.#id) return false;
+    const line = this.#boxLine(at);
+    if (line === undefined) return false;
+    const { place, from } = this.#placesOf(at);
+    const thread = this.#threadOn(line);
+    const target: LineTarget =
+      thread === undefined ? { kind: 'line', at } : { kind: 'line', at, thread };
+    const was = box.target;
+    const name = was.kind === 'line' ? was.box : undefined;
+    if (name !== undefined) target.box = name;
+    if (this.#mode === 'beside') {
+      const open = this.#beside.boxPlace;
+      if (!open || open.line === 0) return false;
+      const key = name === undefined ? placeKey(place) : `${placeKey(place)}|${name}`;
+      this.#show(line);
+      return this.#beside.moveBox(box, { key, place, from, target, written: undefined });
+    }
+    const old = this.#lineOfBox(box);
+    if (old === undefined || (line !== old && this.#boxes.has(line))) return false;
+    const focused = box.hasFocus;
+    box.retarget(target);
+    this.#boxPlaces.set(box, { place, from });
+    const span = from && this.#laneRange(from, place);
+    this.#boxSpans.set(box, { from: Math.min(span?.from ?? line, line), to: line });
+    // Stepped aside for a drag, it waits there, and comes back under the new line as that ends.
+    if (this.#aside?.box === box) {
+      this.#aside = { box, line };
+      this.#relight();
+      return true;
+    }
+    this.#boxes.delete(old);
+    // A box moved where one's room is kept takes its place.
+    if (line !== old) {
+      this.#rooms.get(line)?.destroy();
+      this.#rooms.delete(line);
+    }
+    this.#boxes.set(line, box);
+    this.#drawBlocks();
+    this.#show(line, box.dom);
+    // Focus in it stays in it, which the block it left took out of the page.
+    if (focused) box.focusShown();
+    box.reveal();
+    this.#relight();
+    return true;
+  }
+
   /** The line `at` names, or a span's last, as the popover places a box, if the excerpt has it. */
   #boxPlace(at: Place | Span): At | undefined {
     if (at.file !== this.#id) return undefined;
@@ -1086,6 +1220,15 @@ class Excerpt implements ExcerptView {
 
   setDrafts(drafts: readonly DraftMark[]): void {
     this.#beside.setDrafts(drafts);
+  }
+
+  lines(side: Side): readonly number[] {
+    const lines: number[] = [];
+    for (let line = 1; line <= this.#view.state.doc.lines; line++) {
+      const at = this.#placeAt(line);
+      if (at.line > 0 && at.side === side) lines.push(at.line);
+    }
+    return lines;
   }
 
   openDraft(at: Place | { readonly thread: string }): boolean {
@@ -1125,12 +1268,19 @@ class Excerpt implements ExcerptView {
    * box goes with it if it's measured within two frames, and by itself then.
    */
   #closeBox(box: CommentBox, how: 'escape' | 'sent' | 'landed' | 'dismiss'): void {
+    // A drag from an end of its bracket ends with it, the box back in its place first.
+    const drag = this.#drag;
+    if (drag?.box === box) {
+      drag.stop?.();
+      this.#endDrag(drag, false);
+    }
     const found = [...this.#boxes].find(([, open]) => open === box);
     if (!found) return;
     const [line] = found;
     const focused = how === 'escape' || box.dom.contains(document.activeElement);
     this.#boxes.delete(line);
     this.#boxSpans.delete(box);
+    this.#boxPlaces.delete(box);
     const kept = (how === 'sent' || how === 'landed') && this.#drawn && this.#lineOnScreen(line);
     if (kept) this.#rooms.set(line, box);
     if (kept && how === 'landed') {
@@ -1161,6 +1311,197 @@ class Excerpt implements ExcerptView {
       if (threads.some((thread) => thread.id === host.id)) return line;
     }
     return undefined;
+  }
+
+  // Handles ----------------------------------------------------------------------------------
+
+  /**
+   * A press on an end of an open box's bracket, a handle: a move of 4 px or more drags that end to
+   * the pointer's row, to the nearest line the excerpt shows on the box's side, toward the other
+   * end, never past it, and on one line either way. The box steps aside meanwhile, and once it's
+   * let go goes under the new last line, as the caller moves it, or back where it was; focus goes
+   * back where it was. `Esc` puts the lines back. A press let go with no move does nothing.
+   */
+  readonly #pressHandle = (event: PointerEvent): void => {
+    const { target } = event;
+    const handle = target instanceof Element ? target.closest<HTMLElement>('.lo-handle') : null;
+    if (!handle || this.#drag || !this.#view.dom.contains(handle)) return;
+    const end = handleEnd(handle);
+    const key = handle.dataset.handleRange;
+    const control = handle.closest<HTMLElement>('.cm-gutter');
+    const open = key === undefined ? undefined : this.#handled(key);
+    if (!open || !control || end === undefined || key === undefined) return;
+    const { box, place, from } = open;
+    const first = from?.line ?? place.line;
+    const drag: EndDrag = {
+      box,
+      key,
+      side: place.side,
+      anchor: end === 'first' ? place.line : first,
+      end: end === 'first' ? first : place.line,
+      way: end === 'first' ? -1 : end === 'last' ? 1 : 0,
+      place,
+      first,
+      had: this.dom.ownerDocument.activeElement,
+      started: false,
+      stop: undefined,
+    };
+    const stop = pickLines(control, event, {
+      follow: (y) => this.#followEnd(drag, y),
+      band: () => this.#paneBand(),
+      scroll: (by) => this.#scrollPane(by),
+      known: () => true,
+      end: () => this.#endDrag(drag, true),
+      cancel: () => this.#endDrag(drag, false),
+      click: () => {
+        if (this.#drag === drag) this.#drag = undefined;
+      },
+    });
+    if (!stop) return;
+    drag.stop = stop;
+    this.#drag = drag;
+  };
+
+  /**
+   * The new comment's box whose bracket in the lane is range `key`, with handles at its ends: the
+   * popover's, beside lines, or one open under its line, between them.
+   */
+  #handled(
+    key: string,
+  ): { box: CommentBox; place: At; from: { side: Side; line: number } | undefined } | undefined {
+    if (this.#mode === 'beside') {
+      const picked = this.#beside.pickedBox();
+      return picked && boxDraftKey(picked.place, picked.from) === key ? picked : undefined;
+    }
+    for (const [box, { place, from }] of this.#boxPlaces) {
+      if (boxDraftKey(place, from) === key) return { box, place, from };
+    }
+    return undefined;
+  }
+
+  /**
+   * The pointer at `y` in a drag from an end of an open box's bracket: that end goes to the row
+   * there, or the nearest line toward the other end on the box's side, never past the other; the
+   * bracket and the picked rows follow it. The box steps aside as the drag starts. The words its
+   * tip says.
+   */
+  #followEnd(drag: EndDrag, y: number): string | undefined {
+    if (this.#drag !== drag) return undefined;
+    const start = this.#docLine(drag.side, drag.anchor);
+    // Its box gone, or threads shown the other way, meanwhile: it's dropped.
+    if (start === undefined || this.#handled(drag.key)?.box !== drag.box) {
+      this.#endDrag(drag, false);
+      drag.stop?.();
+      return undefined;
+    }
+    if (!drag.started) {
+      drag.started = true;
+      this.#stepAside(drag.box, true);
+    }
+    const view = this.#view;
+    const band = this.#visible();
+    const at = Math.max(band.top + 1, Math.min(band.bottom - 1, y));
+    const row = view.state.doc.lineAt(view.lineBlockAtHeight(at - view.documentTop).from).number;
+    const toward = drag.way < 0 ? Math.min(row, start) : drag.way > 0 ? Math.max(row, start) : row;
+    const onSide = (line: number): boolean => {
+      const place = this.#placeAt(line);
+      return place.line > 0 && place.side === drag.side;
+    };
+    drag.end = this.#placeAt(restingEnd(start, toward, onSide)).line;
+    const { key, side, anchor, end } = drag;
+    this.#beside.drag({ key, file: 0, side, anchor, end });
+    this.#relight();
+    return linesWords(side, anchor, end);
+  }
+
+  /**
+   * Where the scroll around the excerpt shows what it holds, on the page: a drag from a handle
+   * scrolls it with the pointer near its top or its foot, not near the foot of the block the
+   * excerpt is cut off in, which the end stops at.
+   */
+  #paneBand(): Band {
+    const scroller = this.#scrollBox();
+    const height = window.innerHeight;
+    if (scroller === scroller.ownerDocument.body) return { top: 0, bottom: height };
+    const { top, bottom } = scroller.getBoundingClientRect();
+    return { top: Math.max(0, top), bottom: Math.min(height, bottom) };
+  }
+
+  /** A drag that picks lines scrolls the scroll around the excerpt `by` pixels: whether it moved. */
+  #scrollPane(by: number): boolean {
+    const scroller = this.#scrollBox();
+    const before = scroller.scrollTop;
+    scroller.scrollTop = before + by;
+    return scroller.scrollTop !== before;
+  }
+
+  /**
+   * A drag from an end of an open box's bracket let go, `letGo`, or dropped: the bracket is the
+   * box's again, and the box comes back, under the lines picked where the caller moves it there
+   * (`Composer.move`), else where it was. Focus goes back where it was.
+   */
+  #endDrag(drag: EndDrag, letGo: boolean): void {
+    if (this.#drag !== drag) return;
+    this.#handleTips.dragEnded(drag.started);
+    this.#drag = undefined;
+    this.#beside.drag(undefined);
+    const { box } = drag;
+    if (!drag.started) {
+      this.#relight();
+      return;
+    }
+    const from = Math.min(drag.anchor, drag.end);
+    const to = Math.max(drag.anchor, drag.end);
+    const changed = letGo && (from !== drag.first || to !== drag.place.line);
+    const before = box.target;
+    // Beside lines the popover comes back first, so it's placed by its size where it goes.
+    this.#stepAside(box, false);
+    if (changed) box.relines?.({ file: this.#id, side: drag.side, from, to });
+    // Between lines, back where it was, as nothing moved it: the caller may move it soon.
+    if (this.#mode === 'between' && box.target === before) this.#drawBlocks();
+    // Focus goes back where it was, which stepping aside took it from.
+    const { had } = drag;
+    if (had && box.dom.contains(had)) {
+      if (!box.hasFocus) box.focusShown();
+    } else if (
+      had instanceof HTMLElement &&
+      had.isConnected &&
+      !had.contains(document.activeElement)
+    ) {
+      had.focus({ preventScroll: true });
+    }
+    this.#relight();
+  }
+
+  /**
+   * Box `box` steps aside while an end of its bracket is dragged, `true`: beside lines the popover
+   * leaves; between lines its block leaves the flow, the lines above it staying where they are. Or
+   * it's let back, `false`: beside lines the popover comes back where it's placed; between lines
+   * it's under its line again as the blocks are next drawn, where it's moved or where it was.
+   */
+  #stepAside(box: CommentBox, aside: boolean): void {
+    if (!aside) {
+      // Whichever way threads show now, as they may have changed meanwhile.
+      this.#beside.stepAside(false);
+      const was = this.#aside;
+      this.#aside = undefined;
+      if (was && !this.#boxes.has(was.line)) this.#boxes.set(was.line, was.box);
+      return;
+    }
+    if (this.#mode === 'beside') {
+      this.#beside.stepAside(true);
+      return;
+    }
+    const line = this.#lineOfBox(box);
+    if (line === undefined) return;
+    this.#aside = { box, line };
+    // It waits on the page, unseen, so focus in it is let go, not caught by what's around it as if
+    // the box had gone; its block then draws without it.
+    this.#parked.hidden = true;
+    if (!this.#parked.isConnected) this.dom.append(this.#parked);
+    this.#parked.append(box.dom);
+    this.#boxes.delete(line);
+    this.#drawBlocks();
   }
 
   // Holding ---------------------------------------------------------------------------------
@@ -1416,6 +1757,11 @@ class Excerpt implements ExcerptView {
   }
 
   destroy(): void {
+    const drag = this.#drag;
+    if (drag) {
+      drag.stop?.();
+      this.#endDrag(drag, false);
+    }
     // Focus in its code or its popover goes to the scroll around it, as the overview, not to the
     // page, once they're gone: the scroll found now, while the excerpt is in it.
     const active = this.dom.ownerDocument.activeElement;
@@ -1446,6 +1792,8 @@ class Excerpt implements ExcerptView {
     for (const box of this.#boxes.values()) box.destroy();
     this.#boxes.clear();
     this.#boxSpans.clear();
+    this.#boxPlaces.clear();
+    this.#parked.remove();
     this.#hosts.destroy();
     this.#sizes?.destroy();
     this.#view.destroy();

@@ -52,6 +52,7 @@ import { dragEdge, limitOf, resizing } from '../drag.ts';
 import { EDIT_SLOT_EVENT } from '../edits.ts';
 import { keepEnd } from '../ends.ts';
 import { fitSides, shareOf, SIDE_MIN } from '../fit.ts';
+import { boxDraftKey, handleEnd, HandleTips, handleTip } from './handles.ts';
 import { type Tip, TIPPED, tips } from './tip.ts';
 import type {
   Anchor,
@@ -343,21 +344,6 @@ interface EndDrag extends Pick {
   readonly had: Element | null;
   started: boolean;
   stop: (() => void) | undefined;
-}
-
-/**
- * What an end of an open box's bracket says under the pointer, by the end: which it is, and the
- * keys that move it, by the commands they run. On one line, those that add a line either way.
- */
-const HANDLE_TIPS = {
-  first: { label: 'First line', commands: ['comments.lineAbove', 'comments.dropFirst'] },
-  last: { label: 'Last line', commands: ['comments.lineBelow', 'comments.dropLast'] },
-  both: { label: 'First and last line', commands: ['comments.lineAbove', 'comments.lineBelow'] },
-} as const;
-
-/** The lane's name for the draft of a box under `place`, from line `from` where it starts above. */
-function boxDraftKey(place: At, from: { line: number } | undefined): string {
-  return draftKey(place.file, place.side, from?.line ?? place.line, place.line);
 }
 
 /** Replaces one file's decorations. */
@@ -664,13 +650,8 @@ class View implements DiffView {
   #aside: CommentBox | undefined;
   /** Where that box waits, unseen, until it's drawn again. */
   readonly #parked = document.createElement('div');
-  /**
-   * Whether the ends of boxes' brackets show no tip: from a drag from one let go on the end it moved
-   * until the pointer leaves it, so its tip doesn't come back over the box let go under it.
-   */
-  #handlesQuiet = false;
-  /** Where the pointer last moved over the view, while it's over it. */
-  #pointerAt: { readonly x: number; readonly y: number } | undefined;
+  /** The handles' tips, which wait after a drag from one. */
+  readonly #handleTips: HandleTips;
   /** Whether the press last made in the view dragged from the `+`: its click is none of the `+`'s. */
   #picked = false;
   /** The file the `+` last came to, whose lines that take a comment the caller was asked for. */
@@ -880,9 +861,8 @@ class View implements DiffView {
     this.dom.addEventListener('pointerdown', this.#unpick, { capture: true });
     // An end of an open box's bracket drags, and its click does nothing.
     this.dom.addEventListener('pointerdown', this.#pressHandle);
-    this.dom.addEventListener('click', this.#clickHandle, { capture: true });
-    this.dom.addEventListener('pointermove', this.#offHandle, { passive: true });
-    this.dom.addEventListener('pointerleave', this.#offHandle, { passive: true });
+    this.#handleTips = new HandleTips(this.dom);
+    this.#stops.push(() => this.#handleTips.destroy());
     this.dom.append(this.#add);
     this.dom.addEventListener('click', this.#runControl);
     this.dom.addEventListener('click', this.#openMore);
@@ -4547,12 +4527,8 @@ class View implements DiffView {
   #tipOf(control: HTMLElement): Tip | undefined {
     // A mark beside lines has none: what the pointer resting on it shows is its thread.
     if (control.dataset.beside !== undefined) return undefined;
-    const handle = control.dataset.handle;
-    if (handle === 'first' || handle === 'last' || handle === 'both') {
-      if (this.#handlesQuiet) return undefined;
-      const { label, commands } = HANDLE_TIPS[handle];
-      return { label, keys: commands.flatMap((id) => controlOf(id)?.keys ?? []) };
-    }
+    const handle = handleEnd(control);
+    if (handle !== undefined) return this.#handleTips.quiet ? undefined : handleTip(handle);
     const id = control.dataset.command;
     // A mark, or a name cut short, which says what it is, and no key.
     if (id === undefined) {
@@ -4762,28 +4738,6 @@ class View implements DiffView {
   };
 
   /**
-   * The pointer moved over the view, or left it. Off the end of a bracket it let go a drag on, the
-   * ends show their tips again.
-   */
-  readonly #offHandle = (event: PointerEvent): void => {
-    const left = event.type === 'pointerleave';
-    this.#pointerAt = left ? undefined : { x: event.clientX, y: event.clientY };
-    if (!this.#handlesQuiet) return;
-    const { target } = event;
-    if (left || !(target instanceof Element) || target.closest('.lo-handle') === null) {
-      this.#handlesQuiet = false;
-    }
-  };
-
-  /** A click on an end of an open box's bracket does nothing, whatever its cell draws. */
-  readonly #clickHandle = (event: MouseEvent): void => {
-    const { target } = event;
-    if (!(target instanceof Element) || target.closest('.lo-handle') === null) return;
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  /**
    * The new comment's box whose bracket in the lane is range `key`, with handles at its ends: the
    * popover's, beside lines, or one open in the flow, between them.
    */
@@ -4850,9 +4804,7 @@ class View implements DiffView {
     if (this.#pick !== drag) return;
     // Let go on the end it moved, as it's drawn still, its tip waits for the pointer to come to it
     // again.
-    const at = this.#pointerAt;
-    const under = drag.started && at ? this.dom.ownerDocument.elementFromPoint(at.x, at.y) : null;
-    this.#handlesQuiet = Boolean(under?.closest('.lo-handle'));
+    this.#handleTips.dragEnded(drag.started);
     this.#pick = undefined;
     this.#beside.drag(undefined);
     const { box } = drag;

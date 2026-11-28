@@ -1005,7 +1005,8 @@ text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" di
   Preview is at the right, then the control that closes the box (`close`), which keeps the draft.
   "as login" shows only when more than one account is signed in. On a new comment on lines those
   words are a button: its menu, its keys and the bracket's two ends in the gutter change the lines,
-  and the box keeps its text.
+  and the box keeps its text. In an overview's code block they're a button on any new comment,
+  wherever it goes, and the lines change within those the block shows.
 - **Body.** The editor, or its preview. The box has one ring, which is its focus; nothing inside it
   has another. An empty box under the pull request says what it's for in a quiet hint (`hint`):
   "Comment on #264"; one whose head says it, as a reply's does, has none.

@@ -13,15 +13,18 @@ import {
   blockWhere,
   boxAt,
   changedLines,
+  changedOnBlock,
   commentableOn,
   commentedOn,
   commentOnText,
   draftOn,
+  draftOnPlace,
   hunksOf,
   linesAt,
   NO_LINE_ABOVE,
   NO_LINE_BELOW,
   notesOf,
+  notFollowed,
   ONE_LINE,
   placeKey,
   placeOf,
@@ -485,6 +488,8 @@ describe('changing a new comment’s lines', () => {
     expect(changedLines(undefined, right(4, 5), 'lineAbove')).toBe(NO_LINE_ABOVE);
     expect(draftOn(right(35, 38))).toBe('A draft is already on lines 35–38');
     expect(draftOn(Lines.one(Line.right(33)))).toBe('A draft is already on line 33');
+    expect(notFollowed(right(5, 6), 'r2')).toBe('Couldn’t follow lines 5–6 to r2');
+    expect(notFollowed(Lines.one(Line.right(5)), undefined)).toBe('Couldn’t follow line 5');
   });
 
   test('a removed line keeps to the old side', () => {
@@ -508,5 +513,42 @@ describe('changing a new comment’s lines', () => {
     expect(changedLines(takes, replaced, 'dropLast')).toEqual(
       Lines.range(Line.left(5), Line.right(5)),
     );
+  });
+});
+
+/** Removed lines `from` to `to` of a code block. */
+function old(from: number, to: number) {
+  return { side: 'old', from, to } as const;
+}
+
+describe('changing a new comment’s lines on a code block', () => {
+  // The removed lines a block shows: two runs, with lines of the newer side between them.
+  const shown = [5, 6, 10, 11];
+
+  test('a line added is the next one that way the block shows on the lines’ side', () => {
+    expect(changedOnBlock(shown, old(6, 6), 'lineBelow')).toEqual(old(6, 10));
+    expect(changedOnBlock(shown, old(10, 11), 'lineAbove')).toEqual(old(6, 11));
+    expect(changedOnBlock(shown, old(5, 6), 'lineAbove')).toBe(NO_LINE_ABOVE);
+    expect(changedOnBlock(shown, old(10, 11), 'lineBelow')).toBe(NO_LINE_BELOW);
+  });
+
+  test('a line taken off leaves the next as the end, never past the other', () => {
+    expect(changedOnBlock(shown, old(6, 11), 'dropFirst')).toEqual(old(10, 11));
+    expect(changedOnBlock(shown, old(5, 10), 'dropLast')).toEqual(old(5, 6));
+    expect(changedOnBlock(shown, old(10, 11), 'dropFirst')).toEqual(old(11, 11));
+    expect(changedOnBlock(shown, old(10, 10), 'dropFirst')).toBe(ONE_LINE);
+    expect(changedOnBlock(shown, old(10, 10), 'dropLast')).toBe(ONE_LINE);
+  });
+
+  test('another draft where the comment goes is named by what it’s on', () => {
+    const lines: DraftPlaceRow = {
+      kind: 'thread',
+      commit: 'a'.repeat(40),
+      path: 'src/a.ts',
+      lines: { start: null, end: { side: 'RIGHT', number: 6 } },
+    };
+    expect(draftOnPlace(lines)).toBe('A draft is already on line 6');
+    expect(draftOnPlace({ ...lines, lines: null })).toBe('A draft is already on this file');
+    expect(draftOnPlace({ kind: 'conversation' })).toBe('A draft is already on this pull request');
   });
 });
