@@ -815,7 +815,7 @@ describe('the look step', () => {
       { name: 'Theme', cards: ['Dark', 'Light', 'System'], chosen: 'System' },
       { name: 'Diff layout', cards: ['Side by side', 'Inline'], chosen: 'Side by side' },
       {
-        name: 'Threads in code',
+        name: 'Threads and overview notes',
         cards: [THREADS.beside, THREADS.between],
         chosen: threadsDefault,
       },
@@ -873,10 +873,10 @@ describe('the look step', () => {
     pressKey('j');
     expect(focused()).toEqual({ group: 'Diff layout', card: 'Side by side' });
     pressKey('ArrowDown');
-    expect(focused()).toEqual({ group: 'Threads in code', card: threadsDefault });
+    expect(focused()).toEqual({ group: 'Threads and overview notes', card: threadsDefault });
     // Nothing past the last group.
     pressKey('j');
-    expect(focused()).toEqual({ group: 'Threads in code', card: threadsDefault });
+    expect(focused()).toEqual({ group: 'Threads and overview notes', card: threadsDefault });
     pressKey('k');
     expect(focused()).toEqual({ group: 'Diff layout', card: 'Side by side' });
     pressKey('k');

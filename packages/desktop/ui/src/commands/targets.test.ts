@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { fit, isOn, plainTarget, type LineTarget, type Target } from './targets.ts';
+import { fit, isOn, plainTarget, together, type LineTarget, type Target } from './targets.ts';
 
 const line: LineTarget = { kind: 'line', at: { file: 'a.ts', side: 'new', line: 4 }, thread: 't1' };
 
@@ -38,6 +38,31 @@ test('a line or a header in a comment box gives the box, and nothing else does',
   expect(fit(['line', 'box'], inBox)).toBe(inBox);
   expect(plainTarget(inBox)).toEqual(inBox);
   expect(plainTarget({ kind: 'box', box: 'b1' })).toEqual({ kind: 'box', box: 'b1' });
+});
+
+test('a line under an overview note gives the note, where no thread or draft takes it', () => {
+  const at = { file: 'a.ts', side: 'new', line: 4 } as const;
+  const noted: LineTarget = { kind: 'line', at, note: true };
+  expect(fit(['note'], noted)).toEqual({ kind: 'note', at });
+  expect(isOn(noted, 'note')).toBe(true);
+  expect(fit(['note'], { ...noted, thread: 't1' })).toBeUndefined();
+  expect(fit(['note'], { ...noted, draft: true })).toBeUndefined();
+  expect(fit(['note'], { kind: 'line', at })).toBeUndefined();
+  expect(fit(['note'], { ...noted, at: { file: 'a.ts', side: 'new', from: 3, to: 4 } })).toBe(
+    undefined,
+  );
+  // One of the popover's notes, by its key, is as it is.
+  const one: Target = { kind: 'note', at, note: 'n1' };
+  expect(fit(['note'], one)).toBe(one);
+  expect(plainTarget({ ...one, extra: 1 } as Target)).toEqual(one);
+  expect(plainTarget(noted)).toEqual(noted);
+});
+
+test('a thread, a draft and a note are never on one line together, so their keys may be the same', () => {
+  expect(together('thread', 'note')).toBe(false);
+  expect(together('draft', 'note')).toBe(false);
+  expect(together('note', 'note')).toBe(true);
+  expect(together('line', 'note')).toBe(true);
 });
 
 test('a line with a draft’s mark gives the draft, but where it gives a thread, or is lines', () => {
