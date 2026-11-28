@@ -26,8 +26,9 @@ export interface CommandButtonProps extends Omit<
 /**
  * A button for a command, where its key doesn't work, as in Settings or a status item's details:
  * it runs the command as its key does, gives the command's label and key in its tooltip, and while
- * the command can't run it's dimmed with the reason. It follows the keymap file, and draws nothing
- * for a command that isn't there.
+ * the command can't run it's dimmed with the reason. A button whose words are the command's label,
+ * for a command with no key, has no tooltip while it can run: it would only say its words again.
+ * It follows the keymap file, and draws nothing for a command that isn't there.
  */
 export function CommandButton({
   command,
@@ -40,13 +41,17 @@ export function CommandButton({
   const control = useControl(command, target);
   if (!control) return null;
   const { off } = control;
+  // What its tooltip says: why it can't run, or the command's label with its key, or the words of
+  // its own `hint`, or the label in full beside words of its own. Nothing, where it says the label.
+  const ownWords = hint !== undefined || (children !== undefined && children !== control.label);
+  const tip = off ?? (ownWords || control.keys !== undefined ? (hint ?? control.label) : null);
   return (
     <>
       <Button
         {...button}
         disabled={off !== undefined}
         aria-describedby={off ? why : undefined}
-        hint={<Ticks text={off ?? hint ?? control.label} />}
+        hint={tip === null ? null : <Ticks text={tip} />}
         hintKeys={off === undefined ? control.keys : undefined}
         hintShortcut={off === undefined ? control.shortcut : undefined}
         onClick={() => runControl(command, target)}

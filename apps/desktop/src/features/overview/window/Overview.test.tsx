@@ -214,7 +214,11 @@ function faceOf(button: HTMLButtonElement | undefined): string | undefined {
   const shown = [...faces].find(
     (face) => !face.classList.contains('invisible') && face.getAttribute('aria-hidden') !== 'true',
   );
-  return shown?.textContent ?? undefined;
+  // Each face holds the key's chip after its words.
+  const words = shown?.cloneNode(true);
+  if (!(words instanceof Element)) return undefined;
+  for (const chip of words.querySelectorAll('kbd')) chip.remove();
+  return words.textContent;
 }
 
 /**
