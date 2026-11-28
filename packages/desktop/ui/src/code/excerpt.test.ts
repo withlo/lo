@@ -19,6 +19,7 @@ import { findScope, isKeySource, KEY_EVENT } from '../commands/index.ts';
 import { SHOW_EVENT, shownIn } from '../reveal.ts';
 import type {
   ComposerEvents,
+  DraftMark,
   ExcerptEvents,
   ExcerptInit,
   ExcerptView,
@@ -1511,5 +1512,69 @@ describe('a new comment’s lines changing', () => {
     expect(excerpt.popoverPinned()).toBe(true);
     expect(inBox(document.activeElement)).toBe(true);
     expect(composer.move({ file: 'a0', side: 'new', from: 7, to: 30 })).toBe(false);
+  });
+});
+
+/** A pointer event of `type` at height `y`, as the pointer that presses a handle sends it. */
+function pointer(type: string, y: number): PointerEvent {
+  return new PointerEvent(type, { bubbles: true, button: 0, clientX: 4, clientY: y, pointerId: 1 });
+}
+
+/** The mark of a new comment's draft on `a`'s new lines `from` to `to`, shown in its box. */
+function shownMark(from: number, to: number): DraftMark {
+  return {
+    at: { file: 'a', side: 'new', from, to },
+    words: `lines ${from}–${to}`,
+    shown: true,
+    open: () => {},
+  };
+}
+
+describe('a new comment’s bracket dragged by an end', () => {
+  test('between lines, a box moved while it’s stepped aside for a drag comes back under its new line alone', async () => {
+    const shown = open();
+    const composer = shown.compose(
+      { file: 'a', side: 'new', from: 6, to: 8 },
+      'New',
+      composerEvents(),
+    );
+    // Its draft's mark, which draws its bracket, as the caller has it.
+    shown.setDrafts([shownMark(6, 8)]);
+    await Promise.resolve();
+    const box = boxes()[0]!;
+    const handle = parent!.querySelector<HTMLElement>(
+      '.lo-threadlane .lo-handle[data-handle="last"]',
+    );
+    expect(handle).not.toBeNull();
+    const gutter = handle!.closest<HTMLElement>('.cm-gutter')!;
+    // jsdom has no pointer capture, nor finds what's under a point.
+    Object.assign(gutter, {
+      setPointerCapture: () => {},
+      hasPointerCapture: () => false,
+      releasePointerCapture: () => {},
+    });
+    Object.defineProperty(document, 'elementFromPoint', { value: () => null, configurable: true });
+    onTestFinished(() => {
+      Reflect.deleteProperty(document, 'elementFromPoint');
+    });
+    handle!.dispatchEvent(pointer('pointerdown', 100));
+    gutter.dispatchEvent(pointer('pointermove', 120));
+    await frame();
+    // Out of the flow, unseen.
+    expect(box.closest('[hidden]')).not.toBeNull();
+    // Its lines change meanwhile, as when what was asked for before lands.
+    expect(composer.move({ file: 'a', side: 'new', from: 6, to: 10 })).toBe(true);
+    expect(box.closest('[hidden]')).not.toBeNull();
+    gutter.dispatchEvent(pointer('pointerup', 120));
+    await frame();
+    const seen = [...boxes()].filter((each) => each.closest('[hidden]') === null);
+    expect(seen).toEqual([box]);
+    expect(under(box)).toBe('line 10');
+    // Gone, nothing of it stays, and a box opened on its old line is a new one.
+    composer.dismiss();
+    expect(boxes()).toHaveLength(0);
+    const again = shown.compose(at(8), '', composerEvents());
+    expect(again).not.toBe(composer);
+    expect(boxes()).toHaveLength(1);
   });
 });

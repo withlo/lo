@@ -70,6 +70,8 @@ import {
   blockKey,
   blockLines,
   commentOnHead,
+  commentOnHeadNow,
+  type CommentOnHead,
   onOverviewShown,
   overviewOnScreen,
   revisionName,
@@ -432,6 +434,8 @@ export class Box {
   home: Home = IN_DIFF;
   /** Where its composer is drawn, while it has one. */
   drawnIn: 'diff' | 'block' | 'timeline' | undefined;
+  /** The code block its composer is drawn in, while it's in one: of blocks drawn the same, its own. */
+  drawnBlock: WritingBlock | undefined;
   /**
    * The box as it was as the diff, drawn again, took it down open: it opens in the diff drawn anew
    * as it was, whatever the overview did meanwhile, until that diff has placed it or couldn't
@@ -861,7 +865,8 @@ function show(box: Box, diff: WritingDiff | undefined, preferred?: WritingBlock)
           (each) => each !== box && each.composer && spotOfBox(each) === spot,
         );
       if (there) return false;
-      drew(box, block.compose(at, box.state.text, eventsOf(box), framer?.(box), options), 'block');
+      const composer = block.compose(at, box.state.text, eventsOf(box), framer?.(box), options);
+      drew(box, composer, 'block', block);
     } else {
       if (opens.kind !== 'diff' || !diff) return false;
       const where = inDiffAt(box, diff);
@@ -893,10 +898,11 @@ function editsOf(place: DraftPlaceRow): { edits?: string } {
   return place.kind === 'edit' && place.thread !== null ? { edits: place.comment } : {};
 }
 
-/** Box `box` is drawn, as `composer`, in `where`. */
-function drew(box: Box, composer: Composer, where: 'diff' | 'block'): void {
+/** Box `box` is drawn, as `composer`, in `where`: in code block `block`, where it's in one. */
+function drew(box: Box, composer: Composer, where: 'diff' | 'block', block?: WritingBlock): void {
   box.composer = composer;
   box.drawnIn = where;
+  box.drawnBlock = where === 'block' ? block : undefined;
   // Its text was rewritten as its frame was drawn, before there was an editor to change, as when a
   // draft comes back with a placeholder whose upload is gone: the editor takes the text as it is.
   const { text } = box.state;
@@ -1351,6 +1357,7 @@ export function takeDrafts(given: DraftsView): void {
         const { composer } = box;
         box.composer = undefined;
         box.drawnIn = undefined;
+        box.drawnBlock = undefined;
         composer.dismiss();
       }
     }
@@ -1799,7 +1806,8 @@ function blockReliningOf(box: Box): BlockRelining | string {
   if (home.kind !== 'block' || inThread(box.state.place) !== undefined) return '';
   const why = heldWhere(box);
   if (why !== undefined) return why;
-  const writing = writingBlock(box.view, keyOfBlock(home.block));
+  // The block it's drawn in, of blocks drawn the same: the lines it shows, and its own place names.
+  const writing = blockDrawn(box.view, keyOfBlock(home.block), box.drawnBlock);
   if (!writing) return '';
   const { at } = home.block;
   return { kind: 'block', box, writing, home: home.block, shown: writing.lines(at.side) };
@@ -1839,11 +1847,22 @@ function draftThere({ box, drawn, path }: Relining, lines: Lines): string | unde
 
 /**
  * The code block lines box `box`'s lines go on as they change `how`, within those the block
- * shows, or why they can't: as in the diff, and not onto a line another box of the block is on.
+ * shows, or why they can't: as in the diff, not onto a line another box of the block is on, and
+ * not where its comment would go on a place another draft is on, where Lo knows that yet.
  */
 function changedFromBlock(relining: BlockRelining, how: LinesChange): BlockSpan | string {
   const at = changedOnBlock(relining.shown, relining.home.at, how);
-  return typeof at === 'string' ? at : (drawnThere(relining, at) ?? at);
+  return typeof at === 'string' ? at : (blockRefusal(relining, at) ?? at);
+}
+
+/**
+ * Why the box being relined can't go on its block's lines `at`, if it can't: another box of the
+ * block is on their last line, or its comment would go where another draft is, where Lo knows
+ * where it goes yet.
+ */
+function blockRefusal(relining: BlockRelining, at: BlockSpan): string | undefined {
+  const goes = blockGoesNow(relining, at);
+  return goes ? clashOf(relining, goes) : drawnThere(relining, at);
 }
 
 /**
@@ -1860,105 +1879,201 @@ function drawnThere({ box, home }: BlockRelining, at: BlockSpan): string | undef
   return undefined;
 }
 
-/** Each box's change of lines on a code block on its way, which the next waits for. */
-const relinings = new WeakMap<Box, Promise<void>>();
-
-/**
- * Changes the lines of box `box`, on a code block, to those `change` gives for them as they are
- * then, once any change before it is done, or says why it can't, as {@link moveOnBlock} does. A key
- * pressed twice moves the lines twice.
- */
-function reliningOnBlock(box: Box, change: (relining: BlockRelining) => BlockSpan | string): void {
-  const before = relinings.get(box) ?? Promise.resolve();
-  const next = before
-    .then(async () => {
-      const relining = reliningOf(box);
-      if (typeof relining === 'string' || relining.kind !== 'block') {
-        if (relining !== '' && typeof relining === 'string') refuse(relining);
-        return;
-      }
-      const at = change(relining);
-      if (typeof at === 'string') {
-        if (at !== '') refuse(at);
-        return;
-      }
-      await moveOnBlock(relining, at);
-    })
-    .catch((error: unknown) => {
-      console.error("Lo couldn't change a comment's lines:", error);
-    });
-  relinings.set(box, next);
-  void next.then(() => {
-    if (relinings.get(box) === next) relinings.delete(box);
-  });
+/** Where a comment written on a code block's lines goes, as `c` on them places it. */
+interface BlockGoes {
+  readonly place: DraftPlaceRow;
+  /** Its draft's home: the lines, and why the comment isn't on them where it isn't. */
+  readonly home: DraftHomeRow;
 }
 
 /**
- * Moves the box being relined on its code block to the block's lines `at`, as it is: the block
- * moves it under their last line, and its comment goes where they are at the head on screen, as
- * `c` on them places it, its head saying so: on those lines there, their file or the pull request.
- * Its draft goes with it, saved there before it leaves its old place, its home the new lines.
- * Another draft where it would go keeps it where it is, and a toast says why. A screen reader hears
- * the new words.
+ * Where a comment on lines `at` of the block in `relining` goes, as `c` on them places it: at
+ * `onHead` on `head`, where `commentable` says which lines there take one.
  */
-async function moveOnBlock(relining: BlockRelining, at: BlockSpan): Promise<void> {
-  const { box, writing, home } = relining;
-  const { view, composer } = box;
-  const head = pullOf(view)?.shown ?? undefined;
-  if (head === undefined || !composer) return;
-  const onHead = await commentOnHead(view, home.commit, home.path, at);
-  // A file gone at the head is named by its path in the base, as GitHub names one it deletes.
-  const commentable = await commentableOf(
-    view,
-    head,
-    onHead.path,
-    onHead.kind === 'gone' ? null : previousAt(view, onHead.path),
-  );
-  // Gone meanwhile: to another push, or the box closed, sent or moved on.
-  const same = box.home.kind === 'block' && box.home.block === home;
-  if (pullOf(view)?.shown !== head || box.composer !== composer || !same) return;
-  const kept = heldWhere(box);
-  if (kept !== undefined) {
-    refuse(kept);
-    return;
-  }
+function blockGoes(
+  { writing, home }: BlockRelining,
+  at: BlockSpan,
+  head: string,
+  onHead: CommentOnHead,
+  commentable: Commentable,
+): BlockGoes {
   const { from } = writing.block;
   const screen = from === null ? Screen.full(head) : Screen.replayed(from, head);
   const goes = blockComment(onHead, commentableOn(screen, commentable));
-  const moved: DraftHomeRow = { ...home, at, why: whyOf(goes), head: head.toLowerCase() };
   const place =
     goes.kind === 'pull'
       ? ON_PULL
       : placeOf(head, onHead.path, goes.kind === 'lines' ? goes.lines : undefined);
-  const key = placeKey(place);
-  const own = boxesOf(view);
-  const other = own.get(key);
+  return { place, home: { ...home, at, why: whyOf(goes), head: head.toLowerCase() } };
+}
+
+/**
+ * Where a comment on lines `at` of the block in `relining` goes, if Lo knows yet: it knows once
+ * it's worked out how the file changed since the block's revision, and which lines take a comment
+ * at the head, as it has for the lines `c` was pressed on.
+ */
+function blockGoesNow(relining: BlockRelining, at: BlockSpan): BlockGoes | undefined {
+  const { view } = relining.box;
+  const { home } = relining;
+  const head = pullOf(view)?.shown ?? undefined;
+  if (head === undefined) return undefined;
+  const onHead = commentOnHeadNow(view, home.commit, home.path, at);
+  if (!onHead) return undefined;
+  // A file gone at the head is named by its path in the base, as GitHub names one it deletes.
+  const previous = onHead.kind === 'gone' ? null : previousAt(view, onHead.path);
+  const commentable = commentableNow(view, head, onHead.path, previous);
+  return commentable && blockGoes(relining, at, head, onHead, commentable);
+}
+
+/**
+ * Where a comment on lines `at` of the block in `relining` goes, once Lo has worked it out: none
+ * where another push came meanwhile.
+ */
+async function blockGoesLater(
+  relining: BlockRelining,
+  at: BlockSpan,
+): Promise<BlockGoes | undefined> {
+  const { view } = relining.box;
+  const { home } = relining;
+  const head = pullOf(view)?.shown ?? undefined;
+  if (head === undefined) return undefined;
+  const onHead = await commentOnHead(view, home.commit, home.path, at);
+  const previous = onHead.kind === 'gone' ? null : previousAt(view, onHead.path);
+  const commentable = await commentableOf(view, head, onHead.path, previous);
+  if (pullOf(view)?.shown !== head) return undefined;
+  return blockGoes(relining, at, head, onHead, commentable);
+}
+
+/**
+ * Why the box being relined can't go where `goes` says: another draft is on that place, or another
+ * box of the block is on the last of its lines.
+ */
+function clashOf(relining: BlockRelining, goes: BlockGoes): string | undefined {
+  const { box } = relining;
+  const other = boxesOf(box.view).get(placeKey(goes.place));
   const taken =
     other !== undefined &&
     other !== box &&
     (other.composer !== undefined || other.state.text.trim() !== '');
-  const why = taken ? draftOnPlace(place) : drawnThere(relining, at);
+  return taken ? draftOnPlace(goes.place) : drawnThere(relining, goes.home.at);
+}
+
+/**
+ * A box whose lines on its code block went before Lo knew where its comment goes on them: the home
+ * it had where that was last known, which it goes back to if its comment can't go there, and the
+ * answer that's waited for, the last change's.
+ */
+interface Placing {
+  readonly settled: DraftHomeRow;
+  done: Promise<void>;
+}
+
+/** Each box whose lines on its code block went before Lo knew where its comment goes. */
+const placings = new WeakMap<Box, Placing>();
+
+/**
+ * Changes the lines of box `box`, on a code block, to those `change` gives for them as they are
+ * now, or says why it can't. The box goes to them at once. Its comment goes where `c` on them
+ * places it, at once where Lo knows that, else once it's worked it out; where it then can't go, as
+ * another draft is there, the box goes back to the lines it was on, and a toast says why. A key
+ * pressed twice moves the lines twice.
+ */
+function reliningOnBlock(box: Box, change: (relining: BlockRelining) => BlockSpan | string): void {
+  const relining = reliningOf(box);
+  if (typeof relining === 'string' || relining.kind !== 'block') {
+    if (relining !== '' && typeof relining === 'string') refuse(relining);
+    return;
+  }
+  const at = change(relining);
+  if (typeof at === 'string') {
+    if (at !== '') refuse(at);
+    return;
+  }
+  const goes = blockGoesNow(relining, at);
+  if (!goes) {
+    placeLater(relining, at);
+    return;
+  }
+  const why = clashOf(relining, goes);
   if (why !== undefined) {
     refuse(why);
     return;
   }
-  if (!composer.move(blockAt(writing, moved))) return;
+  if (box.composer?.move(blockAt(relining.writing, goes.home))) landOnBlock(box, goes);
+}
+
+/**
+ * Moves the box being relined to its block's lines `at` before Lo knows where its comment goes on
+ * them, and places its comment once it does, as {@link reliningOnBlock} says. Meanwhile its comment
+ * is where it was, and a send waits for it.
+ */
+function placeLater(relining: BlockRelining, at: BlockSpan): void {
+  const { box, writing } = relining;
+  const { view, composer } = box;
+  if (!composer) return;
+  const settled = placings.get(box)?.settled ?? relining.home;
+  const lines: DraftHomeRow = { ...relining.home, at };
+  if (!composer.move(blockAt(writing, lines))) return;
+  box.home = { kind: 'block', block: lines };
+  const placing: Placing = { settled, done: Promise.resolve() };
+  placings.set(box, placing);
+  placing.done = blockGoesLater({ ...relining, home: lines }, at)
+    .then((goes) => {
+      // Another change, or one Lo could place at once, came after it.
+      if (placings.get(box) !== placing) return;
+      placings.delete(box);
+      // Moved on meanwhile, as to its file.
+      const here = box.home.kind === 'block' && box.home.block === lines;
+      if (!here) return;
+      const why =
+        goes === undefined ? '' : (heldWhere(box) ?? clashOf({ ...relining, home: lines }, goes));
+      // Its comment goes there, whether or not the box is still open.
+      if (goes && why === undefined) {
+        landOnBlock(box, goes);
+        return;
+      }
+      // Back where it was, its draft's home with it, in the block it's drawn in now.
+      box.home = { kind: 'block', block: settled };
+      const drawn =
+        box.drawnIn === 'block' ? blockDrawn(view, keyOfBlock(settled), box.drawnBlock) : undefined;
+      if (drawn) box.composer?.move(blockAt(drawn, settled));
+      const text = box.composer?.text ?? box.state.text;
+      if (text.trim() !== '') save(view, box.state.place, text, settled);
+      if (why) refuse(why);
+    })
+    .catch((error: unknown) => {
+      console.error("Lo couldn't change a comment's lines:", error);
+    });
+}
+
+/**
+ * Box `box`, moved on its code block to the lines `goes` has, takes where its comment goes there:
+ * its place, its head's words, and its draft, saved there before it leaves its old place, its home
+ * the new lines. A screen reader hears the new words.
+ */
+function landOnBlock(box: Box, { place, home }: BlockGoes): void {
+  const { view, composer } = box;
+  placings.delete(box);
   const was = box.state.place;
   const old = box.key;
+  const key = placeKey(place);
+  const own = boxesOf(view);
   if (old !== key) {
     // An empty box closed there, which nothing shows, gives way.
-    other?.dropSave();
+    own.get(key)?.dropSave();
     own.delete(old);
     box.key = key;
     own.set(key, box);
   }
-  box.home = { kind: 'block', block: moved };
-  box.set({ place, where: whereOf(view, moved, place) });
+  box.home = { kind: 'block', block: home };
+  box.set({ place, where: whereOf(view, home, place) });
   // Its draft is saved at its new place, then leaves its old one, which main may still name until
-  // it hears.
+  // it hears. Where its place stays, its text is saved even when there's none, so a draft it
+  // emptied doesn't stay.
   box.dropSave();
   dropped.get(view)?.delete(key);
-  if (composer.text.trim() !== '') save(view, place, composer.text, moved);
+  const text = composer?.text ?? box.state.text;
+  if (old === key || text.trim() !== '') save(view, place, text, home);
   if (old !== key) {
     save(view, was, '', null);
     holdDroppedAt(view, old);
@@ -2005,7 +2120,7 @@ export function dragLines(box: Box, at: Place | Span): void {
       if (span.side !== home.at.side || !shown.includes(span.from) || !shown.includes(span.to)) {
         return '';
       }
-      return drawnThere(relining, span) ?? span;
+      return blockRefusal(relining, span) ?? span;
     });
     return;
   }
@@ -2165,6 +2280,12 @@ function sendable(box: Box): boolean {
 export async function send(box: Box, how: Send): Promise<void> {
   const { view } = box;
   if (!sendable(box) || drawing.has(box)) return;
+  // Its lines changed on a code block before Lo knew where its comment goes on them: it goes there.
+  const placing = placings.get(box);
+  if (placing) {
+    await placing.done;
+    if (!sendable(box) || drawing.has(box)) return;
+  }
   // Its tree is made first, for a moment at most, so what's sent draws formatted from its first
   // frame, as its card from GitHub then does: the box shows it as it is meanwhile.
   const pull = pullIn(view);
@@ -2845,19 +2966,22 @@ export function dropStartedEdit(view: string, place: DraftPlaceRow): void {
 }
 
 /**
- * Moves a box's text to a box on its file, as GitHub takes no comment on its lines: in the diff,
- * under the file's header; on a code block, under the same lines.
+ * Moves a box's text to a box on its file, as GitHub takes no comment on its lines, or as the
+ * reader `chose` from its lines button's menu: in the diff, under the file's header; on a code
+ * block, under the same lines, its head saying why where GitHub refused them.
  */
-function toFile(box: Box): void {
+function toFile(box: Box, chose = false): void {
   const { view, home } = box;
   const { place, text, primary } = box.state;
   if (place.kind !== 'thread') return;
   const diff = writingDiff(view);
   if (home.kind === 'diff' && !diff) return;
   const onFile: DraftPlaceRow = { ...place, lines: null };
+  // Of blocks drawn the same, it opens again in the one it's in.
+  const block = box.drawnBlock;
   drop(box);
-  const where = home.kind === 'block' ? ON_FILE_NOT_IN_DIFF : undefined;
-  const there = openAt(view, diff, home, onFile, primary, '', where);
+  const where = home.kind === 'block' && !chose ? ON_FILE_NOT_IN_DIFF : undefined;
+  const there = openAt(view, diff, home, onFile, primary, '', where, block);
   if (!there?.composer) return;
   const kept = there.composer.text.replace(/\s+$/, '');
   const moved = kept === '' ? text : `${kept}\n\n${text}`;
@@ -2977,6 +3101,7 @@ export function bringToTimeline(view: string): boolean {
   const { composer } = box;
   box.composer = undefined;
   box.drawnIn = undefined;
+  box.drawnBlock = undefined;
   composer?.dismiss();
   box.home = IN_DIFF;
   box.set({ where: undefined });
@@ -3097,6 +3222,7 @@ export function leftTimeline(box: Box, composer: Composer): void {
   if (box.composer !== composer) return;
   box.composer = undefined;
   box.drawnIn = undefined;
+  box.drawnBlock = undefined;
   composer.dismiss();
   if (box.open) queueMicrotask(() => reopen(box.view));
 }
@@ -3369,7 +3495,7 @@ export const movingToFile: Handler<BoxTarget | LinesTarget> = {
       void onFileOffered.run(target);
       return;
     }
-    if (heldWhere(box) === undefined) act(box, 'onFile');
+    if (heldWhere(box) === undefined) toFile(box, true);
   },
   enabled(target) {
     if (target.kind === 'box') return onFileOffered.enabled?.(target) ?? true;

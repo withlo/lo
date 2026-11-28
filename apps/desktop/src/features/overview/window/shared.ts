@@ -18,7 +18,7 @@ import { blockAt, drawnIn, onDrawn } from './follow.ts';
 import { useStanding } from './hooks.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import type { CommentOnHead } from './mapping.ts';
-import { commentLinesOnHead } from './since.ts';
+import { commentLinesOnHead, commentLinesOnHeadNow } from './since.ts';
 import { codeBlocksIn, labelOf } from './stale.ts';
 import { checked, revisions, states } from './store.ts';
 import {
@@ -264,4 +264,14 @@ export function commentOnHead(
   lines: { readonly side: 'old' | 'new'; readonly from: number; readonly to: number },
 ): Promise<CommentOnHead> {
   return commentLinesOnHead(tab, commit, path, lines);
+}
+
+/** Where lines of a file at an overview's commit are at the head on screen, as {@link commentOnHead} says, if Lo knows yet: nothing while it's still working out how the file changed. */
+export function commentOnHeadNow(
+  tab: string,
+  commit: string,
+  path: string,
+  lines: { readonly side: 'old' | 'new'; readonly from: number; readonly to: number },
+): CommentOnHead | undefined {
+  return commentLinesOnHeadNow(tab, commit, path, lines);
 }

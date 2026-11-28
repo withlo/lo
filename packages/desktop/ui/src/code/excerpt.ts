@@ -1187,6 +1187,15 @@ class Excerpt implements ExcerptView {
     if (old === undefined || (line !== old && this.#boxes.has(line))) return false;
     const focused = box.hasFocus;
     box.retarget(target);
+    this.#boxPlaces.set(box, { place, from });
+    const span = from && this.#laneRange(from, place);
+    this.#boxSpans.set(box, { from: Math.min(span?.from ?? line, line), to: line });
+    // Stepped aside for a drag, it waits there, and comes back under the new line as that ends.
+    if (this.#aside?.box === box) {
+      this.#aside = { box, line };
+      this.#relight();
+      return true;
+    }
     this.#boxes.delete(old);
     // A box moved where one's room is kept takes its place.
     if (line !== old) {
@@ -1194,9 +1203,6 @@ class Excerpt implements ExcerptView {
       this.#rooms.delete(line);
     }
     this.#boxes.set(line, box);
-    this.#boxPlaces.set(box, { place, from });
-    const span = from && this.#laneRange(from, place);
-    this.#boxSpans.set(box, { from: Math.min(span?.from ?? line, line), to: line });
     this.#drawBlocks();
     this.#show(line, box.dom);
     // Focus in it stays in it, which the block it left took out of the page.
