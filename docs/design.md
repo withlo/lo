@@ -946,11 +946,11 @@ changes shows as it comes.
   overview for that block, the box says that instead. A draft the box shows stays in it while it's
   open, with your focus, whatever the overview does. It goes back to its block, if the overview has
   it, only once the timeline goes, as after a restart.
-- **Your comments.** Your own comments on the PR say so and have Edit and Delete, also on their
-  right-click menu. `i` on one opens a box with its text in its card, and `dd` asks first, as a
-  review comment's delete does. Each reads the comment again first and goes only if GitHub still has
-  it as it was, as in the diff. Lo changes only your own comments, never a review or the
-  description.
+- **Your comments.** Your own comments on the PR say so and have Edit and Delete in their menu, from
+  a right-click or the `⋯` that shows on the row under the pointer or the keyboard, as each post's
+  does. `i` on one opens a box with its text in its card, and `dd` asks first, as a review comment's
+  delete does. Each reads the comment again first and goes only if GitHub still has it as it was, as
+  in the diff. Lo changes only your own comments, never a review or the description.
 
 ## 11. Merging and the merge queue
 

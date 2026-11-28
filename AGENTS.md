@@ -1489,9 +1489,9 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
   or else the first row on screen. When the keyboard's row goes, as a comment deleted, the keyboard
   moves to its neighbour, with nothing scrolled.
 - The box at the end comments on the pull request itself, and your comments there have Edit and
-  Delete (`i`, `dd`), drawn through the comments feature's `PullCommentBox`, `PullCommentEdit` and
-  `PullCommentNote`. `window/yours.ts` says which row a key acts on, and refuses the rest in Lo's
-  words.
+  Delete (`i`, `dd`), in the row's menu a post's `shy` `⋯` opens, drawn through the comments
+  feature's `PullCommentBox`, `PullCommentEdit` and `PullCommentNote`. `window/yours.ts` says which
+  row a key acts on, and refuses the rest in Lo's words.
 
 ### Posts
 

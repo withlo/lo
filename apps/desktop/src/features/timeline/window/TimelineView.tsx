@@ -45,8 +45,6 @@ import { registry, setMiddle, useKeys } from '../../../window/commands/registry.
 import { explain, REMEDY_LABELS, remedyOf } from '../../../window/explain.ts';
 import { avatarImage } from '../../../window/images.ts';
 import {
-  deletePullComment,
-  editPullComment,
   Post,
   type PostPull,
   type PullComment,
@@ -541,7 +539,10 @@ function revisionOf(number: number | undefined): string | undefined {
   return number === undefined ? undefined : `r${number}`;
 }
 
-/** A comment of yours on the pull request: its Edit and Delete, its edit's box and its note. */
+/**
+ * A comment of yours on the pull request: its edit's box and its note. Its Edit and Delete are in
+ * its row's menu, from its `⋯` or a right-click.
+ */
 function yourComment(
   tab: PullTab,
   comment: PullComment,
@@ -549,17 +550,11 @@ function yourComment(
   leave: () => void,
 ): {
   mine: true;
-  keys: { edit: string[] | undefined; delete: string[] | undefined };
-  onEdit: () => void;
-  onDelete: () => void;
   editing: ReactNode;
   note: ReactNode;
 } {
   return {
     mine: true,
-    keys: { edit: keysOf('timeline.editComment'), delete: keysOf('timeline.deleteComment') },
-    onEdit: () => void editPullComment(tab, comment),
-    onDelete: () => deletePullComment(tab, comment),
     editing: editing ? (
       <div data-lo-timeline="edit">
         <PullCommentEdit tab={tab} comment={comment.id} leave={leave} />
@@ -621,6 +616,7 @@ function RowOf({
             image: imageOf(person, SMALL),
             state,
           }))}
+          menu
         />
       );
     case 'older':
@@ -653,10 +649,8 @@ function RowOf({
           byAuthor={row.byAuthor}
           hidden={hidden()}
           mine={yours?.mine}
-          keys={yours?.keys}
-          onEdit={yours?.onEdit}
-          onDelete={yours?.onDelete}
           editing={yours?.editing}
+          menu
           body={
             <>
               {yours?.note}
@@ -693,6 +687,7 @@ function RowOf({
           }
           comments={{ count: row.comments }}
           onShowInDiff={() => showReviewInDiff(tab, row, 'go')}
+          menu
         />
       );
     case 'push':
