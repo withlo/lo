@@ -130,6 +130,9 @@ export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
   treeRef?: Ref<HTMLDivElement> | undefined;
 }
 
+/** The rails of a layer with none worked out, which every layer has. */
+const NO_RAIL: RailShape = { branch: false, sprout: false, trunk: false, last: true };
+
 /** The longest a branch's name shows before its middle gives way to an ellipsis. */
 const BRANCH_SHOWN = 30;
 
@@ -173,8 +176,44 @@ function headText(count: number, githubStack: boolean, partly: boolean): string 
 }
 
 /** Whether a layer is on a branch's own rail: one that starts a branch, or sits above one. */
-function onBranch(layer: StackTreeLayer): boolean {
+function onBranch(layer: Pick<StackTreeLayer, 'branch' | 'sitsOn'>): boolean {
   return layer.branch === true || layer.sitsOn !== undefined;
+}
+
+/** How a layer's row draws its part of the rails. */
+export interface RailShape {
+  /** It's on a branch's own rail, one step in. */
+  branch: boolean;
+  /** It starts a branch: its rail bends off the trunk to its ball. */
+  sprout: boolean;
+  /** The trunk runs on down past it to a later layer that branches off it. */
+  trunk: boolean;
+  /** Its rail ends at its ball: nothing below it is on the same rail. */
+  last: boolean;
+}
+
+/**
+ * How each of `layers`' rows draws its part of the rails, the layers in the order `]s` walks them:
+ * the bottom first, each branch finished in turn.
+ */
+export function railsOf(layers: readonly Pick<StackTreeLayer, 'branch' | 'sitsOn'>[]): RailShape[] {
+  // Whether a later layer starts a branch, for each layer: the trunk runs on down to its elbow.
+  const branchesBelow: boolean[] = [];
+  for (let index = layers.length - 1, below = false; index >= 0; index--) {
+    branchesBelow[index] = below;
+    if (layers[index]?.sitsOn !== undefined) below = true;
+  }
+  return layers.map((layer, index) => {
+    const branch = onBranch(layer);
+    const next = layers[index + 1];
+    return {
+      branch,
+      sprout: layer.sitsOn !== undefined,
+      trunk: branch && branchesBelow[index] === true,
+      // A branch's rail ends at its last layer's ball; the trunk's goes on to whatever's below.
+      last: next === undefined || (branch && (next.sitsOn !== undefined || !onBranch(next))),
+    };
+  });
 }
 
 const row = cva('stack-layer', {
@@ -198,7 +237,7 @@ const row = cva('stack-layer', {
   },
 });
 
-const rail = cva('stack-rail', {
+export const rail = cva('stack-rail', {
   variants: {
     sprout: { true: 'stack-rail-sprout', false: '' },
     last: { true: 'stack-rail-last', false: '' },
@@ -220,7 +259,7 @@ const title = cva('truncate', {
 });
 
 /** What each review says, in a word and the color GitHub gives it. */
-const REVIEWS: Record<StackReview, { word: string; tone: string }> = {
+export const REVIEWS: Record<StackReview, { word: string; tone: string }> = {
   approved: { word: 'Approved', tone: 'text-review-approved' },
   changes: { word: 'Changes requested', tone: 'text-review-changes' },
   required: { word: 'Review required', tone: 'text-review-required' },
@@ -258,7 +297,7 @@ function Item({
 }
 
 /** What a layer's state says in place of a review: a finished layer's, or a draft's. */
-const FINISHED: Partial<Record<PullRequestState, { word: string; tone: string }>> = {
+export const FINISHED: Partial<Record<PullRequestState, { word: string; tone: string }>> = {
   draft: { word: 'Draft', tone: 'text-fg-muted' },
   merged: { word: 'Merged', tone: 'text-state-merged' },
   closed: { word: 'Closed', tone: 'text-state-closed' },
@@ -481,12 +520,7 @@ export function StackTree({
   const chosen = layers.filter((each) => each.run !== undefined).length;
   const focusedIndex =
     focused === undefined ? -1 : layers.findIndex((each) => each.key === focused);
-  // Whether a later layer starts a branch, for each layer: the trunk runs on down to its elbow.
-  const branchesBelow: boolean[] = [];
-  for (let index = layers.length - 1, below = false; index >= 0; index--) {
-    branchesBelow[index] = below;
-    if (layers[index]?.sitsOn !== undefined) below = true;
-  }
+  const rails = railsOf(layers);
 
   useKeptInView(scroller, focused, current);
 
@@ -557,12 +591,7 @@ export function StackTree({
           </Tooltip>
         </div>
         {layers.map((layer, index) => {
-          const sprouts = layer.sitsOn !== undefined;
-          const branch = onBranch(layer);
-          const next = layers[index + 1];
-          // A branch's rail ends at its last layer's ball; the trunk's goes on to whatever's below.
-          const last =
-            next === undefined || (branch && (next.sitsOn !== undefined || !onBranch(next)));
+          const { branch, sprout: sprouts, trunk, last } = rails[index] ?? NO_RAIL;
           const finished = layer.state === 'merged' || layer.state === 'closed';
           const onScreen = layer.key === current;
           const outside = banded && layer.run === undefined;
@@ -582,7 +611,7 @@ export function StackTree({
               className={row({
                 branch,
                 sprout: sprouts,
-                trunk: branch && branchesBelow[index] === true,
+                trunk,
                 ground: layer.run ?? (onScreen ? 'current' : 'rest'),
                 focused: layer.key === focused,
               })}

@@ -3,7 +3,7 @@
 // fetched again. Plain functions of what main and the check found, so each wording is tested alone.
 
 import { FORMAT, LIMITS, type Finding, type SizeKind, type Sizes } from '@lo/artifact';
-import { ago, bytes, clock } from '@lo/ui';
+import { ago, bytes, clock, plainName } from '@lo/ui';
 
 import { explain } from '../../../window/explain.ts';
 import type { Byline, OverviewCommit, Problem } from '../contract.ts';
@@ -20,20 +20,6 @@ export function authorOf(byline: Byline): Author {
   if (byline.login !== null) return { kind: 'login', login: byline.login };
   const name = plainName(byline.name);
   return name === '' ? { kind: 'unknown' } : { kind: 'name', name };
-}
-
-/**
- * Quotation marks, straight and curly, what passes for them, and the dots that set the byline's
- * parts apart. An apostrophe between letters, as in O'Brien, isn't one.
- */
-const MARKS = /["“”„‟«»‹›〝〞〟＂″‶ʺ˝״·•‧∙⋅・･ᐧ⸱⸳ꞏ]|(?<!\p{L})['‘’‚‛＇]|['‘’‚‛＇](?!\p{L})/gu;
-
-/**
- * The name a commit gives its author, without what could close Lo's quotes around it early or pass
- * for the byline's own separators, on one line.
- */
-function plainName(name: string): string {
-  return name.replaceAll(MARKS, ' ').replaceAll(/\s+/g, ' ').trim();
 }
 
 /** Lines of a file, after its name and `·`: "line 3", "lines 3–9". */

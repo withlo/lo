@@ -14,6 +14,8 @@ const avatar = cva(
         lg: 'size-avatar-lg',
         // Beside a line of small text, such as an overview's byline.
         sm: 'size-20',
+        // Inside a line of small text, as a term's byline is.
+        xs: 'size-16',
       },
       hue: {
         1: 'bg-avatar-1-bg text-avatar-1',
@@ -47,9 +49,12 @@ export function initials(login: string): string {
   return letters.toUpperCase();
 }
 
+/** How big an avatar is drawn: `lg` beside a comment, `sm` beside small text, `xs` inside it. */
+export type AvatarSize = 'xl' | 'lg' | 'sm' | 'xs';
+
 export interface AvatarProps {
   login: string;
-  size?: 'xl' | 'lg' | 'sm' | undefined;
+  size?: AvatarSize | undefined;
   /**
    * The address of their picture. An empty disc shows until it has loaded, and their initials if it
    * can't be. Without one, only the initials show.
@@ -76,7 +81,7 @@ export function Avatar({ login, size = 'lg', image }: AvatarProps) {
  * An avatar with an address: the one it's given, or the one `redrawPictures` gave for it since,
  * each drawn from the empty disc.
  */
-function Drawn({ login, size, image }: { login: string; size: 'xl' | 'lg' | 'sm'; image: string }) {
+function Drawn({ login, size, image }: { login: string; size: AvatarSize; image: string }) {
   const address = useSyncExternalStore(watchRedraws, () => replaced.get(image) ?? image);
   useLayoutEffect(() => {
     drawing.set(image, (drawing.get(image) ?? 0) + 1);
@@ -134,15 +139,7 @@ export function redrawPictures(change: (address: string) => string | undefined):
  * once. One the window already holds shows from the first frame, and one it has drawn before
  * comes back without the move.
  */
-function Picture({
-  login,
-  size,
-  image,
-}: {
-  login: string;
-  size: 'xl' | 'lg' | 'sm';
-  image: string;
-}) {
+function Picture({ login, size, image }: { login: string; size: AvatarSize; image: string }) {
   const [state, setState] = useState<'loading' | 'loaded' | 'failed'>('loading');
   const picture = useRef<HTMLImageElement>(null);
   // Whether the window hadn't drawn the picture before this avatar was, and so it fades in as it
