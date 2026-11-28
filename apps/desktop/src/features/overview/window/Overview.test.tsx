@@ -345,6 +345,45 @@ describe('as the tab opens', () => {
     expect(view.querySelector('.lo-ovmark[role="img"]')).not.toBeNull();
   });
 
+  it('waits as the overview’s skeleton, which the overview comes in over in one Swap', async () => {
+    const tab = tabOf();
+    const view = render(tab);
+    const skeleton = () => view.querySelector('[data-lo-placeholder] .lo-ov-skeleton');
+    // Nothing for the wait's first moments, but what a screen reader hears.
+    expect(skeleton()).toBeNull();
+    expect(view.querySelector('[data-lo-placeholder] [role="status"]')?.textContent).toBe(
+      'Opening pull request…',
+    );
+    await until(() => skeleton() !== null);
+    const checking = checkingFor(tab);
+    act(() => states.set(tab.id, stateOf(tab, { code: 'noGit' })));
+    checking.take(stateOf(tab, { code: 'noGit' }));
+    await until(() => view.querySelector('[data-lo-placeholder]') === null);
+    expect(view.querySelector('[data-lo-overview="shown"]')).not.toBeNull();
+    expect(view.querySelector('.lo-ov-skeleton')).toBeNull();
+    expect(view.querySelector('.lo-ov')?.parentElement?.classList.contains('move-swap')).toBe(true);
+  });
+
+  it('shows an overview that’s checked already at once, with no skeleton before it and no Swap', async () => {
+    const tab = tabOf();
+    act(() => states.set(tab.id, stateOf(tab, { code: 'noGit' })));
+    checkingFor(tab).take(stateOf(tab, { code: 'noGit' }));
+    await until(() => checked.get(tab.id)?.kind === 'checked');
+    let skeleton = false;
+    const watch = new MutationObserver(() => {
+      skeleton ||= document.querySelector('.lo-ov-skeleton') !== null;
+    });
+    watch.observe(document.body, { childList: true, subtree: true });
+    onTestFinished(() => watch.disconnect());
+    const view = render(tab);
+    await until(() => view.querySelector('[data-lo-placeholder]') === null);
+    expect(view.querySelector('[data-lo-overview="shown"]')).not.toBeNull();
+    expect(skeleton).toBe(false);
+    expect(view.querySelector('.lo-ov')?.parentElement?.classList.contains('move-swap')).toBe(
+      false,
+    );
+  });
+
   it('is a place for history while it waits, so a file opened from the tree has a way back', () => {
     const view = render(tabOf());
     expect(waits(view)).toBe(true);
@@ -476,6 +515,21 @@ describe('as the tab opens', () => {
     expect(openings.get(tab.id)).toMatchObject({ on: 'timeline', chose: true });
     expect(showInstead).not.toHaveBeenCalled();
     expect(view.querySelector('[data-lo-overview="reading"]')).not.toBeNull();
+  });
+
+  it('waits for an overview it reads as its skeleton, saying what it reads to a screen reader', async () => {
+    tabs.opened = 'diff.view';
+    const tab = tabOf();
+    const view = render(tab);
+    const status = () => view.querySelector('[data-lo-overview] [role="status"]');
+    expect(status()?.textContent).toBe('Fetching overview…');
+    await until(() => status()?.querySelector('.lo-ov-skeleton') !== null);
+    // Read, it's checked, with the same skeleton on screen.
+    const skeleton = status()?.querySelector('.lo-ov-skeleton');
+    act(() => states.set(tab.id, stateOf(tab)));
+    expect(view.querySelector('[data-lo-overview="checking"]')).not.toBeNull();
+    expect(status()?.textContent).toBe('Checking overview…');
+    expect(status()?.querySelector('.lo-ov-skeleton')).toBe(skeleton);
   });
 
   it('shows the overview as it is, with no wait, in a tab that opened on another view', () => {
