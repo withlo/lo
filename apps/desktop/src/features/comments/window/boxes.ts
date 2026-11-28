@@ -559,6 +559,19 @@ const ASK_AGAIN_MS = 1000;
  */
 const dropped = new Map<string, Set<string>>();
 
+/**
+ * Each view's places whose comments GitHub's answer said it took, until main's drafts no longer
+ * show them on their way: main sends its drafts before its answer, but they can come after it, and
+ * those bring no box back.
+ */
+const answered = new Map<string, Set<string>>();
+
+/** Whether main's draft row `row` shows a comment on its way: sent, or about to be. */
+function onItsWay(row: DraftRow): boolean {
+  const { sending } = row;
+  return row.sent !== null || sending === 'waiting' || sending === 'sending';
+}
+
 /** The views whose drafts the window has heard of since it was loaded. */
 const heard = new Set<string>();
 
@@ -1230,7 +1243,8 @@ export function takeJoined({ id: view, place }: JoinedView): void {
  * Takes the drafts main sent for a view: each box takes how sending it stands, and a box not yet
  * typed in since takes its text. A draft restored as Lo started gets a box that opens once its line
  * is drawn. A draft that moved to a newer push takes its box's place. A box whose draft went after
- * GitHub's answer to it was lost is closed, since main found it posted.
+ * GitHub's answer to it was lost is closed, since main found it posted. Drafts main sent before its
+ * answer that GitHub took a comment, come after it, bring no box back.
  */
 export function takeDrafts(given: DraftsView): void {
   const { id: view } = given;
@@ -1245,6 +1259,16 @@ export function takeDrafts(given: DraftsView): void {
   for (const key of dropping ?? []) {
     if (rows.has(key)) rows.delete(key);
     else dropping?.delete(key);
+  }
+  // What main sent before its answer that GitHub took a box's comment, still showing it on its
+  // way, can come after the answer: it changes nothing. Main's drafts that don't are from after it.
+  const taken = answered.get(view);
+  const stale = new Set<string>();
+  for (const key of taken ?? []) {
+    const row = rows.get(key);
+    if (!row || !onItsWay(row)) taken?.delete(key);
+    // The box that sent it, still there as it waits for its card, takes them as it did.
+    else if (!own.get(key)?.state.landing) stale.add(key);
   }
   const gone: Box[] = [];
   // Those the status bar counts, kept with nowhere to open, which count on wherever main moves them.
@@ -1267,6 +1291,7 @@ export function takeDrafts(given: DraftsView): void {
     gone.push(box);
   }
   for (const [key, row] of rows) {
+    if (stale.has(key)) continue;
     let box = own.get(key);
     if (!box) {
       const moved = gone.find(
@@ -1753,6 +1778,7 @@ export async function send(box: Box, how: Send): Promise<void> {
     switch (outcome.kind) {
       case 'done':
         box.editedAt = outcome.editedAt;
+        holdAnswered(box);
         closeOnceLanded(box, null);
         tell(sentWords(place, how));
         if (place.kind === 'edit' && place.thread === null) {
@@ -1764,6 +1790,7 @@ export async function send(box: Box, how: Send): Promise<void> {
         const { home } = box;
         const went = home.kind === 'block' ? wentFrom(view, home.block, place, outcome) : undefined;
         box.copy = outcome.comment;
+        holdAnswered(box);
         if (went) closeSent(box);
         else closeOnceLanded(box, outcome.thread);
         if (place.kind === 'conversation') wrotePull(view, { kind: 'posted', text });
@@ -2322,6 +2349,21 @@ function discard(box: Box): void {
     .catch((error: unknown) => console.error("Lo couldn't discard a draft:", error));
 }
 
+/**
+ * GitHub's answer says it took what `box` sent: main's drafts from before the answer, which can
+ * come after it, bring no box back at its place. Unless they've closed it already, as when main took
+ * its draft down before the answer came, and those after it are all there are to come.
+ */
+function holdAnswered(box: Box): void {
+  if (sentBoxes.has(box) || landings.has(box)) return;
+  let own = answered.get(box.view);
+  if (!own) {
+    own = new Set();
+    answered.set(box.view, own);
+  }
+  own.add(box.key);
+}
+
 /** Keeps drafts main sent before it heard `box`'s went from bringing it back. */
 function holdDropped(box: Box): void {
   holdDroppedAt(box.view, box.key);
@@ -2406,6 +2448,7 @@ export function keepBoxesOf(kept: ReadonlySet<string>): void {
     }
     pulls.delete(view);
     dropped.delete(view);
+    answered.delete(view);
     if (discarded?.view === view) setDiscarded(undefined);
     caught.delete(view);
     clearTimeout(retrying.get(view));

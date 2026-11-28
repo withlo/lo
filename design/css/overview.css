@@ -385,14 +385,9 @@
 /* --------------------------------------------------------------------------
    Glossary
    -------------------------------------------------------------------------- */
-.lo-glossary {
-  display: grid;
-  grid-template-columns: minmax(120px, 190px) minmax(0, 1fr);
-  border-top: 1px solid var(--lo-border);
-}
-.lo-glossary dt, .lo-glossary dd { padding: 10px 0; border-bottom: 1px solid var(--lo-border-subtle); }
-.lo-glossary dt { padding-right: 16px; font: 600 14px/21px var(--lo-font-ui); }
-.lo-glossary dt code { font-weight: 400; }
-.lo-glossary dd { margin: 0; font: 400 14px/21px var(--lo-font-ui); color: var(--lo-fg); }
-.lo-glossary .is-target { background: var(--lo-current); }
-.lo-glossary dt.is-target { box-shadow: -8px 0 0 var(--lo-current); }
+/* Its rows are `TermRow`s, at reading measure: the terms the pull request adds or changes, then a
+   hairline, then the rest. Why the repo's definitions can't be used sits over them. */
+.lo-glossary { max-width: var(--lo-read-measure); }
+.lo-glossary__note { padding-bottom: 12px; }
+/* The hairline takes the place of the last marked row's own. */
+.lo-glossary__rest { margin-top: -1px; border-top: 1px solid var(--lo-border); }

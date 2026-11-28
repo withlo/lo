@@ -6,15 +6,18 @@
 // Nothing here moves what's on screen but a key, a click or a menu asks it to.
 
 import type { OverviewTree } from '@lo/artifact';
+import { land, reveal } from '@lo/ui';
 import { KEY_EVENT, type Entry, type Target } from '@lo/ui/commands';
 import {
   blockNumber,
   blockOf,
   blockStops,
   focusTargetOf,
+  glossaryIn,
   hasSteps,
   linksIn,
   stepIn,
+  type GlossaryParts,
 } from '@lo/ui/overview';
 
 import { refuse } from '../../../window/commands/notices.tsx';
@@ -239,6 +242,29 @@ export function focusBlock(overview: DrawnOverview, block: HTMLElement): void {
   focusTargetOf(block).focus({ preventScroll: true });
   const scroller = overview.scroller();
   if (scroller) bringOnScreen(scroller, block);
+}
+
+/** The overview's Glossary section, as drawn, if it has one. */
+export function glossaryOf(overview: DrawnOverview): GlossaryParts | undefined {
+  const article = articleOf(overview);
+  return article ? glossaryIn(article) : undefined;
+}
+
+/**
+ * Goes to the overview's Glossary section: its heading at the top of the screen, and the first
+ * term the pull request adds or changes, else its first term, landed on and given focus. The tab's
+ * history keeps where the reader was, so `⌃o` comes back.
+ */
+export function goToGlossary(overview: DrawnOverview): void {
+  const glossary = glossaryOf(overview);
+  if (!glossary) return;
+  letGo(overview);
+  const here = hereIn(overview);
+  if (here) registry().history.record(here);
+  const { heading, box, first, term } = glossary;
+  reveal(heading ?? box, { block: 'start', land: false });
+  term?.focus({ preventScroll: true });
+  if (first) land(first);
 }
 
 /**

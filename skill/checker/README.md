@@ -34,6 +34,21 @@ glossary's marks against the repository's definitions at `refs/lo/terms`, when i
 checks it, then writes it as a commit to push to the pull request's ref, or the stack's.
 `lo-overview --help` lists every command and option (`npx @withlo/overview --help` runs it).
 
+## The repository's workflow
+
+A repository's `.github/workflows/lo-overview.yml` runs two more commands, on GitHub, for its pull
+requests:
+
+- `keep` copies the overview of a pull request from a fork, and the stack overview it names, to
+  `refs/lo/kept/pr/<n>` and `refs/lo/kept/stack/<id>` in the repository, so it outlives the fork.
+- `fold` adds the terms a merged pull request's overview marks `(new)` or `(changed)` to the
+  repository's definitions, at `refs/lo/terms`.
+
+The workflow runs on `pull_request_target` with a token that can write the repository's contents and
+read its pull requests. It never checks out a pull request or runs its code: it fetches git data
+alone, into an empty repository of its own, and checks what it fetched as Lo checks an overview
+before it pushes anything.
+
 ## Needs
 
 - Node 20 or later.

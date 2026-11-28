@@ -2,8 +2,9 @@
 // stack the pull request is a layer of, anywhere in a pull request's tab; installing the overview
 // skill, which has none; and, in Settings, copying the command that
 // installs it from a terminal. In the overview's own view, the `overview` scope: moving between its
-// blocks and within one, following a block to its code, and scrolling; and, on a block's menu,
-// showing the latest overview or reading it again, which have none.
+// blocks and within one, following a block to its code, scrolling, and going to its glossary, which
+// has none; and, on a block's menu, showing the latest overview or reading it again, which have
+// none.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -160,6 +161,17 @@ export default defineCommands(
       keys: [],
       targets: ['block', 'none'],
       menu: { on: 'block', order: 40 },
+    },
+    /**
+     * Brings the overview's Glossary section to the top, and lands on the first term the pull
+     * request adds or changes: from the line under the byline that counts them.
+     */
+    goGlossary: {
+      label: 'Go to glossary',
+      group: 'Review',
+      keys: [],
+      when: overview,
+      control: 'Go to glossary on the line under the overview’s byline',
     },
     /** Reads the overview's ref again now: after a read that failed, or one made only once. */
     retry: {

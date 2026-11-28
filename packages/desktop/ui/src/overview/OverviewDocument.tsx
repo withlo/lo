@@ -47,6 +47,7 @@ import {
   ReachedContext,
   readGlossary,
   type GlossaryState,
+  type OverviewTerms,
   type Reached,
 } from './terms.ts';
 import { Illustration } from './CodeBlock.tsx';
@@ -106,6 +107,12 @@ export interface OverviewDocumentProps {
   hints?: ((block: OverviewBlock, number: number) => readonly BlockHint[]) | undefined;
   /** Where hover cards go: an element inside `.lo-app`. By default, the `.lo-app` it's in. */
   container?: HTMLElement | null | undefined;
+  /**
+   * The repo's definitions, as the overview shows its terms with them: which definition shows for
+   * each, its tags and who it's by, and why they can't be used. Without them, each term shows the
+   * overview's own definition, untagged.
+   */
+  terms?: OverviewTerms | undefined;
   /** The scrolling element. */
   ref?: Ref<HTMLDivElement> | undefined;
   /**
@@ -149,6 +156,7 @@ export function OverviewDocument({
   onFollow,
   hints = blockHints,
   container,
+  terms: shownTerms,
   ref,
   drawing = false,
   seen = !drawing,
@@ -218,7 +226,10 @@ export function OverviewDocument({
     () => ({ anchors, follow, extension, interactive: true }),
     [anchors, follow, extension],
   );
-  const terms = useMemo<GlossaryState>(() => ({ glossary, container: cards }), [glossary]);
+  const terms = useMemo<GlossaryState>(
+    () => ({ glossary, container: cards, terms: shownTerms }),
+    [glossary, shownTerms],
+  );
   const reached = useMemo<Reached>(() => ({ target, leave: () => setTarget(undefined) }), [target]);
   const generation = generationOf(tree);
 

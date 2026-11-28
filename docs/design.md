@@ -658,6 +658,22 @@ the same parser Lo uses, so an artifact that passes will render. It checks that:
 - every figure exists, is a supported type and contains no scripts;
 - the artifact is under the size cap.
 
+### The workflow
+
+A repository with the skill installed has a workflow, `.github/workflows/lo-overview.yml`, that runs
+the checker on GitHub for each pull request, by the skill's version. It runs on
+`pull_request_target`, so it runs for pull requests from forks, and it never checks out or runs a
+pull request's code: it fetches git data alone, into an empty repository, as data.
+
+- **`keep`:** for a PR from a fork, copies the fork's overview, and the stack overview it names, to
+  `refs/lo/kept/pr/<number>` and `refs/lo/kept/stack/<id>` in the base repo, when it's one Lo shows.
+  A copy only moves forward. Lo reads it when the base repo and the fork have none.
+- **`fold`:** when a PR merges, adds the terms its overview marks new or changed to the repo's
+  definitions, `refs/lo/terms`, or suggests the change for a locked term, once per PR. Each is by
+  the account GitHub maps the overview's commit to. A fork's commit can give anyone's address, so
+  for an overview from a fork, that account counts only when it opened the PR; otherwise the term is
+  by the commit's git name, marked not verified.
+
 ### Customization
 
 - **Two files.** `.lo/overview.md`, committed to the repo, holds the team's conventions.
@@ -962,8 +978,9 @@ It's the third middle view, after the overview and the diff. Lo reads it from Gi
 show it, before what it reads in the background, and keeps it current from then on. A long one shows
 its newest events while the older ones are read. `j` and `k` move between its events, `⇥` goes
 through the links and buttons of the one you're on, `Esc` goes back to the list, and `gx` opens it
-on GitHub. What an event's buttons do is also on its right-click menu. A tab acting as nobody asks
-you to sign in to see it, and a run of a stack's layers has none of its own.
+on GitHub. What an event's buttons do is also in its menu, from a right-click or the `⋯` that shows
+on the event under the pointer or the keyboard. A tab acting as nobody asks you to sign in to see
+it, and a run of a stack's layers has none of its own.
 
 What changes on GitHub while you read the timeline waits for your next key, click or scroll, and
 when it comes, what you were reading stays where it is. What your own comment, edit or delete
@@ -980,10 +997,10 @@ changes shows as it comes.
   open, with your focus, whatever the overview does. It goes back to its block, if the overview has
   it, only once the timeline goes, as after a restart.
 - **Your comments.** Your own comments on the PR say so and have Edit and Delete in their menu, from
-  a right-click or the `⋯` that shows on the row under the pointer or the keyboard, as each post's
-  does. `i` on one opens a box with its text in its card, and `dd` asks first, as a review comment's
-  delete does. Each reads the comment again first and goes only if GitHub still has it as it was, as
-  in the diff. Lo changes only your own comments, never a review or the description.
+  a right-click or their `⋯`. `i` on one opens a box with its text in its card, and `dd` asks first,
+  as a review comment's delete does. Each reads the comment again first and goes only if GitHub
+  still has it as it was, as in the diff. Lo changes only your own comments, never a review or the
+  description.
 
 ## 11. Merging and the merge queue
 
