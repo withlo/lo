@@ -43,7 +43,7 @@ once, in `/hooks`.
 
 `"overview.auto": false` turns it off: in the clone's `.lo/settings.json` for everyone, or in your
 own `~/.config/lo/settings.json` (Linux: `$XDG_CONFIG_HOME/lo/settings.json`) for you alone, which
-Lo's Settings › Integrations sets too.
+Lo's Settings › Pull requests sets too.
 
 ### For yourself
 

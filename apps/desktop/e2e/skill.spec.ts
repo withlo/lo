@@ -1,5 +1,5 @@
 // The overview skill's rows in the app: the step on the welcome screen, the rows in Settings'
-// Integrations, automatic overviews among them, and the command in the palette. Each test starts
+// Integrations, the switch for automatic overviews in Pull requests, and the command in the palette. Each test starts
 // Lo with a home folder of its own, so the skill goes into folders the test made and never into the
 // real ~/.claude or ~/.agents, and with the variables that move an agent's folder cleared.
 
@@ -170,12 +170,15 @@ test.describe('in Settings, from a terminal', () => {
 test.describe('in Settings, automatic overviews', () => {
   test('turn off and on again, in the settings file the skill’s hook reads', async ({ page }) => {
     await openSettings(page);
+    await page
+      .getByRole('navigation', { name: 'Settings' })
+      .getByRole('button', { name: 'Pull requests' })
+      .click();
     const auto = page.locator('[data-settings-row="overview.auto"]');
-    await expect(auto).toContainText('Automatic overviews');
     await expect(auto).toContainText(
-      'Coding agents write an overview as they push, in repositories with the overview skill.',
+      'Coding agents write one after opening or pushing to a pull request.',
     );
-    const toggle = auto.getByRole('switch', { name: 'Automatic overviews' });
+    const toggle = auto.getByRole('switch', { name: 'Write overviews automatically' });
     await expect(toggle).toBeChecked();
     await toggle.focus();
     await page.keyboard.press('Space');

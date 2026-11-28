@@ -638,7 +638,7 @@ Claude Code and Codex, in two copies that differ only in when they start:
 - **A person's own, `lo-explain`.** `npx @withlo/overview install`, or Settings › Integrations,
   installs it. It runs only when asked, as for someone else's PR.
 - **Off.** `"overview.auto": false` turns the repo's copy off: in `.lo/settings.json` for the team,
-  or in a person's own settings file, which Settings › Integrations sets, for them alone.
+  or in a person's own settings file, which Settings › Pull requests sets, for them alone.
 
 It tells the agent to:
 

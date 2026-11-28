@@ -1,7 +1,8 @@
 // An overview section's heading, which folds the section: its chevron in the article's 20 px of
 // room at its left, the heading, and its `⋯` at the measure's right edge. Nothing is hidden by a
 // fold: a collapsed section keeps its heading where it is, in `lo-fg-muted`, and a click on its
-// words opens it again. The tl;dr's heading has neither chevron nor menu: it never collapses.
+// words opens it again. Collapsed, it's a block the block keys stop at, with its ring and chip as
+// any has. The tl;dr's heading has neither chevron nor menu: it never collapses.
 
 import type { ReactNode, Ref } from 'react';
 
@@ -32,6 +33,15 @@ export interface SectionHeadProps {
   controls?: string | undefined;
   /** The heading itself. */
   headingRef?: Ref<HTMLHeadingElement> | undefined;
+  /**
+   * The heading's block number in its article, which the article's keys and menus know it by
+   * (`data-lo-section`). Collapsed, the heading is a block they stop at (`data-lo-block`).
+   */
+  number?: number | undefined;
+  /** Collapsed, it's the block with the keyboard's focus: it draws its ring, and `chip`. */
+  focused?: boolean | undefined;
+  /** What a focused block's chip offers on it, drawn while it's focused and collapsed. */
+  chip?: ReactNode;
 }
 
 /**
@@ -49,11 +59,24 @@ export function SectionHead({
   menu = false,
   controls,
   headingRef,
+  number,
+  focused = false,
+  chip,
 }: SectionHeadProps) {
   // Collapsed, its words take a click, which opens it. Open, they're text to select.
   const opens = !open && fold !== undefined ? fold : undefined;
+  // Collapsed, it's a block the keys stop at, standing for the section.
+  const stop = opens !== undefined && number !== undefined;
+  const shown = stop && focused;
   return (
-    <div className="lo-section-head group/head" data-collapsed={opens ? '' : undefined}>
+    <div
+      className={['lo-section-head group/head', stop && 'lo-block', shown && 'is-focused']
+        .filter(Boolean)
+        .join(' ')}
+      data-collapsed={opens ? '' : undefined}
+      data-lo-section={number}
+      data-lo-block={stop ? number : undefined}
+    >
       {fold !== undefined && (
         <span className="lo-section-head__chevron">
           <Chevron command={fold} open={open} controls={open ? controls : undefined} />
@@ -72,6 +95,7 @@ export function SectionHead({
           <MoreButton label={`More actions for ${name}`} />
         </span>
       )}
+      {shown && chip}
     </div>
   );
 }
