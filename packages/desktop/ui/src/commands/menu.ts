@@ -25,7 +25,7 @@ export interface MenuItem {
  * on the target now is there, greyed with its reason, so the menu never hides what the keys can
  * do elsewhere; only a handler's `listed` leaves one out, for a target it doesn't apply to. The
  * commands are in sections, which the menu draws a separator between: a new one starts where the
- * key table's group changes.
+ * key table's group changes, and at a command whose place there is `apart`.
  */
 export function menuSections(registry: Registry, target: Target): MenuItem[][] {
   const commands = registry
@@ -53,7 +53,7 @@ export function menuSections(registry: Registry, target: Target): MenuItem[][] {
       disabled: ready === true ? undefined : ready,
     };
     const last = sections.at(-1);
-    if (last && group === command.group) last.push(item);
+    if (last && group === command.group && place.apart !== true) last.push(item);
     else sections.push([item]);
     group = command.group;
   }

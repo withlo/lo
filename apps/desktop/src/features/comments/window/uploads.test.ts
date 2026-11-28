@@ -117,6 +117,7 @@ function boxWith(text = 'Repro: ', view = 'v1'): Attachable & { text(): string }
     leave() {},
     dismiss() {},
     keep: () => ({ text: current, editor: undefined }),
+    move: () => false,
   };
   made += 1;
   return {
