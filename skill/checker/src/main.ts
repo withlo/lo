@@ -1,7 +1,7 @@
 /**
  * The overview checker's command line. `install` puts the overview skill where a coding agent finds
  * it; `check` reads an overview from a folder and checks it as Lo would; `commit` checks it, then
- * writes it as a commit to push to its pull request's ref.
+ * writes it as a commit to push to its pull request's or its stack's ref.
  *
  * `check` and `commit` exit 0 when the overview has no errors (warnings are fine), 1 when it has
  * errors, and 2 when it can't be checked: no git, no repository, the commit its header names isn't
@@ -15,7 +15,7 @@ import { resolve } from 'node:path';
 import { ARTIFACT, type Finding, type OnRef } from '@lo/artifact';
 
 import { checkFolder, type FolderCheck } from './check.ts';
-import { refOf, writeCommit, type CommitFile, type Written } from './commit.ts';
+import { refOf, writeCommit, type CommitFile, type Owner, type Written } from './commit.ts';
 import { FolderError } from './folder.ts';
 import { GitError, gitIn } from './git.ts';
 import {
@@ -29,12 +29,12 @@ import {
 import { SKILL_NAME } from './skill.ts';
 
 const USAGE = `Installs Lo's overview skill for coding agents, and checks an overview and commits it for
-its pull request.
+its pull request or stack.
 
 Usage:
   lo-overview install [--claude] [--codex] [--dir <folder>] [--json]
   lo-overview check [<dir>] [--pr <number> | --stack <number>] [--repo <folder>] [--json]
-  lo-overview commit <dir> --pr <number> [--repo <folder>] [--json]
+  lo-overview commit <dir> (--pr <number> | --stack <number>) [--repo <folder>] [--json]
 
 Commands:
   install   Install the ${SKILL_NAME} skill, which teaches a coding agent to write an overview,
@@ -42,11 +42,13 @@ Commands:
             With none of the options, for each of Claude Code and Codex set up here. Only the
             skill's own files are replaced.
   check     Check the overview in <dir>, the current folder unless given: its artifact.md and
-            figures/, and the code it names, read from the repository at the commit its header
-            names.
+            figures/, the code it names, read from the repository at the commit its header names,
+            and its glossary's marks, against the repository's definitions at refs/lo/terms when
+            the repository has that ref.
   commit    Check the overview, then write exactly what was checked as a commit in the repository,
-            whose parent is refs/lo/pr/<number>, if that ref is there. Prints the commit's id and
-            how to push it. No ref, index or working tree changes.
+            whose parent is refs/lo/pr/<number>, or refs/lo/stack/<number> for a stack's, if that
+            ref is there. Prints the commit's id and how to push it. No ref, index or working tree
+            changes.
 
 Options:
   --claude        Install the skill for Claude Code, in ~/.claude/skills, or in skills in
@@ -70,7 +72,7 @@ type Command =
   | { kind: 'help' }
   | { kind: 'install'; agents: Agent[]; dir: string | undefined; json: boolean }
   | { kind: 'check'; dir: string; on: OnRef; repo: string | undefined; json: boolean }
-  | { kind: 'commit'; dir: string; pr: number; repo: string | undefined; json: boolean };
+  | { kind: 'commit'; dir: string; owner: Owner; repo: string | undefined; json: boolean };
 
 /** Where the checker writes. */
 export interface Streams {
@@ -193,9 +195,21 @@ function parse(args: readonly string[]): Command {
     }
     case 'commit': {
       if (rest.length !== 1) throw new Error("commit takes the overview's folder.");
-      if (stack !== undefined) throw new Error('commit takes --pr, not --stack.');
-      if (pr === undefined) throw new Error("commit needs --pr, the pull request's number.");
-      return { kind: 'commit', dir: rest[0]!, pr: numberOf(pr, 'pr')!, repo, json };
+      if (pr !== undefined && stack !== undefined) {
+        throw new Error('commit takes --pr or --stack, not both.');
+      }
+      const owner: Owner | undefined =
+        stack !== undefined
+          ? { stack: numberOf(stack, 'stack')! }
+          : pr !== undefined
+            ? { pr: numberOf(pr, 'pr')! }
+            : undefined;
+      if (owner === undefined) {
+        throw new Error(
+          "commit needs --pr, the pull request's number, or --stack, the stack's number.",
+        );
+      }
+      return { kind: 'commit', dir: rest[0]!, owner, repo, json };
     }
     default:
       throw new Error(`${JSON.stringify(name)} isn't a command.`);
@@ -239,13 +253,13 @@ function repository(given: string | undefined): string {
   return path;
 }
 
-/** Checks the overview in `dir`, and when it passes, commits it for `pr`. */
+/** Checks the overview in `dir`, and when it passes, commits it for `owner`. */
 async function commit(
-  { dir, pr, repo, json }: Extract<Command, { kind: 'commit' }>,
+  { dir, owner, repo, json }: Extract<Command, { kind: 'commit' }>,
   streams: Streams,
 ): Promise<number> {
   const git = gitIn(repository(repo));
-  const found = await checkFolder(dir, git, { pr });
+  const found = await checkFolder(dir, git, owner);
   const status = exitStatus(found);
   const { outcome } = found.checked;
   if (status !== 0 || outcome.kind !== 'shown') {
@@ -258,18 +272,18 @@ async function commit(
     if (!bytes) throw new FolderError(`${path} wasn't read whole, so it can't be committed.`);
     files.push({ path, bytes });
   }
-  const written = await writeCommit(git, pr, files);
+  const written = await writeCommit(git, owner, files);
   // Files in figures/ that no block shows aren't checked, so they're left out.
   const unshown = found.folder.entries
     .map(({ path }) => new TextDecoder().decode(path))
     .filter((path) => path.startsWith('figures/') && !shown.includes(path))
     .toSorted();
-  return report(found, json, streams, '', { pr, written, unshown });
+  return report(found, json, streams, '', { owner, written, unshown });
 }
 
 /** What `commit` wrote. */
 interface Committed {
-  pr: number;
+  owner: Owner;
   written: Written;
   unshown: string[];
 }
@@ -301,7 +315,7 @@ function report(
             ? {
                 commit: committed.written.id,
                 parent: committed.written.parent ?? null,
-                ref: refOf(committed.pr),
+                ref: refOf(committed.owner),
                 unshown: committed.unshown,
               }
             : {}),
@@ -321,15 +335,17 @@ function report(
   }
   streams.out(`${summary(findings)}${status === 1 ? after : ''}\n`);
   if (committed) {
-    const { pr, written, unshown } = committed;
+    const { owner, written, unshown } = committed;
     for (const path of unshown) {
       streams.out(`${path} isn't shown in artifact.md, so it's left out of the commit.\n`);
     }
+    const ref = refOf(owner);
     const parent = written.parent
-      ? `with ${refOf(pr)} (${written.parent}) as its parent`
-      : `with no parent, since there's no ${refOf(pr)} here`;
+      ? `with ${ref} (${written.parent}) as its parent`
+      : `with no parent, since there's no ${ref} here`;
+    const whose = owner.stack === undefined ? "the pull request's" : "the stack's";
     streams.out(
-      `\nCommitted the overview as ${written.id}, ${parent}. Push it to the pull request's repository:\n\n  git push <remote> ${written.id}:${refOf(pr)}\n`,
+      `\nCommitted the overview as ${written.id}, ${parent}. Push it to ${whose} repository:\n\n  git push <remote> ${written.id}:${ref}\n`,
     );
   }
   return status;

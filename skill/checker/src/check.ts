@@ -1,7 +1,7 @@
 /**
  * Checking an overview in a folder, as Lo checks one on its pull request's ref: its `artifact.md`
- * and figures from the folder, and its code from the repository the checker runs in, at the
- * commit its header names.
+ * and figures from the folder, its code from the repository the checker runs in, at the commit its
+ * header names, and its glossary's marks against that repository's definitions, when it has them.
  */
 
 import {
@@ -13,11 +13,13 @@ import {
   type CodeReader,
   type OnRef,
   type ParsedArtifact,
+  type StoreRead,
 } from '@lo/artifact';
 
 import { gitCode } from './code.ts';
 import { readFolder, type Folder } from './folder.ts';
 import { GitError, NoGit, run, TooMuch, type Git } from './git.ts';
+import { repositoryStore } from './store.ts';
 
 /** What checking a folder found. */
 export interface FolderCheck {
@@ -58,6 +60,17 @@ export async function checkFolder(dir: string, git: Git, on: OnRef = {}): Promis
     parsed = parseArtifact(artifact.bytes);
   }
 
+  // Read only for a glossary, which is all the marks are checked on.
+  let store: StoreRead | undefined;
+  if (parsed && parsed.glossary.length > 0) {
+    store = await repositoryStore(git)
+      .catch(failed("The repository's definitions, at refs/lo/terms,"))
+      .catch((): StoreRead => ({
+        ok: false,
+        problem: { code: 'unreadable', message: "Lo couldn't read terms.json." },
+      }));
+  }
+
   const code = gitCode(git, parsed?.references.map(({ target }) => target.path) ?? []);
   const readCode: CodeReader = (commit, path, cap, stop) =>
     code.read(commit, path, cap, stop).catch(failed(`The code at ${path}`));
@@ -66,7 +79,7 @@ export async function checkFolder(dir: string, git: Git, on: OnRef = {}): Promis
     read: (path, cap, stop) => folder.read(path, cap, stop).catch(failed(path)),
   };
   try {
-    const checked = await checkArtifact(parsed, files, readCode, on);
+    const checked = await checkArtifact(parsed, files, readCode, { ...on, store });
     const { outcome } = checked;
     // Looked for even when no target reads code, since the header names it all the same.
     const header = parsed?.header;
