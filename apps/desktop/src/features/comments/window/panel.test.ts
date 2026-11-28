@@ -167,6 +167,11 @@ describe('the panel with nothing to list', () => {
       title: 'Sign in to see threads',
       action: 'accounts.addAccount',
     });
+    // Once an account is listed, its button adds one, "Add account…", and the title says so.
+    expect(emptyOf(emptyView('signIn'), 'all', undefined, true)).toMatchObject({
+      title: 'Add an account to see threads',
+      action: 'accounts.addAccount',
+    });
     expect(emptyOf(emptyView('failed', 'Offline.'), 'all')).toEqual({
       kind: 'failed',
       reason: 'Offline.',

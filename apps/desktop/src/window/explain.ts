@@ -162,17 +162,19 @@ export function waitsOut(cause: Cause): boolean {
 
 /**
  * What an error for `cause` offers to do about it: sign in again, for an account GitHub signed out
- * (`signInAgain`); sign in, for what the account, or nobody, can't see (`signIn`); nothing, while
- * trying again can't help until it's waited out ({@link waitsOut}), as with the rate limit, which
- * says when it resets; else try again.
+ * (`signInAgain`); add an account, for what the account signed in can't see (`addAccount`); sign
+ * in, for what nobody signed in can see (`signIn`); nothing, while trying again can't help until
+ * it's waited out ({@link waitsOut}), as with the rate limit, which says when it resets; else try
+ * again.
  */
-export type Remedy = 'tryAgain' | 'signIn' | 'signInAgain' | 'none';
+export type Remedy = 'tryAgain' | 'signIn' | 'addAccount' | 'signInAgain' | 'none';
 
 /** What an error for `cause` offers to do about it, as {@link Remedy} says. */
 export function remedyOf(cause: Cause): Remedy {
   if (waitsOut(cause)) return 'none';
   if (cause.kind === 'signedOut') return 'signInAgain';
-  if (cause.kind === 'hidden' || (cause.kind === 'private' && !cause.signedIn)) return 'signIn';
+  if (cause.kind === 'hidden') return 'addAccount';
+  if (cause.kind === 'private' && !cause.signedIn) return 'signIn';
   return 'tryAgain';
 }
 
@@ -180,6 +182,7 @@ export function remedyOf(cause: Cause): Remedy {
 export const REMEDY_LABELS = {
   tryAgain: 'Try again',
   signIn: 'Sign in with GitHub…',
+  addAccount: 'Add account…',
   signInAgain: 'Sign in again',
 } as const satisfies Record<Exclude<Remedy, 'none'>, string>;
 

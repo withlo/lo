@@ -19,6 +19,7 @@ import { keyLabels, setScopeSource } from '@lo/ui/commands';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
+import { useAdding } from '../../accounts/window/shared.ts';
 import { threadsChanged } from '../../diff/window/shared.ts';
 import { catchUpRevisions, useRevisions } from '../../revisions/window/shared.ts';
 import { usePull, useRun, useTabState, type PullTab } from '../../tab/window/shared.ts';
@@ -180,7 +181,8 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   );
   useExcerpts(openings);
   const groups = groupsIn(view, filter);
-  const empty = emptyOf(threads, filter, run?.layers);
+  const adding = useAdding();
+  const empty = emptyOf(threads, filter, run?.layers, adding);
   const keys = rowKeys(groups);
   const on = focusedIn(keys, focused);
   const counts = filterCounts(

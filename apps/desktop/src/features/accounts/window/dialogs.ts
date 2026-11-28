@@ -4,7 +4,7 @@
 import { IpcError } from '../../../ipc/contract.ts';
 import type { SignInState } from '../contract.ts';
 import { main } from './main.ts';
-import { accountsStore, type OpenDialog, type SignInDialog } from './store.ts';
+import { accountsStore, listedAccounts, type OpenDialog, type SignInDialog } from './store.ts';
 
 let attempts = 0;
 
@@ -61,11 +61,19 @@ function at(dialog: SignInDialog, state: SignInState): SignInDialog {
 
 /**
  * Opens the sign-in dialog and starts signing in with GitHub's device flow, stopping any other
- * sign-in. Closing the dialog stops it.
+ * sign-in. Closing the dialog stops it. While accounts are listed, it adds one to them, and says
+ * so, unless `adds` is false: for signing in a given account, as "Sign in again" does one that was
+ * signed out, which says only that it signs in.
  */
-export function openSignIn(): void {
+export function openSignIn({ adds = true }: { adds?: boolean } = {}): void {
   const attempt = ++attempts;
-  const opening: SignInDialog = { kind: 'signIn', attempt, state: undefined };
+  const listed = listedAccounts();
+  const opening: SignInDialog = {
+    kind: 'signIn',
+    attempt,
+    state: undefined,
+    ...(adds && listed.length > 0 ? { adding: listed } : {}),
+  };
   show(opening);
   main()
     .signIn()

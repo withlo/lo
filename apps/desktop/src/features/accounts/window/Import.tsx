@@ -484,8 +484,13 @@ function view(step: Step, doing: Doing): Shown {
         <Callout key={warning.login} tone="warning">
           <div className="flex items-center gap-8">
             <span className="min-w-0 flex-1">{warning.line}</span>
+            {/* It signs in that account, listed or not: the dialog says only that it signs in. */}
             {warning.signIn && (
-              <Button size="sm" disabled={step.kind !== 'choosing'} onClick={openSignIn}>
+              <Button
+                size="sm"
+                disabled={step.kind !== 'choosing'}
+                onClick={() => openSignIn({ adds: false })}
+              >
                 Sign in with GitHub…
               </Button>
             )}

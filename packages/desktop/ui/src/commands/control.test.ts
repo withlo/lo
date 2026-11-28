@@ -4,6 +4,7 @@ import { afterEach, expect, test } from 'vitest';
 
 import { testCommands, type Ran } from '../../test/commands.ts';
 import { controlOf, heldRegistry, holdRegistry, runControl } from './control.ts';
+import { defineCommands, handlers } from './declare.ts';
 import { listen } from './listener.ts';
 import { Registry } from './registry.ts';
 import type { LineTarget } from './targets.ts';
@@ -40,6 +41,23 @@ test('a control shows its command’s label and its key as they are now', () => 
   registry.setKeymap('bind C diff.comment');
   expect(controlOf('diff.comment', LINE)?.keys).toEqual(['C']);
   expect(controlOf('diff.nothing', LINE)).toBeUndefined();
+});
+
+test('a control is named as the palette names its command on its target now', () => {
+  const declarations = defineCommands('accounts', {
+    add: { label: 'Sign in with GitHub…', group: 'App', keys: [] },
+  });
+  let listed = false;
+  const registry = new Registry({
+    system: 'mac',
+    commands: handlers(declarations, {
+      add: { run() {}, labelled: () => (listed ? 'Add account…' : undefined) },
+    }),
+  });
+  release = holdRegistry(registry);
+  expect(controlOf('accounts.add')?.label).toBe('Sign in with GitHub…');
+  listed = true;
+  expect(controlOf('accounts.add')?.label).toBe('Add account…');
 });
 
 test('it runs its command on its target, as the key does, and says why where it can’t', () => {

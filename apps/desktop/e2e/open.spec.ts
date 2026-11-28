@@ -112,7 +112,7 @@ test('says what a link it doesn’t open is, and sends a web link to the browser
     await input(page).fill('https://github.com/rozed-dev/gone/pull/1');
     await expect(box(page)).toContainText('Can’t open rozed-dev/gone#1');
     await expect(box(page)).toContainText('It doesn’t exist, or none of your accounts can see it.');
-    await expect(box(page).getByRole('button', { name: 'Sign in with GitHub…' })).toBeVisible();
+    await expect(box(page).getByRole('button', { name: 'Add account…' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(box(page)).toBeHidden();
     expect(browsed()).toHaveLength(1);
