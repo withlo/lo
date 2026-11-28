@@ -208,10 +208,16 @@ test('the packed package runs with Node alone, from an empty folder', () => {
   // It carries the skill, and installs it.
   const skills = join(root.dir, 'skills');
   expect(run(['install', '--dir', skills], empty)).toBe(
-    `Installed the lo-overview skill in ${join(skills, 'lo-overview')}.\n`,
+    `Installed the lo-explain skill in ${join(skills, 'lo-explain')}.\n`,
   );
-  expect(listing(join(skills, 'lo-overview'))).toEqual([...skillFiles(), 'references/'].toSorted());
-  expectSkill(join(skills, 'lo-overview'));
+  expect(listing(join(skills, 'lo-explain'))).toEqual([...skillFiles(), 'references/'].toSorted());
+  expectSkill(join(skills, 'lo-explain'));
+  // And a repository's copy, with its hook, as the source has it.
+  const clone = join(root.dir, 'clone');
+  mkdirSync(clone);
+  repositoryOf(clone, { 'a.txt': 'a\n' });
+  expect(run(['install', '--repo', clone], empty)).toContain('Installed the lo-overview skill');
+  expectSkill(join(clone, '.claude/skills/lo-overview'), 'repo');
   // The export installs the same skill, from the file the package ships, for a program that
   // imports it by the name the package exports.
   const script = join(root.dir, 'import-installer.mjs');
@@ -225,9 +231,9 @@ test('the packed package runs with Node alone, from an empty folder', () => {
   );
   const imported = join(root.dir, 'imported');
   execFileSync(process.execPath, [script, imported], { cwd: empty });
-  expectSkill(join(imported, 'lo-overview'));
+  expectSkill(join(imported, 'lo-explain'));
   // Its SKILL.md runs this package, at the version it was packed as.
-  const shipped = readFileSync(join(skills, 'lo-overview', 'SKILL.md'), 'utf8');
+  const shipped = readFileSync(join(skills, 'lo-explain', 'SKILL.md'), 'utf8');
   expect(shipped).toContain(
     `npx --prefix '<work>/tools' --yes ${manifest.name}@${manifest.version} check`,
   );

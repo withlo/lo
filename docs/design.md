@@ -630,7 +630,18 @@ the keyboard.
 ### The overview skill
 
 The skill teaches a coding agent to write an artifact. It lives in Lo's repo and installs into
-Claude Code and Codex. It tells the agent to:
+Claude Code and Codex, in two copies that differ only in when they start:
+
+- **A repo's, `lo-overview`.** `npx @withlo/overview install --repo` writes it into a clone, for the
+  team to merge, with a hook for each agent. After the agent pushes to a PR or opens one, the hook
+  asks it to start the skill, which writes the overview in the background while the agent goes on.
+  One writer runs per PR: a push while it writes is taken in by one more pass once it's done.
+- **A person's own, `lo-explain`.** `npx @withlo/overview install`, or Settings › Integrations,
+  installs it. It runs only when asked, as for someone else's PR.
+- **Off.** `"overview.auto": false` turns the repo's copy off: in `.lo/settings.json` for the team,
+  or in a person's own settings file, which Settings › Pull requests sets, for them alone.
+
+It tells the agent to:
 
 1. **Work in a clone of its own,** which borrows the objects of the clone it starts in and commits
    with its name and email address, and fetch into refs of its own there, never into the clone

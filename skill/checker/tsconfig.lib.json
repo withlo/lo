@@ -2,13 +2,17 @@
   "extends": "../../tsconfig.node.json",
   "compilerOptions": {
     "outDir": ".tsbuild/lib",
-    "types": ["node", "vite/client"]
+    "types": ["node", "vite/client"],
+    "allowJs": true
   },
   "include": ["src/**/*.ts", "package.json"],
   "exclude": ["src/**/*.test.ts"],
   "references": [
     {
       "path": "../../testing"
+    },
+    {
+      "path": ".."
     },
     {
       "path": "../../packages/core/artifact/tsconfig.lib.json"
