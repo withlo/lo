@@ -1,0 +1,70 @@
+// What the reader wrote on a pull request itself that its timeline doesn't show yet, as the box it
+// came from says how it stands: there from the moment it's sent, kept once GitHub has it until the
+// timeline shows it, and gone if it fails, its text back in the box.
+
+import { describe, expect, test } from 'vitest';
+
+import type { DraftPlaceRow } from '../contract.ts';
+import { noted, type BoxSend, type OnPull } from './onpull.ts';
+
+const ON_PULL: DraftPlaceRow = { kind: 'conversation' };
+
+function box(changes: Partial<BoxSend> = {}): BoxSend {
+  return {
+    key: 'box-1',
+    view: 'view-1',
+    place: ON_PULL,
+    text: 'Ship it.',
+    held: true,
+    landing: false,
+    sending: 'sending',
+    ...changes,
+  };
+}
+
+describe('noted', () => {
+  test('a comment is there from the moment it’s sent, says it’s checked for, then has its time', () => {
+    const sending = noted([], box(), 10);
+    expect(sending).toEqual<OnPull[]>([
+      {
+        key: 'box-1',
+        comment: undefined,
+        text: 'Ship it.',
+        state: 'sending',
+        label: 'Sending…',
+        at: undefined,
+      },
+    ]);
+    // The same again changes nothing.
+    expect(noted(sending, box(), 11)).toBe(sending);
+    const checking = noted(sending, box({ sending: 'checking' }), 12);
+    expect(checking[0]).toMatchObject({ state: 'checking', label: 'Checking…' });
+    const taken = noted(checking, box({ landing: true }), 13);
+    expect(taken[0]).toMatchObject({ state: 'sent', at: 13 });
+    // Taken, it stays as the box closes, until the timeline shows it.
+    expect(noted(taken, box({ held: false, landing: false, sending: null, text: '' }), 14)).toBe(
+      taken,
+    );
+  });
+
+  test('one that fails goes, its text back in the box', () => {
+    const sending = noted([], box(), 10);
+    expect(noted(sending, box({ held: false, sending: null }), 11)).toEqual([]);
+  });
+
+  test('an edit on the pull request itself is of its comment, and is saved', () => {
+    const place: DraftPlaceRow = { kind: 'edit', thread: null, comment: 'IC_1' };
+    expect(noted([], box({ place }), 10)[0]).toMatchObject({
+      comment: 'IC_1',
+      label: 'Saving…',
+    });
+  });
+
+  test('what’s written on a file’s lines isn’t the timeline’s', () => {
+    const before: OnPull[] = [];
+    const reply: DraftPlaceRow = { kind: 'reply', thread: 'PRRT_1' };
+    expect(noted(before, box({ place: reply }), 10)).toBe(before);
+    const edit: DraftPlaceRow = { kind: 'edit', thread: 'PRRT_1', comment: 'PRRC_1' };
+    expect(noted(before, box({ place: edit }), 10)).toBe(before);
+  });
+});

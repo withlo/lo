@@ -9,7 +9,7 @@
 import { createElement, type ReactNode } from 'react';
 
 import { choiceOf } from '../../settings/window/shared.ts';
-import type { PullTab } from '../../tab/window/shared.ts';
+import { type PullTab, useTabState } from '../../tab/window/shared.ts';
 import { threads } from '../settings.ts';
 import {
   Dropzone as DropzoneOf,
@@ -47,6 +47,7 @@ import {
   type UploadsHold,
 } from './uploads.ts';
 import { chooseVimKeys as chooseVim } from './vim.ts';
+import { onPull, settleOnPull, type OnPull } from './onpull.ts';
 import { held, threadOfReview } from './threads.ts';
 import { onPullWrite, type PullWrite } from './written.ts';
 
@@ -59,6 +60,7 @@ export type { Attachable, UploadsHold } from './uploads.ts';
 export type { BoxUploads } from './Attached.tsx';
 export type { PullBoxProps, PullEditProps, PullNoteProps } from './TimelineBox.tsx';
 export type { PullWrite } from './written.ts';
+export type { OnPull } from './onpull.ts';
 
 /**
  * The review thread review `review`'s first comment is in, by the review's ID, in pull request's
@@ -206,6 +208,20 @@ export function deletePullComment(tab: PullTab, comment: PullComment): void {
 /** Puts focus in the box at the end of the tab's timeline, as `c` there does. */
 export function focusCommentBox(tab: PullTab): void {
   focusPullBox(tab);
+}
+
+/**
+ * The comments the reader sent from the box at the end of view `view`'s timeline, and the edits of
+ * their comments there, that the timeline on screen doesn't show yet: from the moment each is sent
+ * until it says it does ({@link settleSent}), or one GitHub took has waited five minutes.
+ */
+export function useSentOnPull(view: string): readonly OnPull[] {
+  return useTabState(onPull, view);
+}
+
+/** View `view`'s timeline on screen shows what `keys` sent, or lets them go. */
+export function settleSent(view: string, keys: ReadonlySet<string>): void {
+  settleOnPull(view, keys);
 }
 
 /**

@@ -49,11 +49,14 @@ import {
   editPullComment,
   Post,
   type PostPull,
+  Preview,
   type PullComment,
   PullCommentBox,
   PullCommentEdit,
   PullCommentNote,
+  settleSent,
   useEditsOnPull,
+  useSentOnPull,
 } from '../../comments/window/shared.ts';
 import {
   besideNow,
@@ -84,6 +87,7 @@ import {
 import { main, tabs } from './main.ts';
 import { keepPlace, readingPlace, type ReadingPlace } from './place.ts';
 import { rowsOf, type Part, type Person, type Row } from './rows.ts';
+import { beforeOf, type Before, sentRows } from './sent.ts';
 import {
   beforeShowing,
   comparisons,
@@ -281,10 +285,11 @@ function TimelineOf({ tab, shown }: { tab: PullTab; shown: boolean }) {
   // A timeline that's still loading is its newest page, while the older events are read.
   const reading = status === 'loading';
   const repository = `${tab.owner}/${tab.repo}`;
-  const rows = useMemo(
+  const made = useMemo(
     () => timeline && rowsOf(timeline, repository, { sidebar, revisions, author, reading }),
     [timeline, repository, sidebar, revisions, author, reading],
   );
+  const { rows, landed, saving } = useSent(tab.id, timeline, made, author);
   switch (status) {
     case 'signIn':
       return (
@@ -308,7 +313,7 @@ function TimelineOf({ tab, shown }: { tab: PullTab; shown: boolean }) {
     case 'ready':
     case undefined:
       return rows ? (
-        <Rows tab={tab} shown={shown} rows={rows} />
+        <Rows tab={tab} shown={shown} rows={rows} landed={landed} saving={saving} />
       ) : (
         <Note shown={shown} waiting>
           <MiddlePlaceholder tab={tab} status="Reading timeline…" />
@@ -318,6 +323,76 @@ function TimelineOf({ tab, shown }: { tab: PullTab; shown: boolean }) {
       status satisfies never;
       return null;
   }
+}
+
+/** What each view's timeline held as each comment sent from its box was first seen on its way. */
+const sentBefore = new Map<string, ReadonlyMap<string, Before>>();
+
+/** The rows of tab `tab`'s timeline, with what the reader's writes on the pull request add. */
+interface WithSent {
+  readonly rows: readonly Row[] | undefined;
+  /** The row of GitHub's copy that took each sent comment's place, by the sent row's key. */
+  readonly landed: ReadonlyMap<string, string>;
+  /** What each comment whose edit is on its way says in its time's place: "Saving…". */
+  readonly saving: ReadonlyMap<string, string>;
+}
+
+const NONE: ReadonlyMap<string, string> = new Map();
+
+/**
+ * `made`, tab `tab`'s rows from the timeline on screen, `timeline`, with the reader's comments sent
+ * from the box at its end that it doesn't show yet as its last rows, and their comments there with
+ * the text of edits it doesn't show yet: each until it shows GitHub's copy, which takes its place
+ * with nothing moving. `author` opened the pull request.
+ */
+function useSent(
+  tab: string,
+  timeline: TimelineView['timeline'] | undefined,
+  made: readonly Row[] | undefined,
+  author: string | undefined,
+): WithSent {
+  const sent = useSentOnPull(tab);
+  const login = useLogin(tab);
+  const added = useMemo(() => {
+    if (!made || sent.length === 0) return undefined;
+    // What the timeline holds as a comment is first seen on its way tells GitHub's copy of it.
+    const before = new Map(sentBefore.get(tab));
+    for (const each of sent) {
+      if (each.comment === undefined && !before.has(each.key)) {
+        before.set(each.key, beforeOf(timeline, each.text));
+      }
+    }
+    const me = login === undefined ? undefined : { login, type: 'User' };
+    const byAuthor = login !== undefined && login.toLowerCase() === author?.toLowerCase();
+    return { ...sentRows(sent, timeline, made, before, me, byAuthor), before };
+  }, [tab, sent, timeline, made, login, author]);
+  // What the timeline held is kept while each is on its way, and the ones it shows are let go.
+  useLayoutEffect(() => {
+    if (!added) {
+      sentBefore.delete(tab);
+      return;
+    }
+    const kept = new Map(added.before);
+    for (const key of kept.keys()) {
+      if (added.shown.has(key) || !sent.some((each) => each.key === key)) kept.delete(key);
+    }
+    sentBefore.set(tab, kept);
+    settleSent(tab, added.shown);
+  }, [tab, added, sent]);
+  return useMemo(() => {
+    if (!made || !added) return { rows: made, landed: NONE, saving: NONE };
+    const { edits } = added;
+    const saving = new Map<string, string>();
+    for (const [comment, edit] of edits) if (edit.saving) saving.set(comment, edit.saving);
+    const rows =
+      edits.size === 0
+        ? made
+        : made.map((row) => {
+            const edited = row.kind === 'comment' ? edits.get(row.id) : undefined;
+            return edited === undefined ? row : { ...row, body: edited.text };
+          });
+    return { rows: [...rows, ...added.rows], landed: added.landed, saving };
+  }, [made, added]);
 }
 
 /**
@@ -355,17 +430,31 @@ function useHolding(
 /**
  * As tab `tab`'s rows become `rows`, the keyboard stays on its row, or, once that's gone, as after
  * your `dd` or a delete that came while you looked, moves to its neighbour, with nothing scrolled:
- * never back to the first row.
+ * never back to the first row. A comment just sent from the box at the end takes the keyboard as
+ * it comes while focus is in the list, as the box gives it there, and GitHub's copy of it, which
+ * takes its row's place (`landed`), takes the keyboard from it.
  */
-function useKeptRow(tab: string, rows: readonly Row[]): void {
+function useKeptRow(
+  tab: string,
+  rows: readonly Row[],
+  landed: ReadonlyMap<string, string>,
+  list: RefObject<HTMLOListElement | null>,
+): void {
   const before = useRef(rows);
   useLayoutEffect(() => {
     const was = before.current;
     before.current = rows;
     const key = focusedRows.get(tab);
+    const sent = rows.find(
+      (row) => row.kind === 'sent' && !was.some((each) => each.key === row.key),
+    );
+    if (sent && list.current !== null && list.current === document.activeElement) {
+      focusedRows.set(tab, sent.key);
+      return;
+    }
     if (key === undefined || rows.some((row) => row.key === key)) return;
-    focusedRows.set(tab, keptRow(was, rows, key));
-  }, [tab, rows]);
+    focusedRows.set(tab, landed.get(key) ?? keptRow(was, rows, key));
+  }, [tab, rows, landed, list]);
 }
 
 /** The login tab `tab` acts as, if it acts as anyone. */
@@ -381,17 +470,33 @@ function keysOf(id: string): string[] | undefined {
 }
 
 /** The timeline's rows, in a list the keyboard moves through, and the box at its end. */
-function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readonly Row[] }) {
+function Rows({
+  tab,
+  shown,
+  rows,
+  landed,
+  saving,
+}: {
+  tab: PullTab;
+  shown: boolean;
+  rows: readonly Row[];
+  /** The row of GitHub's copy that took each sent comment's place, by the sent row's key. */
+  landed: ReadonlyMap<string, string>;
+  /** What each comment whose edit is on its way says in its time's place: "Saving…". */
+  saving: ReadonlyMap<string, string>;
+}) {
   const root = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLOListElement>(null);
   const kept = useTabState(focusedRows, tab.id);
-  const focused = rows.some((row) => row.key === kept) ? kept : rows[0]?.key;
+  // The keyboard on a comment just sent is on GitHub's copy of it, which took its place.
+  const on = kept === undefined ? undefined : (landed.get(kept) ?? kept);
+  const focused = rows.some((row) => row.key === on) ? on : rows[0]?.key;
   const now = useNow(shown);
   useTabState(shownHidden, tab.id);
   const login = useLogin(tab.id);
   const edits = useEditsOnPull(tab.id);
   useHolding(tab.id, shown, root, rows);
-  useKeptRow(tab.id, rows);
+  useKeptRow(tab.id, rows, landed, list);
   const { owner, repo, number } = tab;
   const pull = useMemo<PostPull>(() => ({ owner, repo, number }), [owner, repo, number]);
   const drawn = useMemo(() => ({ tab, rows, list: () => list.current }), [tab, rows]);
@@ -471,6 +576,7 @@ function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readon
             now={now}
             login={login}
             editing={row.kind === 'comment' && edits.has(row.id)}
+            saving={row.kind === 'comment' ? saving.get(row.id) : undefined}
             leave={leave}
             onFocus={(event) => {
               focusRow(drawn, row.key);
@@ -576,6 +682,7 @@ function RowOf({
   now,
   login,
   editing,
+  saving,
   leave,
   onFocus,
   onReveal,
@@ -588,6 +695,8 @@ function RowOf({
   login: string | undefined;
   /** It's your comment, and its edit's box is open. */
   editing: boolean;
+  /** It's your comment, and its edit is being saved: what its card says meanwhile, "Saving…". */
+  saving: string | undefined;
   /** Gives focus back to the list, as an edit's box does as it goes. */
   leave: () => void;
   onFocus: (event: MouseEvent<HTMLElement>) => void;
@@ -657,6 +766,7 @@ function RowOf({
           onEdit={yours?.onEdit}
           onDelete={yours?.onDelete}
           editing={yours?.editing}
+          sending={saving}
           body={
             <>
               {yours?.note}
@@ -738,6 +848,22 @@ function RowOf({
         <TimelineEvent {...attributes} glyph={row.glyph} tone={row.tone} when={when(row.at, now)}>
           <Sentence parts={row.parts} />
         </TimelineEvent>
+      );
+    case 'sent':
+      // Drawn as GitHub's copy will be, which takes its place with nothing moving, from the text
+      // sent and the tree its card will start from.
+      return (
+        <TimelineComment
+          {...attributes}
+          data-sent=""
+          author={withoutBidi(row.author.login)}
+          image={imageOf(row.author, MARKER)}
+          when={row.at === undefined ? '' : when(row.at, now)}
+          mine
+          byAuthor={row.byAuthor}
+          sending={row.sending}
+          body={<Preview view={tab} text={row.body} pull={pull} flush sent />}
+        />
       );
     default:
       row satisfies never;

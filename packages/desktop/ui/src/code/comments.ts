@@ -195,6 +195,8 @@ export class CommentBox implements BoxHost, KeySource {
     this.#shown = options.shown;
     this.dom = document.createElement('div');
     this.dom.className = 'lo-diffcomposer';
+    // A reply's, which, sent, draws as the next comment of the thread it's drawn right after.
+    if (this.thread !== undefined && this.edits === undefined) this.dom.classList.add('is-reply');
     this.#followGrowth();
     this.dom.setAttribute(SCOPE_ATTRIBUTE, 'box');
     this.#parts = {
@@ -627,9 +629,8 @@ export class CommentBox implements BoxHost, KeySource {
     if (on) this.#asText = text !== undefined;
     const card = !this.#asText;
     this.#holding = on;
-    // Held, it's as tall as it was written in, however short the comment is as a card: nothing
-    // under it moves until the comment's own card takes its place.
-    if (card) this.dom.style.minHeight = on ? `${this.dom.getBoundingClientRect().height}px` : '';
+    // Held, it's the comment as its card will draw it, as tall as that card and no taller: no room
+    // is left empty under it, and the card takes its place with nothing moving.
     if (on) leaveToNormal(this.view);
     const empty = on && text !== undefined ? placeholder(heldEmpty(text)) : [];
     this.view.dispatch({ effects: this.#held.reconfigure(on ? [readOnly(), empty] : []) });

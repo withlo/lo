@@ -764,8 +764,55 @@
 .lo-diffcomposer.is-sent > :not(.lo-diffcomposer__sent) {
   display: none;
 }
-.lo-diffcomposer.is-sent.is-focused::after {
+/*
+ * Sent, it's drawn as the card that takes its place will be. In a card or a popover, in the slot
+ * kept for it there, the frame steps aside and so does the slot's own room, so the comment's text is
+ * where the card's will be. Between lines, a new comment's or a reply's box is a card of its own in
+ * the flow, as its thread's is: it keeps its frame, as wide as a card is.
+ */
+.lo-diffcomposer.is-sent {
+  background: transparent;
+}
+.lo-diffcomposer.is-sent::after {
+  box-shadow: none;
+}
+.lo-diffthread > .lo-diffcomposer.is-sent {
+  max-width: var(--lo-read-measure);
+  background: var(--lo-bg-raised);
+}
+.lo-diffthread > .lo-diffcomposer.is-sent::after {
   box-shadow: inset 0 0 0 1px var(--lo-border);
+}
+/*
+ * Between lines, a reply on its way is the next comment of the thread right above it, as it will be
+ * once that thread has it: it joins that thread's card, under the line between its comments, with
+ * no room between, its frame going on where the card's stops.
+ */
+.lo-diffthread
+  > .lo-diffthread__thread:has(+ .lo-diffcomposer.is-sent.is-reply)
+  .lo-diffthread__host
+  > :first-child {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.lo-diffthread > .lo-diffcomposer.is-sent.is-reply {
+  margin-top: 0;
+  border-top: 1px solid var(--lo-border-subtle);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.lo-diffthread > .lo-diffcomposer.is-sent.is-reply::after {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  box-shadow:
+    -1px 0 0 0 var(--lo-border),
+    1px 0 0 0 var(--lo-border),
+    0 1px 0 0 var(--lo-border);
+}
+[data-new-slot]:has(> .lo-diffcomposer.is-sent),
+[data-edit-slot]:has(> .lo-diffcomposer.is-sent),
+[data-thread-pop] :has(> [data-reply-slot] > .lo-diffcomposer.is-sent) {
+  padding: 0;
 }
 /* Held as text, as a review's summary is while it's sent, the box stays as written: its text dims.
    With no text, it says so as an empty state's row does: a 14px icon, then its words. */

@@ -102,6 +102,8 @@ import { screenOf } from './placing.ts';
 import type { PostPull } from './Post.tsx';
 import { tell } from './Said.tsx';
 import { landed } from './landed.ts';
+import { noteOnPull } from './onpull.ts';
+import { drawWritten } from './store.ts';
 import { held, shownAt } from './threads.ts';
 import {
   attachFiles,
@@ -441,7 +443,12 @@ export class Box {
   set(change: Partial<BoxState>): void {
     const was = this.#state;
     this.#state = { ...was, ...change };
-    this.composer?.hold(sendingNow(this.#state));
+    const holding = sendingNow(this.#state);
+    this.composer?.hold(holding);
+    // A comment on the pull request itself, or an edit of one there, is the timeline's to show
+    // from the moment it's sent until the timeline has GitHub's copy.
+    const { place, text, landing, sending } = this.#state;
+    noteOnPull({ key: this.id, view: this.view, place, text, held: holding, landing, sending });
     for (const listener of this.#listeners) listener();
     told(this, was);
   }
@@ -1574,19 +1581,61 @@ export async function commentOnFile(tab: PullTab, key: string): Promise<void> {
   await comment(tab, { kind: 'header', file: file.id, side: 'new' }, 'review');
 }
 
+/** Boxes whose comment's tree is being made as they're sent, which a second send waits out. */
+const drawing = new WeakSet<Box>();
+
+/** How long a box's comment waits for its tree as it's sent, at most, before it goes as it is. */
+const TREE_WAIT = 150;
+
+/** Settles once `work` does, or `ms` have passed, whichever is first. */
+async function within(work: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  try {
+    await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Whether box `box`'s comment can go now: it isn't on its way, nothing it attaches holds it, it has
+ * text, and its view can write. What's left of an upload that didn't finish is cleared from it
+ * first: that never goes to GitHub, nor holds the comment back.
+ */
+function sendable(box: Box): boolean {
+  const { view } = box;
+  if (sendingNow(box.state) || uploadsHold(box) !== undefined) return false;
+  clearStranded(box);
+  // Sent before, and nobody knows whether it posted: it's looked up first ("Check again").
+  if (box.state.sending === 'unknown') return false;
+  const { text } = box.state;
+  return text.trim() !== '' && offline(view) === undefined && canWrite(view) === true;
+}
+
 /**
  * Sends a box's text, as `⌘⏎` (`review`) or `⌥⏎` (`now`) asks: an edit's saves it over the
  * comment, either way.
  */
 export async function send(box: Box, how: Send): Promise<void> {
   const { view } = box;
-  if (sendingNow(box.state) || uploadsHold(box) !== undefined) return;
-  // What's left of an upload that didn't finish never goes to GitHub, nor holds the comment back.
-  clearStranded(box);
+  if (!sendable(box) || drawing.has(box)) return;
+  // Its tree is made first, for a moment at most, so what's sent draws formatted from its first
+  // frame, as its card from GitHub then does: the box shows it as it is meanwhile.
+  const pull = pullIn(view);
+  if (pull) {
+    box.dropSave();
+    drawing.add(box);
+    try {
+      await within(drawWritten(view, box.state.text, pull), TREE_WAIT);
+    } finally {
+      drawing.delete(box);
+    }
+    if (!sendable(box)) return;
+  }
   const { place, text } = box.state;
-  // Sent before, and nobody knows whether it posted: it's looked up first ("Check again").
-  if (box.state.sending === 'unknown') return;
-  if (text.trim() === '' || offline(view) !== undefined || canWrite(view) !== true) return;
   box.dropSave();
   box.lastHow = how;
   box.before = beforeOf(view, place);

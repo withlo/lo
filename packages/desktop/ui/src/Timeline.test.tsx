@@ -476,6 +476,32 @@ describe('Timeline', () => {
     ]);
   });
 
+  it('says a comment is on its way in its time’s place, as it will be drawn, with its buttons held back', () => {
+    const host = render(
+      <Timeline>
+        <TimelineComment
+          author="tess-okafor"
+          when="now"
+          mine
+          onEdit={() => {}}
+          onDelete={() => {}}
+          sending="Sending…"
+          body={<p>Mine.</p>}
+        />
+        <TimelineComment author="tess-okafor" when="now" mine body={<p>Sent.</p>} />
+      </Timeline>,
+    );
+    const [sending, sent] = [row(host, 0), row(host, 1)];
+    expect(sending.textContent).toContain('tess-okafor (you) commented');
+    expect(sending.textContent).toContain('Sending…');
+    expect(sending.querySelector('time')).toBeNull();
+    expect(sending.querySelector('button')).toBeNull();
+    expect(sending.textContent).toContain('Mine.');
+    // Without Edit and Delete to give, one of yours offers neither.
+    expect(sent.querySelector('time')?.textContent).toBe('now');
+    expect(sent.querySelector('button')).toBeNull();
+  });
+
   it("only uses utilities that Lo's stylesheet has, and runs the rail marker to marker", async () => {
     const host = render(
       <Timeline end={<TimelineEnd marker={{ login: 'a' }}>box</TimelineEnd>}>

@@ -12,6 +12,7 @@ import type {
   DraftMark,
   OnFile,
   Place,
+  Send,
   Span,
 } from '@lo/ui/code';
 import {
@@ -49,7 +50,7 @@ import type {
   ThreadRow,
   UploadOutcome,
 } from '../contract.ts';
-import type { PrepareInput, Prepared } from '../jobs.ts';
+import type { PrepareInput, Prepared, Rendered } from '../jobs.ts';
 import * as acts from './acts.ts';
 import {
   act,
@@ -121,6 +122,9 @@ vi.mock('./Said.tsx', async (original) => {
 vi.mock('./main.ts', async (original) => ({
   ...(await original<typeof Main>()),
   commentsJobs: () => ({
+    // What's sent is drawn from a tree made of its text first, which comes here at once.
+    render: (): Promise<Rendered> =>
+      Promise.resolve({ tree: { blocks: [], notes: [], diagnostics: [] }, images: false }),
     prepare: ({ name, bytes }: PrepareInput): Promise<Prepared> =>
       Promise.resolve({
         kind: 'prepared',
@@ -549,6 +553,8 @@ beforeEach(() => {
 
 afterEach(() => {
   keepBoxesOf(new Set());
+  // A box still waiting to save what was typed in it saves nothing into the tests after.
+  for (const box of boxesSeen.splice(0)) box.dropSave();
   vi.useRealTimers();
 });
 
@@ -1564,6 +1570,16 @@ describe('a box on a code block', () => {
   });
 });
 
+/**
+ * Sends box `box`'s comment as `how` asks, and settles once it's on its way, its tree made first:
+ * with the send's own end, to wait for.
+ */
+async function onItsWay(box: Box, how: Send): Promise<{ done: Promise<void> }> {
+  const done = send(box, how);
+  await vi.waitFor(() => expect(sendingNow(box.state)).toBe(true));
+  return { done };
+}
+
 describe('sending', () => {
   test.each([
     ['as the diff is drawn again', false],
@@ -1575,7 +1591,7 @@ describe('sending', () => {
       const before = notice();
       let answer: ((outcome: SendOutcome) => void) | undefined;
       answers['comments.send'] = () => new Promise<SendOutcome>((resolve) => (answer = resolve));
-      const sent = send(box, 'review');
+      const sent = (await onItsWay(box, 'review')).done;
       if (background) said.screen = 'elsewhere';
       takenDown(box, drawn[0]!.composer);
       expect(box.composer).toBeUndefined();
@@ -1672,7 +1688,7 @@ describe('sending', () => {
     heard.length = 0;
     vi.useFakeTimers();
     try {
-      const sending = send(box, 'review');
+      const sending = (await onItsWay(box, 'review')).done;
       // Main marks the draft sent, then takes it, before it answers.
       takeDrafts({
         id: VIEW,
@@ -1704,7 +1720,7 @@ describe('sending', () => {
         answer = resolve;
       });
     heard.length = 0;
-    const sending = send(box, 'now');
+    const sending = (await onItsWay(box, 'now')).done;
     // Somebody else's comment on the line, or yours with other words, isn't it.
     threadsCome(
       threadRow('T_theirs', 5, { comments: [threadComment('C1', 'octocat', 'Ship it?')] }),
@@ -1773,7 +1789,7 @@ describe('sending', () => {
       new Promise<SendOutcome>((resolve) => {
         answer = resolve;
       });
-    const sending = send(box, 'review');
+    const sending = (await onItsWay(box, 'review')).done;
     expect(drawn[0]!.composer.held).toBe(true);
     answer({ kind: 'refused', refusal: { kind: 'paused', until: 1 } });
     await sending;
@@ -1814,7 +1830,7 @@ describe('sending', () => {
     expect(drawn[0]!.composer.held).toBe(false);
     expect(offersOf(box.state)).toEqual(['sendAgain']);
     act(box, 'sendAgain');
-    expect(asked('comments.send')).toHaveLength(1);
+    await vi.waitFor(() => expect(asked('comments.send')).toHaveLength(1));
   });
 
   test('refused, the box stays with why; offline, nothing sends', async () => {
@@ -2013,7 +2029,7 @@ describe('beside lines', () => {
     const { drawn, box } = await opened();
     let answer: ((outcome: SendOutcome) => void) | undefined;
     answers['comments.send'] = () => new Promise<SendOutcome>((resolve) => (answer = resolve));
-    const sent = send(box, 'review');
+    const sent = (await onItsWay(box, 'review')).done;
     // The popover moved on as it went: the box closes, keeping its draft.
     shut(drawn[0]!, true);
     expect(box.composer).toBeUndefined();
@@ -2039,7 +2055,7 @@ describe('beside lines', () => {
     const { drawn, box, drafts } = await opened();
     let answer: ((outcome: SendOutcome) => void) | undefined;
     answers['comments.send'] = () => new Promise<SendOutcome>((resolve) => (answer = resolve));
-    const sent = send(box, 'review');
+    const sent = (await onItsWay(box, 'review')).done;
     standsOnFive({ sending: 'sending', sent: 'Ship it?' });
     shut(drawn[0]!, true);
     answer?.({ kind: 'lost' });
@@ -2082,7 +2098,7 @@ describe('beside lines', () => {
     const { drawn, box } = await opened();
     let answer: ((outcome: SendOutcome) => void) | undefined;
     answers['comments.send'] = () => new Promise<SendOutcome>((resolve) => (answer = resolve));
-    const sent = send(box, 'review');
+    const sent = (await onItsWay(box, 'review')).done;
     // Threads went between lines as it went: the box closed, keeping its draft, and stayed so.
     shut(drawn[0]!, true);
     threadsShow.mode = 'between';
@@ -2368,7 +2384,7 @@ describe('beside lines, on a code block', () => {
     const box = boxIn(drawn[0]!);
     let answer: ((outcome: SendOutcome) => void) | undefined;
     answers['comments.send'] = () => new Promise<SendOutcome>((resolve) => (answer = resolve));
-    const sent = send(box, 'review');
+    const sent = (await onItsWay(box, 'review')).done;
     // The block goes as it went, its box with it, and is drawn anew, the box closed, as beside lines.
     drawn[0]!.composer.closed = 'dismiss';
     takenDown(box, drawn[0]!.composer);

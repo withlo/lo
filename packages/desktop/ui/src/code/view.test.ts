@@ -1665,8 +1665,8 @@ describe('threads', () => {
     });
     box.hold(true);
     const drawn = parent!.querySelector<HTMLElement>('.lo-diffcomposer')!;
-    // Held, it's as tall as it was written in.
-    expect(drawn.style.minHeight).toBe('80px');
+    // Held, it's as tall as the card it shows, with no room kept from the editor it was.
+    expect(drawn.style.minHeight).toBe('');
     box.close();
     expect(parent!.querySelector('.lo-diffcomposer')).toBe(drawn);
     expect(drawn.classList).toContain('is-sent');
