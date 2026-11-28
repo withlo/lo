@@ -19,7 +19,8 @@ function box(changes: Partial<BoxSend> = {}): BoxSend {
     held: true,
     landing: false,
     sending: 'sending',
-    since: 5,
+    send: 1,
+    sentAt: 5_000,
     before: { had: 1, after: 'C_9' },
     ...changes,
   };
@@ -36,7 +37,8 @@ describe('noted', () => {
         state: 'sending',
         label: sentLabel('sending', false),
         at: undefined,
-        since: 5,
+        send: 1,
+        sentAt: 5_000,
         before: { had: 1, after: 'C_9' },
       },
     ]);
@@ -84,7 +86,7 @@ describe('noteOnPull', () => {
     noteOnPull(box({ view, landing: true }));
     expect(onPull.get(view)).toEqual([]);
     // Sent again, it's there again.
-    noteOnPull(box({ view, since: 6 }));
-    expect(onPull.get(view)).toMatchObject([{ key: 'box-1', since: 6 }]);
+    noteOnPull(box({ view, send: 2 }));
+    expect(onPull.get(view)).toMatchObject([{ key: 'box-1', send: 2 }]);
   });
 });

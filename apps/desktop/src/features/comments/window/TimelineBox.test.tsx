@@ -388,3 +388,10 @@ test('a comment that couldn’t be sent leaves focus where the reader took it fr
   const elsewhere = focusable('button');
   expect(await sendRefused(list, () => elsewhere.focus())).toBe(elsewhere);
 });
+
+test('a comment that couldn’t be sent leaves focus in the list where the reader moved on in it, as with `j`', async () => {
+  const list = focusable('ol');
+  // A key Lo's command took in the list, as the key listener tells it.
+  const moved = () => list.dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
+  expect(await sendRefused(list, moved)).toBe(list);
+});

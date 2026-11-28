@@ -219,17 +219,24 @@ describe('what the timeline draws of a comment sent', () => {
       });
     const box = ownBox();
     takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
-    const from = Date.now();
     const sending = send(box, 'now');
     await vi.waitFor(() => expect(answer).toBeDefined());
-    const [entry] = onPull.get(VIEW);
-    expect(entry).toMatchObject({
-      key: box.id,
-      state: 'sending',
-      text: 'Ship it.',
-      before: { had: 2, after: 'c-Ship it.' },
+    expect(onPull.get(VIEW)).toMatchObject([
+      {
+        key: box.id,
+        state: 'sending',
+        text: 'Ship it.',
+        send: 1,
+        sentAt: undefined,
+        before: { had: 2, after: 'c-Ship it.' },
+      },
+    ]);
+    // Main says when it went, by GitHub's clock.
+    takeDrafts({
+      id: VIEW,
+      drafts: [draft({ restored: false, sending: 'sending', sent: 'Ship it.', sentAt: 9_000 })],
     });
-    expect(entry?.since).toBeGreaterThanOrEqual(from);
+    expect(onPull.get(VIEW)).toMatchObject([{ send: 1, sentAt: 9_000 }]);
     // The timeline shows GitHub's copy before the answer comes: the answer brings nothing back.
     settleOnPull(VIEW, new Set([box.id]));
     answer({ kind: 'sent', pending: false, joined: false, thread: null, landedOn: null });
@@ -238,13 +245,15 @@ describe('what the timeline draws of a comment sent', () => {
     expect(onPull.get(VIEW)).toEqual([]);
   });
 
-  test('one found on its way as Lo starts went when main sent it, with nothing from before', () => {
+  test('one found on its way as Lo starts went when main says, with nothing from before', () => {
     ownBox();
     takeDrafts({
       id: VIEW,
       drafts: [draft({ sending: 'checking', sent: 'Ship it.', sentAt: 1234 })],
     });
-    expect(onPull.get(VIEW)).toMatchObject([{ state: 'checking', since: 1234, before: undefined }]);
+    expect(onPull.get(VIEW)).toMatchObject([
+      { state: 'checking', send: 0, sentAt: 1234, before: undefined },
+    ]);
   });
 });
 

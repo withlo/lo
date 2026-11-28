@@ -283,7 +283,8 @@ export type Sending = z.output<typeof sending>;
 
 /**
  * A comment box's draft: where it is, its text, when it was last saved, whether it was saved before
- * Lo started, and how sending it stands, with the text sent, and when, while it may be on GitHub. An
+ * Lo started, and how sending it stands, with the text sent while it may be on GitHub, and when, by
+ * GitHub's clock, once Lo knows how far it is from this computer's. An
  * edit's has `base`, the comment's text on GitHub when the edit started. One written on an
  * overview's code block has `home`, the block.
  */

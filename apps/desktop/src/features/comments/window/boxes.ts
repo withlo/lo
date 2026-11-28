@@ -393,8 +393,10 @@ export class Box {
   closedSending = false;
   /** What its view's threads held as it was last sent, to tell its comment's card by as it comes. */
   before: Before | undefined;
-  /** When it was last sent, by this computer's clock, as it says or as main kept it. */
-  sentSince = 0;
+  /** How many times it's been sent here: which send its comment on its way is. */
+  sends = 0;
+  /** When its comment on its way was sent, by GitHub's clock, as main says once it knows. */
+  sentAt: number | undefined;
   /**
    * What its view's timeline on screen held as its comment on the pull request itself was last
    * sent, while it had one, to tell GitHub's copy by.
@@ -463,7 +465,8 @@ export class Box {
       held: holding,
       landing,
       sending,
-      since: this.sentSince,
+      send: this.sends,
+      sentAt: this.sentAt,
       before: this.sentBefore,
     });
     for (const listener of this.#listeners) listener();
@@ -1233,8 +1236,8 @@ export function takeDrafts(given: DraftsView): void {
  */
 function takeRow(box: Box, row: DraftRow): void {
   box.sentMark = row.sent !== null;
-  // On its way from before this box was made, as after a restart: it went when main says.
-  if (row.sentAt !== null && box.sentSince === 0) box.sentSince = row.sentAt;
+  // When it went, by GitHub's clock, once main knows: a send here, or one before, as after a restart.
+  if (row.sentAt !== null) box.sentAt = row.sentAt;
   const { composer } = box;
   const blank = composer !== undefined && !box.saving && composer.text === '' && row.text !== '';
   const typed = (composer !== undefined || box.saving) && !blank;
@@ -1663,7 +1666,8 @@ export async function send(box: Box, how: Send): Promise<void> {
   box.dropSave();
   box.lastHow = how;
   box.before = beforeOf(view, place);
-  box.sentSince = Date.now();
+  box.sends += 1;
+  box.sentAt = undefined;
   box.sentBefore = place.kind === 'conversation' ? beforeOnPull(view, text) : undefined;
   box.set({ busy: true, refusal: undefined });
   try {

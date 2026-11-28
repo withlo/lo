@@ -29,6 +29,7 @@ import {
   catchUpDrafts,
   drawnInTimeline,
   hintOf,
+  inputsSoFar,
   knowPull,
   leftTimeline,
   sendingNow,
@@ -248,21 +249,25 @@ export function PullBox({ tab, leave, keys }: PullBoxProps): ReactNode {
     if (empty && !sent && height !== undefined && height > 0) emptyHeight.current = height;
   }, [empty, sent, box]);
   // Focus in it as its comment goes goes to the timeline, whose keyboard is then on the comment.
-  // Should the comment come back to the box, as when it couldn't be sent, focus still where it went
-  // comes back with it, to the note and the text.
+  // Should the comment come back to the box, as when it couldn't be sent, focus left where it went,
+  // with no key, click or scroll of the reader's since, comes back with it, to the note and the
+  // text. A reader who moved on, as with `j`, stays where they went.
   const focusedAsSent = useRef(false);
   focusedAsSent.current = sent && (box?.state.focused ?? false);
-  const handed = useRef<{ readonly box: Box; readonly to: Element | null } | undefined>(undefined);
+  const handed = useRef<
+    { readonly box: Box; readonly to: Element | null; readonly inputs: number } | undefined
+  >(undefined);
   useLayoutEffect(() => {
     if (sent) {
       if (!focusedAsSent.current || !box) return;
       leave();
-      handed.current = { box, to: document.activeElement };
+      handed.current = { box, to: document.activeElement, inputs: inputsSoFar() };
       return;
     }
     const was = handed.current;
     handed.current = undefined;
     if (!was || was.box !== box || was.to === null || document.activeElement !== was.to) return;
+    if (inputsSoFar() !== was.inputs) return;
     was.box.composer?.focus();
   }, [sent, leave, box]);
   useHeldHeight(outer, inner, sent);

@@ -2,7 +2,7 @@
 // a comment sent from the box at its end is its last row until the timeline shows GitHub's copy,
 // which takes its place, and an edit shows its new text in its comment's card until it's shown.
 
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import type { OnPull } from '../../comments/window/shared.ts';
 import type { Item, Timeline } from '../contract.ts';
@@ -10,7 +10,7 @@ import type { Row } from './rows.ts';
 import { beforeOf, CLOCK_SLACK, sentKey, sentRows } from './sent.ts';
 
 const AT = '2026-11-13T12:00:00Z';
-/** When the comments on their way were sent: a minute after `AT`. */
+/** When the comments on their way were sent, by GitHub's clock: a minute after `AT`. */
 const SENT = Date.parse(AT) + 60_000;
 const ME = { login: 'rozed-bot', type: 'User' };
 const MONA = { login: 'mona', type: 'User' };
@@ -88,7 +88,8 @@ function sent(changes: Partial<OnPull> = {}): OnPull {
     state: 'sending',
     label: LABEL,
     at: undefined,
-    since: SENT,
+    send: 1,
+    sentAt: SENT,
     before: undefined,
     ...changes,
   };
@@ -97,6 +98,18 @@ function sent(changes: Partial<OnPull> = {}): OnPull {
 /** What the timeline on screen shows of `items`, with `entry`, sent as it held them. */
 function drawn(items: Item[], entry: OnPull) {
   return sentRows([entry], timeline(items), rows(items), ME, false);
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/** Runs `check` with this computer's clock an hour behind GitHub's, then an hour ahead of it. */
+function eitherClock(check: () => void): void {
+  for (const off of [-3_600_000, 3_600_000]) {
+    vi.useFakeTimers({ now: SENT + off });
+    check();
+  }
 }
 
 describe('sentRows', () => {
@@ -135,16 +148,22 @@ describe('sentRows', () => {
     expect(landed.landed.get(sentKey(taken))).toBe('c-IC_2');
   });
 
-  test('with nothing from before it was sent, GitHub’s copy is one of theirs made since', () => {
+  test('with nothing from before it was sent, GitHub’s copy is one of theirs made since, by GitHub’s clock', () => {
     // Sent before the timeline was read, or found on its way as Lo started: an older comment of
-    // theirs with its text isn't its copy, one made since is, there already or not.
-    const older = said('IC_1', 'Ship it.', { createdAt: since(-CLOCK_SLACK - 1000) });
-    expect(drawn([older], sent()).rows.map((row) => row.kind)).toEqual(['sent']);
-    const copy = said('IC_2', 'Ship it.', { createdAt: since(-1000) });
-    const landed = drawn([older, copy], sent({ state: 'checking' }));
-    expect(landed.rows).toEqual([]);
-    expect([...landed.shown]).toEqual(['box-1']);
-    expect(landed.landed.get(sentKey(sent()))).toBe('c-IC_2');
+    // theirs with its text isn't its copy, one made since is, there already or not, whatever this
+    // computer's clock says.
+    eitherClock(() => {
+      const older = said('IC_1', 'Ship it.', { createdAt: since(-CLOCK_SLACK - 1000) });
+      expect(drawn([older], sent()).rows.map((row) => row.kind)).toEqual(['sent']);
+      const copy = said('IC_2', 'Ship it.', { createdAt: since(-1000) });
+      const landed = drawn([older, copy], sent({ state: 'checking' }));
+      expect(landed.rows).toEqual([]);
+      expect([...landed.shown]).toEqual(['box-1']);
+      expect(landed.landed.get(sentKey(sent()))).toBe('c-IC_2');
+      // Until main says when it went, nothing is taken for its copy.
+      const unknown = drawn([older, copy], sent({ sentAt: undefined }));
+      expect(unknown.rows.map((row) => row.kind)).toEqual(['sent']);
+    });
   });
 
   test('someone else’s comment with the same text never takes its place', () => {
@@ -175,15 +194,20 @@ describe('sentRows', () => {
     expect([...shown.shown]).toEqual(['box-1']);
   });
 
-  test('an edit made elsewhere after it shows: GitHub’s copy is newer, whatever its text', () => {
-    const taken = sent({ comment: 'IC_1', text: 'Mine.', state: 'sent', at: SENT });
-    // Edited before it was sent: the card keeps its text.
-    const before = [said('IC_1', 'Older.', { lastEditedAt: since(-CLOCK_SLACK - 1000) })];
-    expect(drawn(before, taken).edits.get('IC_1')).toMatchObject({ text: 'Mine.' });
-    const after = [said('IC_1', 'Theirs, since.', { lastEditedAt: since(2000) })];
-    const shown = drawn(after, taken);
-    expect(shown.edits.size).toBe(0);
-    expect([...shown.shown]).toEqual(['box-1']);
+  test('an edit made elsewhere after it shows: GitHub’s copy is newer by GitHub’s clock, whatever its text', () => {
+    eitherClock(() => {
+      const taken = sent({ comment: 'IC_1', text: 'Mine.', state: 'sent', at: SENT });
+      // Edited before it was sent: the card keeps its text.
+      const before = [said('IC_1', 'Older.', { lastEditedAt: since(-CLOCK_SLACK - 1000) })];
+      expect(drawn(before, taken).edits.get('IC_1')).toMatchObject({ text: 'Mine.' });
+      const after = [said('IC_1', 'Theirs, since.', { lastEditedAt: since(2000) })];
+      const shown = drawn(after, taken);
+      expect(shown.edits.size).toBe(0);
+      expect([...shown.shown]).toEqual(['box-1']);
+      // Until main says when it went, its text stays.
+      const unknown = drawn(after, { ...taken, sentAt: undefined });
+      expect(unknown.edits.get('IC_1')).toMatchObject({ text: 'Mine.' });
+    });
   });
 
   test('with no account to have sent it, a comment draws no row', () => {

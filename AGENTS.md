@@ -1737,11 +1737,14 @@ your comment there edit and delete it (`window/conversation.ts`, `window/Timelin
   so nothing under the row moves. GitHub's copy is one of your account's comments with its text: one
   more than the timeline on screen held as it was sent, as a claim's is (`holding.ts`), or, with no
   timeline on screen then, as from an overview's block or after a restart, one made since it was
-  sent (`sentAt`, give or take 5 s). It takes the row's place in the same frame, the keyboard on it
-  going with it, and once shown it never comes back. An edit shows its text in its comment's card,
-  saying "Saving…", until the timeline has it, or GitHub's copy was edited since, as elsewhere. One
+  sent by GitHub's clock, give or take 5 s: main says when in the draft's row (`sentAt`), from how
+  far GitHub's clock is from this computer's, once an answer has said, never by this computer's
+  clock. It takes the row's place in the same frame, the keyboard on it going with it, and once
+  shown it never comes back. An edit shows its text in its comment's card, saying "Saving…", until
+  the timeline has it, or GitHub's copy was edited since, by GitHub's clock, as elsewhere. One
   GitHub took that the timeline doesn't show within five minutes is let go. A send that fails takes
-  the row away, the text back in the box, and focus the list took as it went with it.
+  the row away, the text back in the box, and focus the list took as it went with it, unless the
+  reader has moved on since, as with `j`.
 
 ### Submitting a review
 

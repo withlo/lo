@@ -10,8 +10,9 @@ import { holding, madeSince, pullComment, shows } from './holding.ts';
 import type { Person, Row } from './rows.ts';
 
 /**
- * How much earlier than it was sent, by this computer's clock, GitHub may say a comment was made
- * or edited: its times are to the second, and the two clocks needn't agree.
+ * How much earlier than it was sent, by GitHub's clock, GitHub may say a comment was made or
+ * edited: its times, and the `Date` its clock is read from, are to the second, and the answer took
+ * a while.
  */
 export const CLOCK_SLACK = 5_000;
 
@@ -28,11 +29,13 @@ export function sentKey(sent: OnPull): string {
 /**
  * Whether `timeline` shows `login`'s comment `sent`: one more of theirs with its text than the
  * timeline on screen held as it was sent, or, with nothing to go by from then, one of theirs with
- * its text made since.
+ * its text made since it was sent, by GitHub's clock; until main says when that was, none.
  */
 function showsComment(timeline: Timeline, sent: OnPull, login: string): boolean {
-  const { before } = sent;
-  if (before === undefined) return madeSince(timeline, sent.text, login, sent.since, CLOCK_SLACK);
+  const { before, sentAt } = sent;
+  if (before === undefined) {
+    return sentAt !== undefined && madeSince(timeline, sent.text, login, sentAt, CLOCK_SLACK);
+  }
   return shows(timeline, {
     write: { kind: 'posted', text: sent.text },
     until: Number.POSITIVE_INFINITY,
@@ -44,7 +47,7 @@ function showsComment(timeline: Timeline, sent: OnPull, login: string): boolean 
 
 /**
  * Whether `timeline` shows the edit `sent`, which GitHub took: its comment has its text, or was
- * edited since, as elsewhere after it, or is gone.
+ * edited since it was sent, by GitHub's clock, as elsewhere after it, or is gone.
  */
 function showsEdit(timeline: Timeline, sent: OnPull): boolean {
   const { comment } = sent;
@@ -53,8 +56,9 @@ function showsEdit(timeline: Timeline, sent: OnPull): boolean {
   if (shown === undefined) return true;
   const edited = { kind: 'edited', comment, text: sent.text } as const;
   if (shows(timeline, { write: edited, until: Number.POSITIVE_INFINITY, had: 0 })) return true;
-  const at = shown.lastEditedAt === undefined ? Number.NaN : Date.parse(shown.lastEditedAt);
-  return at >= sent.since - CLOCK_SLACK;
+  const { sentAt } = sent;
+  if (sentAt === undefined || shown.lastEditedAt === undefined) return false;
+  return Date.parse(shown.lastEditedAt) >= sentAt - CLOCK_SLACK;
 }
 
 /** What the reader's writes on the pull request itself add to the timeline's rows. */

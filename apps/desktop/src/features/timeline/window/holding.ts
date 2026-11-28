@@ -57,7 +57,7 @@ export function pullComment(timeline: Timeline, id: string) {
 
 /**
  * Whether `timeline` holds a comment of account `by`'s with the text `body` made at `since` or
- * after, in milliseconds since the Unix epoch, give or take `slack`.
+ * after, by GitHub's clock, in milliseconds since the Unix epoch, give or take `slack`.
  */
 export function madeSince(
   timeline: Timeline,

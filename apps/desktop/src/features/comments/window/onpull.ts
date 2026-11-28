@@ -36,8 +36,10 @@ export interface OnPull {
   readonly label: string;
   /** When GitHub took it, by the window's clock. */
   readonly at: number | undefined;
-  /** When it was sent, by this computer's clock. */
-  readonly since: number;
+  /** Which of its box's sends it is: each counts one more. */
+  readonly send: number;
+  /** When it was sent, by GitHub's clock, as main says once it knows: nothing until then. */
+  readonly sentAt: number | undefined;
   /**
    * What the timeline on screen held as it was sent, for a comment sent while there was one:
    * nothing for one sent before the timeline was read, or found on its way as Lo started.
@@ -49,8 +51,8 @@ export interface OnPull {
 export const onPull = tabState<readonly OnPull[]>(() => []);
 
 /**
- * When each of a view's entries the timeline showed, or let go, was sent, by its key: what its box
- * says after of that send, as that GitHub took it, brings nothing back.
+ * Which send of its box each of a view's entries the timeline showed, or let go, was, by its key:
+ * what its box says after of that send, as that GitHub took it, brings nothing back.
  */
 const settled = tabState<ReadonlyMap<string, number>>(() => new Map());
 
@@ -94,8 +96,10 @@ export interface BoxSend {
   /** GitHub took it. */
   readonly landing: boolean;
   readonly sending: Sending | null;
-  /** When it was last sent, by this computer's clock. */
-  readonly since: number;
+  /** Which of the box's sends it is. */
+  readonly send: number;
+  /** When it was sent, by GitHub's clock, once main says. */
+  readonly sentAt: number | undefined;
   /** What the timeline on screen held as it was sent, when it was sent here with one on screen. */
   readonly before: SentBefore | undefined;
 }
@@ -111,7 +115,7 @@ export function noted(before: readonly OnPull[], box: BoxSend, now: number): rea
   const was = at === -1 ? undefined : before[at];
   if (was?.state === 'sent') return before;
   const comment = editOf(box.place);
-  const { since, before: held } = box;
+  const { send, sentAt, before: held } = box;
   const next: OnPull | undefined = !box.held
     ? undefined
     : box.landing
@@ -122,7 +126,8 @@ export function noted(before: readonly OnPull[], box: BoxSend, now: number): rea
           state: 'sent',
           label: sentLabel(null, comment !== undefined),
           at: now,
-          since,
+          send,
+          sentAt,
           before: held,
         }
       : {
@@ -132,7 +137,8 @@ export function noted(before: readonly OnPull[], box: BoxSend, now: number): rea
           state: box.sending === 'checking' ? 'checking' : 'sending',
           label: sentLabel(box.sending, comment !== undefined),
           at: undefined,
-          since,
+          send,
+          sentAt,
           before: held,
         };
   if (next === undefined) return was === undefined ? before : before.filter((_, i) => i !== at);
@@ -141,7 +147,8 @@ export function noted(before: readonly OnPull[], box: BoxSend, now: number): rea
     was.state === next.state &&
     was.text === next.text &&
     was.label === next.label &&
-    was.since === next.since
+    was.send === next.send &&
+    was.sentAt === next.sentAt
   ) {
     return before;
   }
@@ -154,7 +161,7 @@ export function noted(before: readonly OnPull[], box: BoxSend, now: number): rea
  * showed, or let go, is done: what its box says of it after, as that it was taken, adds nothing.
  */
 export function noteOnPull(box: BoxSend): void {
-  if (!writesOnPull(box.place) || settled.get(box.view).get(box.key) === box.since) return;
+  if (!writesOnPull(box.place) || settled.get(box.view).get(box.key) === box.send) return;
   const before = onPull.get(box.view);
   const after = noted(before, box, Date.now());
   if (after === before) return;
@@ -174,7 +181,7 @@ export function settleOnPull(view: string, keys: ReadonlySet<string>): void {
   if (going.length === 0) return;
   settled.update(view, (done) => {
     const next = new Map(done);
-    for (const each of going) next.set(each.key, each.since);
+    for (const each of going) next.set(each.key, each.send);
     return next;
   });
   onPull.update(view, (before) => before.filter((each) => !keys.has(each.key)));
