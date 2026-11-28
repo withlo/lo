@@ -2,7 +2,7 @@
 // views that open them: each note its key, a head with its section and, in a popover, its lines,
 // its words in the element the view measures them by, and a Close on the first.
 
-import type { NotesView, NoteView, RenderNotes } from '../src/code/api.ts';
+import type { NotesView, NoteView, RenderNotes } from '../src/code/index.ts';
 import { NOTE_TEXT } from '../src/edits.ts';
 
 /** Draws `note`'s words in `into`: the caller's way, or plain. Returns what takes them down. */

@@ -66,10 +66,13 @@ describe('Show overview note', () => {
   });
 });
 
+/** The keys `id` has, each as its strokes' ids. */
+function keysOf(id: string): string[] {
+  return registry.keysOf(id).map((each) => each.map((stroke) => stroke.id).join(' '));
+}
+
 describe('the overview’s notes’ keys', () => {
   it('step to the next and previous note, open what’s on the line, and show it in the overview', () => {
-    const keysOf = (id: string) =>
-      registry.keysOf(id).map((each) => each.map((stroke) => stroke.id).join(' '));
     expect(keysOf('diff.nextNote')).toEqual(['] o']);
     expect(keysOf('diff.previousNote')).toEqual(['[ o']);
     expect(keysOf('diff.overviewNote')).toEqual(['enter']);

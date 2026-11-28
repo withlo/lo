@@ -28,6 +28,7 @@ import type {
   Composer,
   ComposerEvents,
   DraftMark,
+  NotesView,
   NoteView,
   OnFile,
   Place,
@@ -135,6 +136,11 @@ export function splitKey(each: string): { file: number; key: string } {
  */
 export function placeOf(at: Place | OnFile): { side: Side; line: number } {
   return 'line' in at ? { side: at.side, line: at.line } : { side: 'new', line: 0 };
+}
+
+/** What a popover of notes shows its notes as: pinned, they show as focused. */
+function notesShown(view: PopoverView): NotesView {
+  return { notes: view.notes ?? [], focused: view.pinned, label: view.label };
 }
 
 /** 1 for a resolved thread, which a popover lists after the unresolved, else 0. */
@@ -744,13 +750,11 @@ export class Beside {
     const render = this.#host.notes?.render();
     if (!render) return undefined;
     return (host, popover, close): PopoverContent => {
-      const shown = (view: PopoverView) => ({
-        notes: view.notes ?? [],
-        focused: view.pinned,
-        label: view.label,
-      });
-      const content = render(host, shown(popover), 'popover', close);
-      return { update: (next) => content.update(shown(next)), destroy: () => content.destroy() };
+      const content = render(host, notesShown(popover), 'popover', close);
+      return {
+        update: (next) => content.update(notesShown(next)),
+        destroy: () => content.destroy(),
+      };
     };
   }
 

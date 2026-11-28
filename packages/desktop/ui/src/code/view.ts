@@ -1973,8 +1973,7 @@ class View implements DiffView {
   }
 
   showInOverview(at: Place, note?: string): boolean {
-    const explained = this.#on.explained;
-    if (!explained) return false;
+    if (!this.#on.explained) return false;
     if (this.#mode === 'beside') {
       const open = this.#beside.notesOpen;
       const marks = open ? this.#endingAt(open) : [];
@@ -1982,7 +1981,7 @@ class View implements DiffView {
       const mark = marks.find((each) => each.key === key);
       if (!mark) return false;
       const { file, side, line } = this.#shownOf(mark);
-      explained(mark.block, { file: this.#ids[file]!, side, line });
+      this.#on.explained(mark.block, { file: this.#ids[file]!, side, line });
       return true;
     }
     const key = note ?? this.#openNoteAt(at)?.key;
@@ -1995,7 +1994,7 @@ class View implements DiffView {
     const shown = next === undefined ? open.shown : next?.shown;
     if (!shown) return false;
     const { file, side, line, block } = shown;
-    explained(block, { file: this.#ids[file]!, side, line });
+    this.#on.explained(block, { file: this.#ids[file]!, side, line });
     return true;
   }
 
