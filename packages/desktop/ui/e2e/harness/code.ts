@@ -21,6 +21,7 @@ import {
   type Place,
   type RenderPopover,
   type RenderThread,
+  type Side,
   type Span,
   type ThreadsMode,
 } from '../../src/code/index.ts';
@@ -413,11 +414,11 @@ const harness = {
   },
   /**
    * In the scene that picks lines, threads shown `mode`, opens a new comment's box on `src/a.ts`'s
-   * new lines `from` to `to`, holding `text`, focus in it, with its draft's mark. As Lo does, the
-   * box goes to the lines it asks for (`ComposerEvents.lines`), its mark with it, where they take a
-   * comment: `relined` says which it asked for.
+   * lines `from` to `to` of `side`, holding `text`, focus in it, with its draft's mark. As Lo does,
+   * the box goes to the lines it asks for (`ComposerEvents.lines`), its mark with it, where they
+   * take a comment: `relined` says which it asked for.
    */
-  composeLines(from: number, to: number, mode: ThreadsMode, text = ''): void {
+  composeLines(from: number, to: number, mode: ThreadsMode, text = '', side: Side = 'new'): void {
     const diff = view();
     diff.setThreads([], render, { popover });
     diff.setThreadsMode(mode);
@@ -427,7 +428,7 @@ const harness = {
       shown: true,
       open: ignore,
     });
-    const at: Span = { file: 'a', side: 'new', from, to };
+    const at: Span = { file: 'a', side, from, to };
     const composer: Composer = diff.compose(at.from === at.to ? mark(at).at : at, text, {
       change: ignore,
       submit: ignore,
@@ -447,15 +448,19 @@ const harness = {
     composing = { composer, mark };
   },
   /**
-   * Moves the box `composeLines` opened to new lines `from` to `to`, as a key in it does in Lo,
-   * its draft's mark with it: whether the view moved it, its element the same one.
+   * Moves the box `composeLines` opened to lines `from` to `to` of `side`, as a key in it does in
+   * Lo, its draft's mark with it: whether the view moved it, its element the same one.
    */
-  moveLines(from: number, to: number): { moved: boolean; same: boolean } {
+  moveLines(from: number, to: number, side: Side = 'new'): { moved: boolean; same: boolean } {
     const was = document.querySelector('.lo-diffcomposer');
-    const at: Span = { file: 'a', side: 'new', from, to };
+    const at: Span = { file: 'a', side, from, to };
     const moved = composing?.composer.move(at) ?? false;
     if (moved) view().setDrafts([composing!.mark(at)]);
     return { moved, same: was !== null && document.querySelector('.lo-diffcomposer') === was };
+  },
+  /** Holds the box `composeLines` opened, as while its comment is sent, or lets it go. */
+  holdLines(on: boolean): void {
+    composing?.composer.hold(on);
   },
   /** The lines each new comment's box asked to move to, in the scene that picks lines. */
   relined(): Span[] {

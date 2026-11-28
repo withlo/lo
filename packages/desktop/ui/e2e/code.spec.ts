@@ -2057,3 +2057,97 @@ for (const [layout, mode, editor] of [
     }
   });
 }
+
+for (const [layout, mode] of [
+  ['split', 'between'],
+  ['split', 'beside'],
+  ['inline', 'between'],
+] as const) {
+  test(`${layout === 'split' ? 'side by side' : 'inline'}, ${mode} lines, a box on a removed line moved to lines that end on an unchanged one goes under it${layout === 'split' ? ', in the new column' : ''}, the same element, its text and focus kept`, async () => {
+    const page = await openPicking(layout);
+    await page.evaluate(
+      (shown) => window.harness.composeLines(6, 6, shown, 'Kept text', 'old'),
+      mode,
+    );
+    await frames(page);
+    const [from, to] = layout === 'split' ? ['Before', 'After'] : ['Changes', 'Changes'];
+    // Focus is in the box, or beside lines in its popover.
+    const focusIn = () =>
+      page.evaluate(
+        (within) => document.querySelector(within)!.contains(document.activeElement),
+        mode === 'beside' ? '.lo-threadpop' : '.lo-diffcomposer',
+      );
+    expect((await boxBy(page, from, 'a 6')).text).toBe('Kept text');
+    expect(await focusIn()).toBe(true);
+    // As GitHub takes them, the removed line 6 down to the unchanged line 7 end on the new side.
+    expect(await page.evaluate(() => window.harness.moveLines(7, 7, 'new'))).toEqual({
+      moved: true,
+      same: true,
+    });
+    await frames(page);
+    const box = await boxBy(page, to, 'a 7');
+    expect(box).toMatchObject({ drawn: true, text: 'Kept text' });
+    expect(await focusIn()).toBe(true);
+    if (mode === 'between') expect(Math.abs(box.top! - box.under!)).toBeLessThan(24);
+    else expect(box.top!).toBeGreaterThan(box.under! - 1);
+    const column = await page.evaluate((label) => {
+      const editor = document
+        .querySelector(`.cm-content[aria-label="${label}"]`)!
+        .closest('.cm-editor')!
+        .getBoundingClientRect();
+      const rect = document.querySelector('.lo-diffcomposer')!.getBoundingClientRect();
+      const middle = rect.left + rect.width / 2;
+      return middle > editor.left && middle < editor.right;
+    }, to);
+    expect(column).toBe(true);
+    if (layout === 'split') expect(await apart(page, 'a 47')).toBeLessThan(1);
+  });
+}
+
+for (const mode of ['beside', 'between'] as const) {
+  test(`${mode} lines, \`Esc\` in a box held as its comment is sent, after its lines changed, takes focus to its new last line`, async () => {
+    const page = await openPicking('split');
+    await page.evaluate((shown) => window.harness.composeLines(5, 7, shown, 'Kept text'), mode);
+    await frames(page);
+    await page.evaluate(() => window.harness.moveLines(5, 9));
+    await frames(page);
+    await page.locator('.lo-diffcomposer .cm-content').focus();
+    await page.evaluate(() => window.harness.holdLines(true));
+    expect((await boxBy(page, 'After', 'a 9')).focused).toBe(true);
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => window.harness.focused())).toBe('After');
+    const line = await page.evaluate(() => {
+      const node = document.getSelection()?.anchorNode;
+      const element = node instanceof Element ? node : node?.parentElement;
+      return element?.closest('.cm-line')?.textContent;
+    });
+    expect(line).toBe('a 9');
+  });
+}
+
+test('let go over the end of a box’s bracket it dragged, that end shows no tip over the box until the pointer leaves it', async () => {
+  const page = await openPicking('split');
+  await page.evaluate(() => window.harness.composeLines(7, 7, 'between'));
+  await frames(page);
+  const [both] = await handlesIn(page, 'After');
+  await page.mouse.move(both!.x, both!.y);
+  await page.mouse.down();
+  // Down the lane, as a hand on the handle drags it, once the box has stepped aside.
+  await page.mouse.move(both!.x, both!.y + 8, { steps: 2 });
+  await frames(page);
+  const row = await rowOf(page, 'After', 'a 9');
+  await page.mouse.move(both!.x, row.y, { steps: 6 });
+  await frames(page);
+  await page.mouse.up();
+  await frames(page);
+  const last = (await handlesIn(page, 'After'))[1]!;
+  expect(last).toMatchObject({ end: 'last', row: 'a 9' });
+  await page.mouse.move(last.x, last.y + 1);
+  // Longer than a tip waits for the pointer to rest.
+  await page.waitForTimeout(700);
+  const tip = page.locator('.lo-tip[role="tooltip"]');
+  await expect(tip).toHaveCount(0);
+  await page.mouse.move(last.x + 80, last.y);
+  await page.mouse.move(last.x, last.y);
+  await expect(tip).toHaveText('Last lineCtrl+Alt+↓Ctrl+Alt+↑');
+});

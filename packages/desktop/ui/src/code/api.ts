@@ -557,11 +557,13 @@ export interface Composer {
    */
   keep(): KeptBox;
   /**
-   * Moves a new comment's box to lines `at` of its file, on the side it's on, as the lines it's on
-   * change while it's open: under their last line, as it is, with its text, caret, selection, undo
-   * history, mode and preview, and focus where it was. Beside lines the popover is placed again
-   * under them; between lines the box's block, and the room the other side keeps for it, leave its
-   * last line and come under the new one in one change, the box's element moved, not made again.
+   * Moves a new comment's box to lines `at` of its file, as the lines it's on change while it's
+   * open: under their last line, as it is, with its text, caret, selection, undo history, mode and
+   * preview, and focus where it was. Side by side, a last line on the other side, as a removed
+   * line's range down to an unchanged line has, takes it to that column. Beside lines the popover
+   * is placed again under them; between lines the box's block, and the room the other side keeps
+   * for it, leave its last line and come under the new one in one change, the box's element moved,
+   * not made again.
    * Its bracket and the rows it picks follow in the same frame, a key in it acts on its new lines,
    * and the pane scrolls the least that keeps it whole. Says whether it moved: not where its view
    * draws none of those lines, nor where another box of the view is open, nor for a box on a file

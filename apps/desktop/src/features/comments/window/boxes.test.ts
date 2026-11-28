@@ -13,6 +13,7 @@ import type {
   OnFile,
   Place,
   Send,
+  Side,
   Span,
 } from '@lo/ui/code';
 import {
@@ -88,6 +89,7 @@ import {
   drawnInTimeline,
   linesChange,
   changingLines,
+  movingToFile,
   takeOffer,
   drafted,
   editing,
@@ -100,7 +102,7 @@ import { landed } from './landed.ts';
 import type * as Main from './main.ts';
 import type * as SaidModule from './Said.tsx';
 import * as threads from './threads.ts';
-import { NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF, offersOf } from './writing.ts';
+import { CHECK_FIRST, NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF, offersOf } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
 const OLDER = 'b'.repeat(40);
@@ -1960,10 +1962,10 @@ function marked(): Promise<void> {
  * `c`, or `s`, on new lines `from` to `to` of the fake diff: its box, which the diff moves as it's
  * asked, what it was asked, and the target its lines button's menu acts on.
  */
-async function openOn(from: number, to: number, suggest = false) {
+async function openOn(from: number, to: number, suggest = false, side: Side = 'new') {
   const fake = fakeDiff();
   const at: Place | Span =
-    from === to ? { file: 'f0', side: 'new', line: to } : { file: 'f0', side: 'new', from, to };
+    from === to ? { file: 'f0', side, line: to } : { file: 'f0', side, from, to };
   await comment(tab(), { kind: 'line', at }, 'review', suggest);
   const drawn = fake.drawn.at(-1)!;
   const moves: unknown[] = [];
@@ -1984,10 +1986,10 @@ describe('changing a new comment’s lines', () => {
     heard.length = 0;
     void changingLines('lineBelow').run(target);
     expect(moves).toEqual([{ file: 'f0', side: 'new', from: 4, to: 6 }]);
-    // Nothing stays under the old place: its draft goes, and the new one holds the text.
+    // Nothing stays under the old place: the new one holds the text, and then its draft goes.
     expect(asked('comments.draft')).toEqual([
-      { id: VIEW, place: onLines(4, 5), text: '', home: null },
       { id: VIEW, place: onLines(4, 6), text: 'Look here', home: null },
+      { id: VIEW, place: onLines(4, 5), text: '', home: null },
     ]);
     expect(heard).toEqual(['Lines 4–6']);
     void changingLines('dropFirst').run(target);
@@ -2014,6 +2016,40 @@ describe('changing a new comment’s lines', () => {
     await marked();
     expect(changingLines('lineBelow').enabled!(target)).toBe('A draft is already on lines 5–6');
     expect(changingLines('lineAbove').enabled!(target)).toBe(true);
+  });
+
+  test('a box whose comment may be on GitHub already keeps its lines, every row of its menu saying why', async () => {
+    const { target, moves, id } = await openOn(5, 5);
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'unknown', sent: 'Ship it?' })],
+    });
+    await marked();
+    bridge.calls.length = 0;
+    expect(linesChange(id)).toBe(true);
+    for (const how of ['lineAbove', 'lineBelow', 'dropFirst', 'dropLast'] as const) {
+      expect(changingLines(how).enabled!(target)).toBe(CHECK_FIRST);
+    }
+    expect(movingToFile.enabled!(target)).toBe(CHECK_FIRST);
+    void changingLines('lineBelow').run(target);
+    expect(notice()?.title).toBe(CHECK_FIRST);
+    void movingToFile.run(target);
+    // Its draft stays where it was sent from, marked sent.
+    expect(moves).toEqual([]);
+    expect(asked('comments.draft')).toEqual([]);
+  });
+
+  test('a removed line’s box taken down to the unchanged line under it goes under that line, on the new side, and back', async () => {
+    const { drawn, moves, target } = await openOn(5, 5, false, 'old');
+    heard.length = 0;
+    void changingLines('lineBelow').run(target);
+    expect(moves).toEqual([{ file: 'f0', side: 'new', line: 7 }]);
+    expect(heard).toEqual(['Line 5, removed, to line 7']);
+    void changingLines('dropLast').run(target);
+    expect(moves.at(-1)).toEqual({ file: 'f0', side: 'old', line: 5 });
+    // Its end dragged there in the old column, the same.
+    drawn.on.lines!({ file: 'f0', side: 'old', from: 5, to: 6 });
+    expect(moves.at(-1)).toEqual({ file: 'f0', side: 'new', line: 7 });
   });
 
   test('a suggestion block still the old lines’ is written again from the new ones; one changed is left', async () => {

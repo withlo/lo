@@ -125,6 +125,7 @@ import {
   type BoxWhere,
   boxAt,
   changedLines,
+  CHECK_FIRST,
   commentableOn,
   draftOn,
   githubPath,
@@ -1713,8 +1714,9 @@ export async function commentOnFile(tab: PullTab, key: string): Promise<void> {
 
 /**
  * What changing box `box`'s lines works from, where they can change now: a new comment's box on
- * lines, open in its view's diff, not on its way, with what GitHub takes in its file as main last
- * said; otherwise why not, or `''` where nothing need be said, as for a box that isn't on lines.
+ * lines, open in its view's diff, not on its way nor maybe on GitHub, with what GitHub takes in its
+ * file as main last said; otherwise why not, or `''` where nothing need be said, as for a box that
+ * isn't on lines.
  */
 interface Relining {
   readonly box: Box;
@@ -1730,9 +1732,10 @@ function reliningOf(box: Box): Relining | string {
   const { view, state } = box;
   const { place } = state;
   if (place.kind !== 'thread' || place.lines === null || !box.composer) return '';
-  if (sendingNow(state) || drawing.has(box)) return 'Sending…';
   // In a code block's popover, its lines are the block's.
   if (box.drawnIn !== 'diff') return '';
+  const why = heldWhere(box);
+  if (why !== undefined) return why;
   const diff = writingDiff(view);
   if (!diff) return '';
   const drawn = diff.drawn();
@@ -1747,6 +1750,16 @@ function reliningOf(box: Box): Relining | string {
   const last = Line.of(end.side, end.number);
   const lines = start ? Lines.range(Line.of(start.side, start.number), last) : Lines.one(last);
   return { box, diff, drawn, path: place.path, takes, lines };
+}
+
+/**
+ * Why box `box`'s comment can't go elsewhere now, if it can't: it's being sent, or main marked it
+ * sent and nobody knows yet whether GitHub has it. Moved then, it would leave a draft that says it
+ * was sent where it was, and could post twice.
+ */
+function heldWhere(box: Box): string | undefined {
+  if (sendingNow(box.state) || drawing.has(box)) return 'Sending…';
+  return box.sentMark ? CHECK_FIRST : undefined;
 }
 
 /**
@@ -1834,11 +1847,7 @@ function moveTo(relining: Relining, lines: Lines): void {
   box.key = key;
   own.set(key, box);
   box.set({ place });
-  // Its draft leaves its old place, which main may still name until it hears.
   box.dropSave();
-  save(view, was, '', null);
-  holdDroppedAt(view, old);
-  dropped.get(view)?.delete(key);
   if (before !== undefined) {
     const { text } = composer;
     const from = text.indexOf(before);
@@ -1847,7 +1856,12 @@ function moveTo(relining: Relining, lines: Lines): void {
       composer.replace(from, from + before.length, after, false);
     }
   }
+  // Its draft is saved at its new place, then leaves its old one, which main may still name until
+  // it hears.
+  dropped.get(view)?.delete(key);
   if (composer.text.trim() !== '') save(view, place, composer.text, homeRow(box.home));
+  save(view, was, '', null);
+  holdDroppedAt(view, old);
   markDrafts(view);
   replyingChanged(view);
   tell(whereText(place));
@@ -1895,8 +1909,9 @@ export function changingLines(how: LinesChange): Handler<LinesTarget> {
 export function linesChange(id: string): boolean {
   const box = boxNamed(id);
   if (!box) return false;
+  // One held where it is, as while it's sent, still has its button, its rows dimmed with why.
   const relining = reliningOf(box);
-  return typeof relining !== 'string' || relining === 'Sending…';
+  return typeof relining !== 'string' || relining !== '';
 }
 
 /**
@@ -3132,13 +3147,13 @@ export const movingToFile: Handler<BoxTarget | LinesTarget> = {
       void onFileOffered.run(target);
       return;
     }
-    if (!sendingNow(box.state) && !drawing.has(box)) act(box, 'onFile');
+    if (heldWhere(box) === undefined) act(box, 'onFile');
   },
   enabled(target) {
     if (target.kind === 'box') return onFileOffered.enabled?.(target) ?? true;
     const box = boxNamed(target.box);
     if (!box) return 'The comment box has closed.';
-    return sendingNow(box.state) || drawing.has(box) ? 'Sending…' : true;
+    return heldWhere(box) ?? true;
   },
   listed: (target) =>
     target.kind === 'box' ? (onFileOffered.listed?.(target) ?? true) : linesChange(target.box),

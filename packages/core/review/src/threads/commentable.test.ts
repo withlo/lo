@@ -206,21 +206,48 @@ test('a range ending outside the hunks takes no comment', () => {
   expect(between().range(Line.left(1), Line.right(3))).toEqual(notCommentable(Line.left(1)));
 });
 
-test('the next line that takes a comment is in its hunk, or across the lines between hunks', () => {
+/** The right side's lines `from` to `to`. */
+function right(from: number, to: number): Lines {
+  return Lines.range(Line.right(from), Line.right(to));
+}
+
+test('an end of a range moves to the next line that takes a comment, in its hunk or across the lines between hunks', () => {
   const lines = full();
-  expect(lines.next(Line.right(3), 1)).toEqual(Line.right(4));
-  expect(lines.next(Line.right(3), -1)).toEqual(Line.right(2));
+  expect(lines.moveEnd(Lines.one(Line.right(4)), 'last', 1)).toEqual(right(4, 5));
+  expect(lines.moveEnd(Lines.one(Line.right(4)), 'first', -1)).toEqual(right(3, 4));
   // From the first hunk's last line over the lines between hunks to the next's first, and back.
-  expect(lines.next(Line.right(6), 1)).toEqual(Line.right(18));
-  expect(lines.next(Line.right(18), -1)).toEqual(Line.right(6));
-  // From a line between them.
-  expect(lines.next(Line.right(10), 1)).toEqual(Line.right(18));
-  expect(lines.next(Line.right(10), -1)).toEqual(Line.right(6));
+  expect(lines.moveEnd(Lines.one(Line.right(6)), 'last', 1)).toEqual(right(6, 18));
+  expect(lines.moveEnd(Lines.one(Line.right(18)), 'first', -1)).toEqual(right(6, 18));
+  expect(lines.moveEnd(right(6, 18), 'first', 1)).toEqual(Lines.one(Line.right(18)));
   // Past the ends, none.
-  expect(lines.next(Line.right(1), -1)).toBeUndefined();
-  expect(lines.next(Line.right(24), 1)).toBeUndefined();
-  // The left column's own lines, in a revision's whole diff only.
-  expect(lines.next(Line.left(2), 1)).toEqual(Line.left(3));
-  expect(between().next(Line.left(2), 1)).toBeUndefined();
-  expect(CommentableLines.notInDiff().next(Line.right(3), 1)).toBeUndefined();
+  expect(lines.moveEnd(Lines.one(Line.right(1)), 'first', -1)).toBeUndefined();
+  expect(lines.moveEnd(Lines.one(Line.right(24)), 'last', 1)).toBeUndefined();
+  // An end that isn't a line of the diff.
+  expect(lines.moveEnd(Lines.one(Line.right(10)), 'last', 1)).toBeUndefined();
+  expect(CommentableLines.notInDiff().moveEnd(right(3, 4), 'last', 1)).toBeUndefined();
+});
+
+test('a range keeps to a side both its ends are on, and one on a removed and an added line takes the next row of either', () => {
+  const lines = full();
+  // The right side's lines 2–4 don't take the removed line 3 between them.
+  expect(lines.moveEnd(Lines.range(Line.right(2), Line.right(4)), 'first', 1)).toEqual(
+    Lines.range(Line.right(3), Line.right(4)),
+  );
+  // The removed line 3 and the unchanged line 4 are both on the left, and keep to it.
+  const down = lines.moveEnd(Lines.one(Line.left(3)), 'last', 1);
+  expect(down).toEqual(Lines.range(Line.left(3), Line.right(4)));
+  expect(lines.moveEnd(down!, 'last', -1)).toEqual(Lines.one(Line.left(3)));
+  // Neither end goes past the other: it reaches it, and the range is that line.
+  expect(lines.moveEnd(Lines.range(Line.right(2), Line.left(3)), 'first', 1)).toEqual(
+    Lines.one(Line.left(3)),
+  );
+  // From the removed line 3 to the added line 3, by the diff's rows.
+  const replaced = Lines.range(Line.left(3), Line.right(3));
+  expect(lines.moveEnd(replaced, 'last', -1)).toEqual(Lines.one(Line.left(3)));
+  expect(lines.moveEnd(replaced, 'first', -1)).toEqual(Lines.range(Line.right(2), Line.right(3)));
+  // The left column takes no comment between revisions.
+  expect(between().moveEnd(Lines.one(Line.left(3)), 'last', 1)).toBeUndefined();
+  expect(between().moveEnd(Lines.one(Line.right(3)), 'first', -1)).toEqual(
+    Lines.range(Line.right(2), Line.right(3)),
+  );
 });

@@ -1370,9 +1370,10 @@ export class Beside {
         this.#closeBox(closed, false);
         on.close(keep);
       },
-      // Held, as while what it sent is on its way, the box stays, and focus goes to its line.
+      // Held, as while what it sent is on its way, the box stays, and focus goes to its line: the
+      // one it's under now, where its lines changed.
       leave: (left) => {
-        if (left.hasFocus) host.focusLine(place);
+        if (left.hasFocus) host.focusLine(this.#box?.box === left ? this.#box.place : place);
       },
       close: (closed, landed) => this.#closeBox(closed, landed ? 'landed' : 'sent'),
       dismiss: (closed) => this.#closeBox(closed, false),

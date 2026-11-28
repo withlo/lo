@@ -663,6 +663,13 @@ class View implements DiffView {
   #aside: CommentBox | undefined;
   /** Where that box waits, unseen, until it's drawn again. */
   readonly #parked = document.createElement('div');
+  /**
+   * Whether the ends of boxes' brackets show no tip: from a drag from one let go on the end it moved
+   * until the pointer leaves it, so its tip doesn't come back over the box let go under it.
+   */
+  #handlesQuiet = false;
+  /** Where the pointer last moved over the view, while it's over it. */
+  #pointerAt: { readonly x: number; readonly y: number } | undefined;
   /** Whether the press last made in the view dragged from the `+`: its click is none of the `+`'s. */
   #picked = false;
   /** The file the `+` last came to, whose lines that take a comment the caller was asked for. */
@@ -870,6 +877,8 @@ class View implements DiffView {
     // An end of an open box's bracket drags, and its click does nothing.
     this.dom.addEventListener('pointerdown', this.#pressHandle);
     this.dom.addEventListener('click', this.#clickHandle, { capture: true });
+    this.dom.addEventListener('pointermove', this.#offHandle, { passive: true });
+    this.dom.addEventListener('pointerleave', this.#offHandle, { passive: true });
     this.dom.append(this.#add);
     this.dom.addEventListener('click', this.#runControl);
     this.dom.addEventListener('click', this.#openMore);
@@ -3896,12 +3905,12 @@ class View implements DiffView {
   }
 
   /**
-   * Moves a new comment's box, `box`, to lines `at` of its file, on its side, as `Composer.move`
-   * says: beside lines in the popover, placed again under the new last line; between lines its
-   * block, with the room the other side keeps for it, from under its last line to under the new
-   * one, in one change of both sides, the box's element moved into the new block. The line at the
-   * top of the screen stays where it is, and then the pane scrolls the least that shows the box
-   * whole. Says whether it moved.
+   * Moves a new comment's box, `box`, to lines `at` of its file, as `Composer.move` says: beside
+   * lines in the popover, placed again under the new last line; between lines its block, with the
+   * room the other side keeps for it, from under its last line to under the new one, in one change
+   * of both sides, the box's element moved into the new block. Side by side, a last line on the
+   * other side takes it to the other column. The line at the top of the screen stays where it is,
+   * and then the pane scrolls the least that shows the box whole. Says whether it moved.
    */
   #moveBox(box: CommentBox, at: Place | Span): boolean {
     if (box.thread !== undefined) return false;
@@ -3927,18 +3936,15 @@ class View implements DiffView {
     if (name !== undefined) target.box = name;
     if (this.#mode === 'beside') {
       const open = this.#beside.boxPlace;
-      if (!open || open.file !== place.file || open.side !== place.side || open.line === 0) {
-        return false;
-      }
+      if (!open || open.file !== place.file || open.line === 0) return false;
       return this.#beside.moveBox(box, { key, place, from, target, written: undefined });
     }
     const found = [...this.#boxes].find(([, open]) => open.box === box);
     if (!found) return false;
     const [old, open] = found;
-    if (open.place.line === 0 || open.place.file !== place.file || open.place.side !== place.side) {
-      return false;
-    }
+    if (open.place.line === 0 || open.place.file !== place.file) return false;
     if (old !== key && this.#boxes.has(key)) return false;
+    const focused = box.hasFocus;
     box.retarget(target);
     this.#keepUnasked(() => {
       this.#boxes.delete(old);
@@ -3948,8 +3954,8 @@ class View implements DiffView {
       this.#keepAt(place.file);
       this.#refresh(place.file);
     });
-    // Focus in it stays in it, which the block it left took out of the page.
-    if (box.hasFocus || box.dom.contains(document.activeElement)) box.focusShown();
+    // Focus in it stays in it, which the block it left, or the column, took out of the page.
+    if (focused) box.focusShown();
     box.reveal();
     return true;
   }
@@ -4538,6 +4544,7 @@ class View implements DiffView {
     if (control.dataset.beside !== undefined) return undefined;
     const handle = control.dataset.handle;
     if (handle === 'first' || handle === 'last' || handle === 'both') {
+      if (this.#handlesQuiet) return undefined;
       const { label, commands } = HANDLE_TIPS[handle];
       return { label, keys: commands.flatMap((id) => controlOf(id)?.keys ?? []) };
     }
@@ -4749,6 +4756,20 @@ class View implements DiffView {
     this.#pick = drag;
   };
 
+  /**
+   * The pointer moved over the view, or left it. Off the end of a bracket it let go a drag on, the
+   * ends show their tips again.
+   */
+  readonly #offHandle = (event: PointerEvent): void => {
+    const left = event.type === 'pointerleave';
+    this.#pointerAt = left ? undefined : { x: event.clientX, y: event.clientY };
+    if (!this.#handlesQuiet) return;
+    const { target } = event;
+    if (left || !(target instanceof Element) || target.closest('.lo-handle') === null) {
+      this.#handlesQuiet = false;
+    }
+  };
+
   /** A click on an end of an open box's bracket does nothing, whatever its cell draws. */
   readonly #clickHandle = (event: MouseEvent): void => {
     const { target } = event;
@@ -4822,6 +4843,11 @@ class View implements DiffView {
    */
   #endDrag(drag: EndDrag, letGo: boolean): void {
     if (this.#pick !== drag) return;
+    // Let go on the end it moved, as it's drawn still, its tip waits for the pointer to come to it
+    // again.
+    const at = this.#pointerAt;
+    const under = drag.started && at ? this.dom.ownerDocument.elementFromPoint(at.x, at.y) : null;
+    this.#handlesQuiet = Boolean(under?.closest('.lo-handle'));
     this.#pick = undefined;
     this.#beside.drag(undefined);
     const { box } = drag;

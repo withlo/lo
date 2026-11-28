@@ -492,5 +492,21 @@ describe('changing a new comment’s lines', () => {
     expect(changedLines(takes, removed, 'lineAbove')).toEqual(
       Lines.range(Line.right(4), Line.left(5)),
     );
+    // Down to the unchanged line under it, which goes on the new side, and back.
+    const down = Lines.range(Line.left(5), Line.right(7));
+    expect(changedLines(takes, removed, 'lineBelow')).toEqual(down);
+    expect(changedLines(takes, down, 'dropLast')).toEqual(removed);
+  });
+
+  test('an end of a range on both sides moves by the diff’s rows, never past the other end', () => {
+    // "Line 4, to line 5, removed": the first line taken off leaves the removed one.
+    const toRemoved = Lines.range(Line.right(4), Line.left(5));
+    expect(changedLines(takes, toRemoved, 'dropFirst')).toEqual(Lines.one(Line.left(5)));
+    // The removed line 5 to the added line 6: the rows between them are either side's.
+    const replaced = Lines.range(Line.left(5), Line.right(6));
+    expect(changedLines(takes, replaced, 'dropFirst')).toEqual(right(5, 6));
+    expect(changedLines(takes, replaced, 'dropLast')).toEqual(
+      Lines.range(Line.left(5), Line.right(5)),
+    );
   });
 });
