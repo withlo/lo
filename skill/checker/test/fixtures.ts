@@ -154,6 +154,7 @@ function writeTree(dir: string, entries: readonly Entry[]): string {
 /** What a fixture's `fixture.json` may say. */
 export interface FixtureInput {
   ref?: number;
+  stack?: number;
   entries?: { path?: string; bytes?: string; kind: EntryKind; size?: number; fails?: boolean }[];
   many?: { prefix: string; ending: string; count: number; size?: number; text?: string };
 }

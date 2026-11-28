@@ -121,6 +121,46 @@ export function markdownTree<X extends Extension = Plain>(
   }
 }
 
+/**
+ * The address a reference-style link reads as when {@link inlineTokens} is told every label is
+ * defined. No text holds it, since a NUL in text reads as U+FFFD.
+ */
+export const ANY_REFERENCE = '\0reference';
+
+/**
+ * `text`, Markdown read as part of a paragraph, as {@link markdownTree} reads a paragraph's text in
+ * a tree that may nest `depth` deep: markdown-it's inline tokens, with no syntax added and nothing
+ * built. For telling what a piece of text holds. With `references: 'any'`, every label but an empty
+ * one is read as defined, so each reference-style link, `[a][b]`, `[a][]` or `[a]`, reads as a
+ * link to {@link ANY_REFERENCE}, while `[]` stays text. With a `repo`, `#123` reads as a reference
+ * to an issue in it. Never throws on any text: undefined for one that overflows the stack anyway.
+ */
+export function inlineTokens(
+  text: string,
+  options: { depth?: number; references?: 'none' | 'any'; repo?: Repo } = {},
+): Token[] | undefined {
+  const source = text.toWellFormed().replace(/\r\n?/g, '\n').replaceAll('\0', '\uFFFD');
+  const { depth } = options;
+  const nesting = resolveLimits(depth === undefined ? undefined : { depth }).depth + SLACK + 2;
+  const env = environment(options.repo);
+  if (options.references === 'any') {
+    // Markdown never makes a link of an empty label, `[]`, nor of one of spaces, which reads as empty.
+    env['references'] = new Proxy(Object.create(null), {
+      get: (_, label) =>
+        typeof label === 'string' && label.trim() !== ''
+          ? { href: ANY_REFERENCE, title: '' }
+          : undefined,
+    });
+  }
+  try {
+    const [inline] = parser(nesting, undefined).parseInline(source, env);
+    return inline?.children ?? [];
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    return undefined;
+  }
+}
+
 export function finish<X extends Extension>(
   blocks: Block<X>[],
   notes: ReadonlySet<Note>,

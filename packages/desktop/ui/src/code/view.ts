@@ -813,6 +813,8 @@ class View implements DiffView {
     this.dom.addEventListener('click', this.#clickMark);
     // The range the pointer is on lights at once, and focus going into a popover's card or a box,
     // or out, changes what's lit.
+    // What's under a still pointer changes as the view scrolls under it, which no move tells.
+    this.dom.addEventListener('pointerover', this.#pointRange, { passive: true });
     this.dom.addEventListener('pointermove', this.#pointRange, { passive: true });
     this.dom.addEventListener('pointerleave', this.#pointRange, { passive: true });
     this.dom.addEventListener('focusin', this.#focusRelight);
@@ -2527,8 +2529,23 @@ class View implements DiffView {
     if (pane === 'old' || (pane === 'inline' && !this.#inline?.layout.lines[mark.file])) {
       return undefined;
     }
-    const from = { side: mark.side, line: mark.from };
-    return this.#laneRange(pane, mark.file, from, { side: mark.side, line: mark.to });
+    const lines = this.#noteSpan(mark);
+    return lines && this.#laneRange(pane, mark.file, lines.from, lines.end);
+  }
+
+  /**
+   * The file lines an overview mark covers, first and last, those past its side's last line left
+   * out: none where it starts past it.
+   */
+  #noteSpan(
+    mark: OverviewAt,
+  ): { from: { side: Side; line: number }; end: { side: Side; line: number } } | undefined {
+    const count = this.#layout.files[mark.file]![mark.side].count;
+    if (mark.from > count) return undefined;
+    return {
+      from: { side: mark.side, line: mark.from },
+      end: { side: mark.side, line: Math.min(mark.to, count) },
+    };
   }
 
   // Lanes --------------------------------------------------------------------------------------
@@ -2741,11 +2758,8 @@ class View implements DiffView {
     if (lit.picked) lines = this.#pickedLines();
     else if (range?.lane === 'notes') {
       const mark = this.#markKeys.get(range.key);
-      lines = mark && {
-        file: mark.file,
-        from: { side: mark.side, line: mark.from },
-        end: { side: mark.side, line: mark.to },
-      };
+      const covered = mark && this.#noteSpan(mark);
+      lines = mark && covered && { file: mark.file, ...covered };
     } else if (range) lines = this.#beside.linesOf(range.key);
     if (!lines || lines.end.line < 1) return null;
     if (pane === 'inline' ? !this.#inline?.layout.lines[lines.file] : this.#noteOf(lines.file)) {
@@ -2796,13 +2810,19 @@ class View implements DiffView {
 
   /**
    * The cursor came to document line `line` of `pane`: where a key landed lights while the cursor
-   * stays on its lines.
+   * stays on its lines, in its column or, side by side, on their rows in the other.
    */
   #keepKeyLit(pane: Pane, line: number): void {
     const keyed = this.#keyLit;
     if (!keyed) return;
-    const rows = this.#litRowsIn(pane, { ...UNLIT, range: keyed });
-    if (rows?.rows.some((run) => line >= run.from && line <= run.to)) return;
+    const on = (where: Pane, at: number): boolean =>
+      this.#litRowsIn(where, { ...UNLIT, range: keyed })?.rows.some(
+        (run) => at >= run.from && at <= run.to,
+      ) ?? false;
+    if (on(pane, line)) return;
+    if (pane !== 'inline' && on(pane === 'old' ? 'new' : 'old', this.#otherSideLine(pane, line))) {
+      return;
+    }
     this.#keyLit = undefined;
     this.#relight();
   }
@@ -5733,6 +5753,8 @@ class View implements DiffView {
       });
       marker.view.focus();
     }
+    // Its lines may have changed under what's lit, whose rows are lit again where they are now.
+    this.#relight();
     this.#aligner.schedule();
   }
 

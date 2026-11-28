@@ -1,6 +1,7 @@
 // How the middle of a pull request's tab waits while there's nothing to draw in it: the mark
 // melding over one line that names the wait. It's the example of a view with nothing to draw yet.
-// A view whose shape is known waits as a skeleton instead, and a control at work is busy.
+// A view whose shape is known waits as its skeleton instead, which it gives the placeholder, and a
+// control at work is busy.
 //
 // A tab that's opening is one wait, whichever view draws it: the tab before it has a view, the
 // overview while it chooses what to open on, the diff until its files are drawn. Each draws this,
@@ -8,7 +9,7 @@
 // screen, and only its line changes, swapping in what the view reads. With the code beside, while
 // both views wait, the tab draws one of them across the middle, so it's one wait there too.
 
-import { Loading, LOADING_DELAY_MS } from '@lo/ui';
+import { Loading, LOADING_DELAY_MS, Skeletons } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
 import {
   createContext,
@@ -17,6 +18,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ReactNode,
   type RefObject,
 } from 'react';
 import { useStore } from 'zustand';
@@ -170,9 +172,27 @@ function closeKeys(): string[] | undefined {
  * banner says why, once. A read that fails once the pull request is drawn leaves the wait going, as
  * the header's chip says why: the read tried again may bring what the view waits for.
  */
-export function Placeholder({ tab, status }: { tab: string; status?: string | undefined }) {
+export function Placeholder({
+  tab,
+  status,
+  skeleton,
+}: {
+  tab: string;
+  status?: string | undefined;
+  /**
+   * The view's skeleton, laid out as it will be, which shows in place of the mark, with `status`
+   * for a screen reader: a view whose shape is known waits as that. It shows no line, so a view
+   * that waits after it shows its own at once.
+   */
+  skeleton?: ReactNode;
+}) {
   const view = useStore(pullsStore, (state) => state.views.get(tab));
   const { since, before } = useWait(tab);
+  const shaped = skeleton !== undefined;
+  useLayoutEffect(() => {
+    const wait = waits.get(tab);
+    if (shaped && wait) wait.line = undefined;
+  }, [tab, shaped]);
   // The view it's drawn in waits while it's there.
   const middle = use(MiddleViewOf);
   useLayoutEffect(() => {
@@ -190,6 +210,17 @@ export function Placeholder({ tab, status }: { tab: string; status?: string | un
   );
   useKeys();
   const waiting = !blocked(view);
+  if (shaped) {
+    return (
+      <div className="h-full" data-lo-placeholder aria-busy={waiting || undefined}>
+        {waiting && (
+          <Skeletons since={since} status={status ?? 'Opening pull request…'}>
+            {skeleton}
+          </Skeletons>
+        )}
+      </div>
+    );
+  }
   return (
     <div ref={box} className="h-full" data-lo-placeholder aria-busy={waiting || undefined}>
       {waiting && (

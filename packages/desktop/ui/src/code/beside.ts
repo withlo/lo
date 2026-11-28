@@ -74,6 +74,11 @@ export function draftKey(file: number, side: Side, from: number, to: number): st
   return `draft:${file}|${side}:${from}-${to}`;
 }
 
+/** Whether `key` names a draft's range in the lane, not a thread's. */
+export function isDraftKey(key: string): boolean {
+  return key.startsWith('draft:');
+}
+
 /** A file's threads' marks in one pane, by document line: their ranges, and each line's bubble. */
 export interface FileLane {
   readonly ranges: readonly LaneRange[];
@@ -882,7 +887,8 @@ export class Beside {
     if (target.closest('.lo-bubble[data-draft]') !== null) return undefined;
     let thread = target.closest<HTMLElement>('.lo-bubble[data-beside]')?.dataset.thread;
     if (thread === undefined && besideMarker(target)) {
-      const under = rangeUnder(event);
+      // A draft's range opens nothing from the lane: its own bubble opens its box.
+      const under = rangeUnder(event, (key) => !isDraftKey(key));
       if (under?.kind === 'threads') thread = under.key;
     }
     const at = thread === undefined ? undefined : this.#popOf(thread);

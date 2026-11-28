@@ -3,6 +3,7 @@
   "findings": [
     { "code": "format-invalid", "line": 2 },
     { "code": "pr-invalid", "line": 3 },
-    { "code": "commit-invalid", "line": 4 }
+    { "code": "stack-invalid", "line": 4 },
+    { "code": "commit-invalid", "line": 5 }
   ]
 }
