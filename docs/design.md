@@ -915,6 +915,11 @@ trust.
 - **Submitting.** `⌘⏎` opens the submit dialog. It has a summary box, a choice of Comment, Approve
   or Request changes, the number of pending comments, and the account you're acting as. On your own
   PRs only Comment is offered, since GitHub allows nothing else there.
+- **Once merged or closed.** A merged or closed PR takes everything an open one does, as GitHub
+  does, whether or not its branch is still there: comments, replies, resolves, viewed marks, a
+  pending review, and a review of each kind, Approve and Request changes from anyone but its author.
+  So Submit review… and the timeline's comment box stay, and only what merges, Approve and ship
+  among it, is dimmed, saying the PR is merged or closed.
 - **Approve and ship.** `⌘⇧⏎`, described in section 11.
 
 ### Threads panel
