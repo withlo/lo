@@ -498,6 +498,44 @@ onStaged.describe('opened with nobody signed in, then GitHub takes reads and nev
   );
 });
 
+onStaged.describe('refreshed by key', () => {
+  // Only a refresh reads it again while the test runs, and a request GitHub never answers is given
+  // up on after 5 s, in place of 15 s.
+  onStaged.use({ readEvery: 10 * 60_000, answerStart: 5_000 });
+
+  onStaged(
+    '⌘R reads the pull request again at once, its tab turning until that’s done, and never reloads the window',
+    async ({ page, github, stage }) => {
+      await open(page, E2E);
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(TITLE);
+      const checks = () =>
+        github.replay.seen.filter(({ body }) =>
+          new TextDecoder().decode(body).includes('"operationName":"PullRequestCheck"'),
+        ).length;
+      await expect.poll(checks).toBeGreaterThan(0);
+      // A page reloaded would lose this.
+      await page.evaluate(() => Reflect.set(window, 'loStill', true));
+      const key = process.platform === 'darwin' ? 'Meta+KeyR' : 'F5';
+      const tab = strip(page).getByRole('tab', { selected: true });
+
+      const before = checks();
+      await page.keyboard.press(key);
+      await expect.poll(checks).toBeGreaterThan(before);
+      await expect(tab).not.toHaveAttribute('aria-busy');
+
+      // While GitHub takes the requests and doesn't answer, the tab's mark turns, in its state's
+      // place, its title staying; once they're given up on, it stops.
+      stage.answering = 'silent';
+      await page.keyboard.press(key);
+      await expect(tab).toHaveAttribute('aria-busy', 'true');
+      await expect(tab.locator('.spinner')).toBeVisible();
+      await expect(tab).toContainText(TITLE);
+      await expect(tab).not.toHaveAttribute('aria-busy', { timeout: 20_000 });
+      expect(await page.evaluate(() => Reflect.get(window, 'loStill'))).toBe(true);
+    },
+  );
+});
+
 test('comes back offline with what it saved and what it fetched', async ({
   app,
   page,

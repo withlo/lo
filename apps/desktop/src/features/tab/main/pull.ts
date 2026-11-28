@@ -281,6 +281,34 @@ export class PullTab {
     }
   }
 
+  /**
+   * Reads the pull request again now, as the reader asks: its details and checks and every read
+   * its views keep, at once, then puts GitHub's newest head on screen, as the newer push's banner
+   * does. What failed is tried again, as Try again does, and a tab still opening goes on opening.
+   * Settles once that's all in, or can't be read now.
+   */
+  async refresh(): Promise<void> {
+    if (this.#closed) return;
+    if (this.#problem !== undefined || this.#acting === undefined) {
+      this.retry();
+      await this.#opening;
+      return;
+    }
+    // Opening reads it at once.
+    if (this.#opening) {
+      await this.#opening;
+      return;
+    }
+    const poller = this.#poller;
+    if (this.#acting.kind === 'anonymous' || !poller) {
+      await this.#read();
+    } else {
+      if (this.#active && !poller.open?.equals(this.pull)) await this.#setOpen(poller);
+      await poller.refresh(this.pull);
+    }
+    this.reload();
+  }
+
   /** Puts GitHub's newest head on screen, and the local copy at it. */
   reload(): void {
     const latest = this.#latest;

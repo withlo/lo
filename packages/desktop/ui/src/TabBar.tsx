@@ -44,6 +44,8 @@ export interface PullTab {
    * placeholder where its title will be.
    */
   loading?: boolean | undefined;
+  /** Whether it's being read again, as the reader asked: a spinner takes its state's place. */
+  refreshing?: boolean | undefined;
 }
 
 /** "Recent pull requests": the only tab while nothing else is open. It has no close button. */
@@ -66,6 +68,8 @@ export interface QueueTab {
   repo: string;
   /** The branch whose queue it shows. */
   branch: string;
+  /** Whether it's being read again, as the reader asked: a spinner takes its icon's place. */
+  refreshing?: boolean | undefined;
 }
 
 export interface TabBarProps {
@@ -914,7 +918,7 @@ function TabItem({
   drag: TabDrag;
 }) {
   const { id } = item;
-  const loading = item.kind === 'pull' && isLoading(item);
+  const busy = (item.kind === 'pull' && isLoading(item)) || isRefreshing(item);
   const closable = item.kind !== 'recent';
   const label = useRef<HTMLSpanElement>(null);
   useGiveUp(label, LABEL_STEPS);
@@ -924,7 +928,7 @@ function TabItem({
       aria-selected={selected}
       aria-posinset={position}
       aria-setsize={count}
-      aria-busy={loading ? true : undefined}
+      aria-busy={busy ? true : undefined}
       tabIndex={selected ? 0 : -1}
       data-tab={id}
       onClick={() => {
@@ -976,6 +980,11 @@ function isLoading(item: PullTab): boolean {
   return item.loading === true && item.title === undefined;
 }
 
+/** Whether a tab is being read again, as the reader asked. */
+function isRefreshing(item: Tab): boolean {
+  return (item.kind === 'pull' || item.kind === 'queue') && item.refreshing === true;
+}
+
 /**
  * What a tab says: a pull request's state, place, stack and title, or the name of one of Lo's own.
  * As the tab narrows, its title is cut short first, then its stack's count goes, then its
@@ -994,6 +1003,11 @@ function TabLabel({ tab: item, selected, fade }: { tab: Tab; selected: boolean; 
         <>
           {isLoading(item) ? (
             <span className="tab-mark flex flex-none">
+              <Spinner />
+            </span>
+          ) : isRefreshing(item) ? (
+            // In its state's room, so the tab's words stay put.
+            <span className="tab-mark flex size-12 flex-none items-center justify-center">
               <Spinner />
             </span>
           ) : (
@@ -1041,7 +1055,11 @@ function TabLabel({ tab: item, selected, fade }: { tab: Tab; selected: boolean; 
     case 'queue':
       return (
         <>
-          <Icon name="text-align-start" size={12} className="text-queue" />
+          {isRefreshing(item) ? (
+            <Spinner />
+          ) : (
+            <Icon name="text-align-start" size={12} className="text-queue" />
+          )}
           <span className="max-w-1/2 min-w-16 shrink truncate text-fg-muted">{item.repo}</span>
           <span className={title}>Merge queue · {withoutBidi(item.branch)}</span>
         </>

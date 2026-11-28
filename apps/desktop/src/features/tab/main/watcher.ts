@@ -207,6 +207,11 @@ export class Watcher {
     this.#tabs.get(id)?.retry();
   }
 
+  /** Reads view `id`'s pull request again now, as the reader asks: settles once it's all in. */
+  async refresh(id: string): Promise<void> {
+    await this.#tabs.get(id)?.refresh();
+  }
+
   async choose(id: string, login: string): Promise<void> {
     await this.#tabs.get(id)?.choose(login);
   }

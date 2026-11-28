@@ -929,6 +929,16 @@ status bar.
   after the first reads of the view on screen.
 - The head on screen is GitHub's when the tab opened. A newer push says so in a banner, and moves
   nothing until it's loaded.
+- `⌘R`, and `F5` on both systems (Ctrl+R stays Vim's `⌃r` on Linux), reads the tab on screen again
+  at once (`tab.refresh`), whatever its interval, and never reloads the window. Main asks each part
+  of the tab through `TabService.onRefresh`: a pull request's tab reads its pull request
+  (`Poller.refresh`, whose poll goes ahead of every poll that's merely due and the offline backoff,
+  fetches the details whatever the check says, and runs every read kept again with what it has, as
+  the 5-minute refresh does), then shows the newer push, if there is one; the overview reads its ref
+  as Try again does; a merge queue's tab reads its queue as Check again does. Its requests take
+  their turns in the account's queue, and the rate limit holds them as it holds polls. The tab's
+  mark in the strip turns until every part is in or has failed, and a press meanwhile asks nothing
+  more. Recent and Settings read nothing from GitHub, so it does nothing there.
 - The `tab.open` setting says which middle view a pull request's tab opens on: the overview, the
   timeline or the diff. A tab that opens on the overview waits for it, up to `HOLD_LIMIT`, and goes
   to the timeline, where the description is first, when there's none or it's late. The tab keeps its

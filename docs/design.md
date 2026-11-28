@@ -229,6 +229,10 @@ and the whole-file view.
   answers don't count against the rate limit.
 - **Rate limit.** Lo tracks how much of the limit is left, slows polling when it runs low and tells
   you when it does.
+- **Refresh.** `⌘R`, or `F5`, reads the tab on screen again at once, whatever the interval: a PR's
+  details, checks, timeline, threads and overview, then its newest push; a merge queue's tab, its
+  queue. Its requests wait their turn and for the rate limit as polls do, and the tab's mark in the
+  strip turns until they're in.
 
 ### The local copy
 

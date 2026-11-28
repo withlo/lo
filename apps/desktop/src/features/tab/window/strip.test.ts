@@ -48,6 +48,27 @@ describe('the strip’s tab for a stack', () => {
     });
   });
 
+  it('says a tab is refreshing only while it is', () => {
+    const views = new Map([['a:83', viewOf('a:83', 'Stack B: rate limit')]]);
+    expect(stripTab(stack, views)).not.toHaveProperty('refreshing');
+    expect(stripTab(stack, views, true)).toMatchObject({ refreshing: true, loading: false });
+    const queue: Tab = {
+      id: 'q',
+      kind: 'queue',
+      owner: 'rozed-dev',
+      repo: 'e2e',
+      branch: 'main',
+      login: 'rozed-bot',
+    };
+    expect(stripTab(queue, views, true)).toEqual({
+      kind: 'queue',
+      id: 'q',
+      repo: 'e2e',
+      branch: 'main',
+      refreshing: true,
+    });
+  });
+
   it('shows no title, rather than the layer’s, while a run’s view is opening', () => {
     const run: Tab = { ...stack, run: { layers: [83, 84], start: 'c'.repeat(40), from: 83 } };
     expect(stripTab(run, new Map())).toMatchObject({

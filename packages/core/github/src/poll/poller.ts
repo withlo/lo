@@ -445,6 +445,8 @@ interface ReadState {
   finished: number | undefined;
   /** The `generation` of the newest run that finished at all and started at that generation. */
   landed: number | undefined;
+  /** The `generation` of the newest run that ended, answered or not, and started at that generation. */
+  tried: number | undefined;
   /** When it's due again after a write it shows, whatever its stamp. */
   againAt: number | undefined;
   /** Whether its next run is given nothing Lo has, so it reads everything again. A run that started since clears it. */
@@ -495,6 +497,17 @@ interface PullState {
   readAt?: number | undefined;
   /** The check whose details the last poll left for after the reads waited on, until fetched. */
   detailsDue?: PullRequestCheck | undefined;
+}
+
+/** A refresh of the open pull request under way ({@link Poller.refresh}). */
+interface Refresh {
+  readonly pull: PullRef;
+  /** Its schedule's `forced` once the refresh asked for its poll: a poll chosen since then serves it. */
+  readonly ticket: number;
+  /** Each read it runs again, by name: which read it is, and the generation a run of it starts at. */
+  readonly reads: ReadonlyMap<string, { readonly id: number; readonly generation: number }>;
+  readonly done: Promise<void>;
+  readonly settle: () => void;
 }
 
 interface RepoState {
@@ -780,6 +793,8 @@ export class Poller {
   /** The pull requests' files being read, or read lately. */
   readonly #pullFiles: SharedPullFiles;
   readonly #listeners = new Set<(event: PollEvent) => void>();
+  /** The refreshes under way, by their pull request's key. */
+  readonly #refreshes = new Map<string, Refresh>();
   readonly #observers = new Set<() => void>();
   #stopped = false;
   #woken = false;
@@ -819,6 +834,7 @@ export class Poller {
       this.#looping = false;
       this.#leading = undefined;
       this.#queue.recheck();
+      this.#settleRefreshes();
     });
   }
 
@@ -829,6 +845,7 @@ export class Poller {
     this.#queue.recheck();
     this.#wake();
     for (const wake of this.#pauseWaiters) wake();
+    this.#settleRefreshes();
   }
 
   /** Calls `listener` with each {@link PollEvent}, until the returned function is called. */
@@ -1032,6 +1049,67 @@ export class Poller {
   }
 
   /**
+   * Reads `pull`, the open pull request, again now, whatever its interval, as when the reader asks:
+   * its poll goes ahead of every poll that's merely due, whatever the offline backoff, and fetches
+   * its details whatever its check says, then every read kept for it runs again with what it has,
+   * as on the 5-minute refresh. Its requests take their turns in the account's queue, and the rate
+   * limit holds them as it holds every poll. Resolves once all of that has answered or failed: at
+   * once when `pull` isn't the open pull request, and as soon as the rest can't go on, with the
+   * poller stopped, the account signed out, the rate limit used up or GitHub out of reach. Asked
+   * again while one is under way, it waits on that one and asks nothing more.
+   */
+  refresh(pull: PullRef): Promise<void> {
+    const under = this.#refreshes.get(pull.key);
+    if (under) return under.done;
+    const state = this.#pulls.get(pull.key);
+    if (this.#stopped || !state || !this.#open?.equals(pull)) return Promise.resolve();
+    // Without the check its details were fetched at, the poll fetches them again.
+    state.check = undefined;
+    state.schedule.force();
+    const reads = new Map<string, { id: number; generation: number }>();
+    for (const [name, read] of state.reads) {
+      this.#readAgain(pull, name, false, true);
+      reads.set(name, { id: read.id, generation: read.generation });
+    }
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const refresh: Refresh = {
+      pull,
+      ticket: state.schedule.forced,
+      reads,
+      done: promise,
+      settle: resolve,
+    };
+    this.#refreshes.set(pull.key, refresh);
+    this.#wake();
+    this.#changed();
+    return promise;
+  }
+
+  /** Settles each refresh that's over, or can't go on ({@link Poller.refresh}). */
+  #settleRefreshes(): void {
+    for (const [key, refresh] of this.#refreshes) {
+      if (!this.#refreshOver(refresh)) continue;
+      this.#refreshes.delete(key);
+      refresh.settle();
+    }
+  }
+
+  #refreshOver(refresh: Refresh): boolean {
+    const state = this.#pulls.get(refresh.pull.key);
+    if (this.#stopped || !this.#looping || this.#signedOut || !state) return true;
+    if (!this.#open?.equals(refresh.pull) || this.#status.rateLimit.kind === 'paused') return true;
+    if (state.schedule.served < refresh.ticket || state.detailsDue !== undefined) return false;
+    // Out of reach, the reads wait out the backoff, and without a check, they don't run at all.
+    if (this.#offline || state.latestCheck === undefined) return true;
+    for (const [name, mark] of refresh.reads) {
+      const read = state.reads.get(name);
+      // One let go of isn't waited for.
+      if (read?.id === mark.id && (read.tried ?? -1) < mark.generation) return false;
+    }
+    return true;
+  }
+
+  /**
    * Has the open pull request's poll wait for `reading`, the tab's own read of it, and take the
    * summary it read as the poll's, as hearing it from GitHub just now: it's kept and sent as a
    * poll's is, and the poll asks GitHub only for the rest. One that fails leaves the poll to read it.
@@ -1161,6 +1239,7 @@ export class Poller {
       generation: 0,
       finished: undefined,
       landed: undefined,
+      tried: undefined,
       againAt: undefined,
       afresh: false,
       loading: true,
@@ -2143,6 +2222,7 @@ export class Poller {
 
   #changed(): void {
     for (const observer of this.#observers) observer();
+    this.#settleRefreshes();
   }
 
   #wake(): void {
@@ -2320,6 +2400,7 @@ export class Poller {
   /** The next poll to run, or how long to wait for one. */
   #nextStep(): Step {
     this.#refreshStatus();
+    this.#settleRefreshes();
     if (this.#signedOut) return { kind: 'wait', wait: undefined };
     const config = this.#config;
     const now = config.monotonic();
@@ -2668,6 +2749,10 @@ export class Poller {
     const dropped = job.kind === 'read' && kept?.id !== job.read.id;
     // Whatever came of it, a run someone may have waited on is over: what follows are polls.
     if (kept && !dropped) kept.first = undefined;
+    // A run that started after the read was last made due has been tried, whatever came of it.
+    if (kept && !dropped && job.kind === 'read' && job.read.generation === kept.generation) {
+      kept.tried = job.read.generation;
+    }
     if (job.kind === 'details') {
       // Fetched or not, the next poll fetches them if they're still out of date.
       const state = this.#pulls.get(job.pull.key);

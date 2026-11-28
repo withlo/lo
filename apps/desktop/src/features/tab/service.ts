@@ -130,6 +130,13 @@ export interface TabService {
    * as a newer push instead, so the diff never moves under the reader.
    */
   drawn(id: string, head: string): void;
+  /**
+   * Calls `refresher` each time the reader asks to read what a tab shows from GitHub again, with
+   * the tab's id, or a pull request's tab's view on screen's, until the returned function is called.
+   * A feature that shows a part of a tab reads its part again, and the refresh lasts until what
+   * `refresher` returns settles.
+   */
+  onRefresh(refresher: (id: string) => Promise<unknown> | undefined): () => void;
 }
 
 export const tabs = defineService<TabService>('tab.tabs');

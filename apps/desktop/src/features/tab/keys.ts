@@ -3,7 +3,7 @@
 // dialog or a palette, which hold the keys while they're open. And a pull request's tab's: its left
 // and right panels, the code beside a reading view, the width of what has focus and the window's
 // layout, its middle views and going from one to the other, its local copy's folder, and the
-// account to open it as.
+// account to open it as. And reading the tab on screen from GitHub again.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -237,6 +237,19 @@ export default defineCommands('tab', {
     group: 'Tabs',
     keys: [],
     bar: { menu: 'File', section: 'pull', order: 20 },
+  },
+  /**
+   * Reads what the tab on screen shows from GitHub again, at once: a pull request's tab its pull
+   * request, and all it shows of it; a merge queue's tab its queue. `⌘R` as in browsers on macOS,
+   * and `F5`, as there and on Linux, where Ctrl+R stays Vim's `⌃r`.
+   */
+  refresh: {
+    label: 'Refresh',
+    description: 'Reads this tab again from GitHub.',
+    group: 'Tabs',
+    keys: [{ keys: 'cmd+r', on: 'mac' }, 'f5'],
+    when: outside,
+    bar: { menu: 'View', section: 'refresh', order: 10 },
   },
   /**
    * Shows the pull request on screen's local copy in Finder, or the system's file manager, as its

@@ -641,6 +641,13 @@ export const contract = defineContract('tab', {
     /** Tries again now what failed on a pull request's tab: reading it, and its local copy. */
     retry: { input: byId, reply: reply<void>() },
     /**
+     * Reads what tab `id` shows from GitHub again now, as the reader asks, whatever its interval: a
+     * pull request's tab, by its view on screen, its pull request and all the tab shows of it, and
+     * a merge queue's tab its queue. Replies once that's all in, or can't be read now. Asked again
+     * while one is under way, it waits on that one and asks nothing more.
+     */
+    refresh: { input: byId, reply: reply<void>() },
+    /**
      * Shows a pull request's tab's local copy in Finder, or in the system's file manager: its
      * clone's folder, as main has it. Refused while the copy isn't ready (`notReady`), and once its
      * folder is gone from the disk (`gone`).
