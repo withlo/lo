@@ -18,9 +18,15 @@ export function stripViewId(tab: Tab): string {
  * How the strip draws `tab`, given what main said of each view, by id: a pull request's by the
  * pull request its view shows, a run's top layer's as the header names it, with its view still
  * opening until its title arrives, unless main has said it can't be shown or isn't opening it yet. A
- * stack's tab says how many layers it has.
+ * stack's tab says how many layers it has. A pull request's or a merge queue's tab is `refreshing`
+ * while it's read again, as the reader asked.
  */
-export function stripTab(tab: Tab, views: ReadonlyMap<string, PullView>): StripTab {
+export function stripTab(
+  tab: Tab,
+  views: ReadonlyMap<string, PullView>,
+  refreshing = false,
+): StripTab {
+  const turning = refreshing ? { refreshing: true } : {};
   switch (tab.kind) {
     case 'pull': {
       const { id, repo, title, state, stack, run } = tab;
@@ -37,13 +43,14 @@ export function stripTab(tab: Tab, views: ReadonlyMap<string, PullView>): StripT
         state: header?.state ?? (run ? undefined : state),
         stack: stack?.layers.length,
         loading: view === undefined || (view.loading && view.problem === null),
+        ...turning,
       };
     }
     case 'recent':
     case 'settings':
       return { kind: tab.kind, id: tab.id };
     case 'queue':
-      return { kind: 'queue', id: tab.id, repo: tab.repo, branch: tab.branch };
+      return { kind: 'queue', id: tab.id, repo: tab.repo, branch: tab.branch, ...turning };
     default:
       tab satisfies never;
       throw new Error(`A tab of an unknown kind: ${JSON.stringify(tab)}.`);

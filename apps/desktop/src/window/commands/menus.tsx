@@ -6,7 +6,7 @@
 // label: what to do first, or the fact, in a few words with no full stop, as a tab's menu has
 // "Already first". The same words are the toast its key gives where no control shows them.
 
-import { ContextMenu, type ContextMenuAnchor } from '@lo/ui';
+import { ContextMenu, menuOpener, type ContextMenuAnchor } from '@lo/ui';
 import {
   findScope,
   hasEditMenu,
@@ -41,6 +41,8 @@ interface Open {
    * the page or of a drawing in it, such as a figure's part.
    */
   readonly from: HTMLElement | SVGElement | undefined;
+  /** The `⋯` it was opened from, if one opened it, which says it's expanded meanwhile. */
+  readonly opener: Element | undefined;
 }
 
 let current: Open | undefined;
@@ -78,7 +80,7 @@ export function openMenu(
   closing = undefined;
   const active = document.activeElement;
   const from = active instanceof HTMLElement || active instanceof SVGElement ? active : undefined;
-  set({ target, anchor, keyboard, from });
+  set({ target, anchor, keyboard, from, opener: menuOpener() });
   return true;
 }
 
@@ -233,6 +235,7 @@ export function Menus() {
       anchor={shown?.anchor}
       sections={shown ? menuSections(registry(), shown.target) : []}
       finalFocus={shown?.from}
+      opener={shown?.opener}
       highlightFirst={shown?.keyboard}
       onClosed={(chosen) => {
         const done = closing;

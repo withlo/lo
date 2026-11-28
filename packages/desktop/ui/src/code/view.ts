@@ -113,6 +113,7 @@ import {
   Beside,
   type BesideHost,
   draftKey,
+  isDraftKey,
   type LaneLines,
   listed,
   notesPlace,
@@ -198,7 +199,7 @@ import {
   shiftRows,
   shownRuns,
 } from './rows.ts';
-import { type ThreadHost, Threads } from './threads.ts';
+import { commentIn, type ThreadHost, Threads } from './threads.ts';
 import {
   type BoxHost,
   CollapsedWidget,
@@ -2864,7 +2865,9 @@ class View implements DiffView {
     const { target } = event;
     // The popover's cards are its own to follow.
     if (!(target instanceof Element) || this.#beside.cardUnder(target) !== null) return undefined;
-    const under = rangeUnder(event);
+    // A thread's stem or mark before a draft's in one cell, as the preview takes it; a draft's
+    // alone lights the draft.
+    const under = rangeUnder(event, (key) => !isDraftKey(key)) ?? rangeUnder(event);
     if (under) return { lane: under.kind, key: under.key };
     const thread = target.closest<HTMLElement>('.lo-diffthread [data-thread-id]')?.dataset.threadId;
     if (thread !== undefined) return { lane: 'threads', key: thread };
@@ -4434,7 +4437,14 @@ class View implements DiffView {
     let clicked: Target | undefined;
     if (card?.dataset.threadId) {
       const id = card.dataset.threadId;
-      clicked = { kind: 'thread', thread: id, collapsed: this.#hosts.get(id)?.open === false };
+      // On a comment of it, the comment's own menu: what Edit and Delete act on.
+      const comment = commentIn(card, target);
+      clicked = {
+        kind: 'thread',
+        thread: id,
+        collapsed: this.#hosts.get(id)?.open === false,
+        ...(comment === undefined ? {} : { comment }),
+      };
     } else if (marked) {
       // A mark beside lines: its thread's menu, as on its card.
       clicked = { kind: 'thread', thread: marked.thread };

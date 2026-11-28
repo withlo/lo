@@ -18,6 +18,7 @@ import {
   KEY_EVENT,
   type LineTarget,
   type NoteTarget,
+  type ThreadTarget,
 } from '../commands/index.ts';
 import { NEW_SLOT, REPLY_SLOT } from '../edits.ts';
 import { land } from '../motion.ts';
@@ -45,6 +46,7 @@ import { endSelection } from './keys.ts';
 import { besideMarker, type LaneBubble } from './lanes.ts';
 import type { Popover, PopHost, PopLines, PopRoom } from './popover.ts';
 import { type LaneRange, type Lights, type LitRange, rangeUnder, sameRange } from './ranges.ts';
+import { commentIn } from './threads.ts';
 import { editSlot, HeaderWidget, SpacerWidget } from './widgets.ts';
 
 /** An editor of a code view: one side's, side by side, or the one with both sides' lines. */
@@ -304,6 +306,11 @@ export interface BesideHost {
    * its handle on one it shares with the views in its scroll.
    */
   popover(pop: PopHost<PopPlace>): Popover<PopPlace>;
+  /**
+   * Opens the registry's menu of `target` at `x`, `y`, where a right-click in the popover isn't the
+   * view's own to hear, as in the one an overview's code blocks share, out in their scroll.
+   */
+  menu?: ((target: ThreadTarget, x: number, y: number) => void) | undefined;
   /** How the view shows threads now. */
   mode(): ThreadsMode;
   /** The threads drawn in file `file`, by where they are (`side:line`, or `new:0` on the file). */
@@ -720,6 +727,7 @@ export class Beside {
         if (this.#box?.at.key === at.key) this.#releaseBox();
       },
       drawn: () => this.placeBox(),
+      menu: (target, x, y) => this.#popMenu(target, x, y),
     };
   }
 
@@ -744,6 +752,22 @@ export class Beside {
       const content = render(host, shown(popover), 'popover', close);
       return { update: (next) => content.update(shown(next)), destroy: () => content.destroy() };
     };
+  }
+
+  /**
+   * A right-click in the popover that the view doesn't hear itself, at `target`: the menu of the
+   * thread it's on, or of your comment there, whose Edit and Delete act on it. A comment box is text,
+   * which the system's own menu serves. Says whether it opened one.
+   */
+  #popMenu(target: Element, x: number, y: number): boolean {
+    const menu = this.#host.menu;
+    if (!menu || target.closest('.lo-diffcomposer')) return false;
+    const card = target.closest<HTMLElement>('[data-thread-id]');
+    const thread = card?.dataset['threadId'];
+    if (!card || thread === undefined) return false;
+    const comment = commentIn(card, target);
+    menu({ kind: 'thread', thread, ...(comment === undefined ? {} : { comment }) }, x, y);
+    return true;
   }
 
   setDrafts(drafts: readonly DraftMark[]): void {

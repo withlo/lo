@@ -28,6 +28,7 @@ import {
   queueOpening,
   run as runSchema,
   stack as stackSchema,
+  viewIds,
   viewsOnScreen,
   type Tabs,
 } from '../contract.ts';
@@ -35,6 +36,7 @@ import { tabs } from '../service.ts';
 import { before, open as openOn } from '../settings.ts';
 import { carryOver } from './carry.ts';
 import { folderToShow } from './local.ts';
+import { Refreshes } from './refreshes.ts';
 import { createTabs, type TabList } from './tabs.ts';
 import { Watcher } from './watcher.ts';
 import { createPlaces, createWindowStore, type WindowStore } from './window.ts';
@@ -53,6 +55,9 @@ const following = new Set<(id: string) => void>();
 const watchingTabs = new Set<(value: Tabs) => void>();
 
 const log = (line: string) => console.error(`tab: ${line}`);
+
+/** What reads each part of a tab again as the reader asks, all at once. */
+const refreshes = new Refreshes(log);
 
 /** The tabs, read from the database the first time anything asks for them. */
 function tabsOf({ database, publish }: FeatureContext<typeof contract>): TabList {
@@ -144,6 +149,7 @@ export default defineFeature(contract, {
         watcher?.compareFrom(id, commit === undefined ? undefined : oid.parse(commit)),
       clone: (id) => watcher?.clone(id),
       drawn: (id, head) => watcher?.drawn(id, head),
+      onRefresh: (refresher, shows) => refreshes.listen(refresher, shows),
     }),
   ],
   handlers: {
@@ -167,6 +173,7 @@ export default defineFeature(contract, {
     retry({ id }) {
       pullTab(id).retry(id);
     },
+    refresh: ({ id, front }) => refreshes.refresh(id, front),
     showLocal({ id }) {
       // The clone's folder as main keeps it, shown in its folder and never opened, so nothing in
       // it runs.
@@ -238,6 +245,24 @@ export default defineFeature(contract, {
     watcher.onChange((id) => {
       for (const listener of following) listener(id);
     });
+    const reading = watcher;
+    // A pull request's tab reads its pull request, what the diff and the timeline show first while
+    // they're on screen, and the open pull requests its stack's tree is drawn from, if it has one.
+    refreshes.listen(
+      (id, front) =>
+        reading.has(id)
+          ? reading.refresh(id, {
+              front,
+              list: list
+                .list()
+                .tabs.some(
+                  (tab) =>
+                    tab.kind === 'pull' && tab.stack !== undefined && viewIds([tab]).includes(id),
+                ),
+            })
+          : undefined,
+      ['diff', 'timeline'],
+    );
     watcher.follow(list.list());
   },
   stop() {
@@ -247,6 +272,7 @@ export default defineFeature(contract, {
     stopBefore = undefined;
     following.clear();
     watchingTabs.clear();
+    refreshes.clear();
     watcher?.stop();
   },
 });

@@ -60,6 +60,7 @@ import {
   takeActs,
   threadFor,
   type ThreadKeyTarget,
+  whyNotOn,
 } from './acts.ts';
 import { threadsOnBlock } from './blocks.ts';
 import {
@@ -163,6 +164,19 @@ function free(target: ThreadKeyTarget): true | string {
   if (typeof tab === 'string') return tab;
   const row = threadFor(tab.id, target);
   return typeof row === 'string' ? true : (atWork(tab.id, row.id) ?? true);
+}
+
+/**
+ * Whether `change` can be made on `target`, as `check` says, and to the comment it names, where a
+ * right-click on one or its `⋯` named it: one that isn't yours is dimmed in its menu, with why.
+ */
+function onComment(change: 'edit' | 'delete', check: (target: ThreadKeyTarget) => true | string) {
+  return (target: ThreadKeyTarget): true | string => {
+    const can = check(target);
+    if (can !== true) return can;
+    const tab = activeTab();
+    return (tab?.kind === 'pull' && whyNotOn(tab.id, target, change)) || true;
+  };
 }
 
 /** Whether the thread on `target` shows as resolved now, a resolve or unresolve asked counted. */
@@ -283,7 +297,7 @@ export default {
     },
     edit: {
       run: actOn((tab, target) => edit(tab, target, ringed(target))),
-      enabled: enabled(writable),
+      enabled: onComment('edit', enabled(writable)),
     },
     remove: {
       // From the line beside lines, the thread's popover pins under the dialog that asks; where it
@@ -291,7 +305,7 @@ export default {
       run: actOn((tab, target) => {
         if (pinFirst(tab, target) !== 'hidden') remove(tab, target, ringed(target));
       }),
-      enabled: free,
+      enabled: onComment('delete', free),
     },
     discard: discarding,
     undiscard: undiscarding,

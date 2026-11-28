@@ -33,7 +33,13 @@ export {
   type ToastTone,
 } from './Toast.tsx';
 export { HERE, KeyHelp, type KeyHelpProblem, type KeyHelpProps } from './KeyHelp.tsx';
-export { MORE_ACTIONS, MoreButton, openMenuUnder, type MoreButtonProps } from './MoreButton.tsx';
+export {
+  menuOpener,
+  MORE_ACTIONS,
+  MoreButton,
+  openMenuUnder,
+  type MoreButtonProps,
+} from './MoreButton.tsx';
 export {
   DISMISS,
   DismissButton,

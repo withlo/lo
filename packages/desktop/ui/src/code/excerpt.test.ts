@@ -819,6 +819,26 @@ describe('threads and comment boxes', () => {
     expect(picked()).toEqual(added.slice(8, 11));
   });
 
+  test('a box on a thread’s line is a reply, whose line isn’t picked', async () => {
+    const shown = open();
+    shown.setThreads([thread('here', 6)], plain().render);
+    shown.compose(at(6), 'On its line', composerEvents());
+    await Promise.resolve();
+    expect(picked()).toEqual([]);
+  });
+
+  test('a new comment from above the first line shown picks the lines from the top', async () => {
+    const shown = open();
+    // From new line 2, above the excerpt's first, new line 4, to new line 5.
+    shown.compose({ file: 'a', side: 'new', from: 2, to: 5 }, 'New', composerEvents());
+    await Promise.resolve();
+    const { doc } = editor().state;
+    const top: string[] = [];
+    for (let line = 1; top.at(-1) !== added[4]; line++) top.push(doc.line(line).text);
+    expect(picked()).toEqual(top);
+    expect(top.length).toBeGreaterThan(1);
+  });
+
   test('threads that come on a line on screen wait until the reader acts in the excerpt, or it’s off screen', async () => {
     const shown = open();
     await frame();
@@ -1120,6 +1140,7 @@ function inScroll(count: number) {
   const shown = Array.from({ length: count }, (_, index) => {
     const host = document.createElement('div');
     scroller.append(host);
+    const on = events();
     const excerpt = createExcerptView(
       host,
       {
@@ -1132,7 +1153,7 @@ function inScroll(count: number) {
         nonce: 'excerpt-nonce',
         threads: 'beside',
       },
-      events(),
+      on,
     );
     for (const content of host.querySelectorAll<HTMLElement>('.cm-content')) content.tabIndex = 0;
     excerpt.setThreads(
@@ -1141,7 +1162,7 @@ function inScroll(count: number) {
       { popover: render },
     );
     const mark = () => host.querySelector<HTMLElement>('.lo-threadlane .lo-bubble')!;
-    return { excerpt, host, mark };
+    return { excerpt, host, mark, on };
   });
   onTestFinished(() => {
     for (const { excerpt } of shown) excerpt.destroy();
@@ -1258,6 +1279,27 @@ describe('threads beside lines', () => {
     expect(second.excerpt.pinned()).toEqual(['t1']);
     second.excerpt.destroy();
     expect(layers()).toHaveLength(0);
+  });
+
+  test('a right-click in the popover they share, out in their scroll, is the menu of its thread, or its comment, from the excerpt it’s open for', () => {
+    const { shown, layers } = inScroll(2);
+    const [first, second] = [shown[0]!, shown[1]!];
+    second.mark().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const card = layers()[0]!.querySelector('[data-thread-id="t1"]')!;
+    const onCard = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    card.dispatchEvent(onCard);
+    expect(onCard.defaultPrevented).toBe(true);
+    expect(second.on.menu).toHaveBeenLastCalledWith({ kind: 'thread', thread: 't1' }, 0, 0);
+    // As a comment's own `⋯` asks: the menu whose Edit and Delete act on that comment.
+    card
+      .querySelector('[data-comment]')!
+      .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    expect(second.on.menu).toHaveBeenLastCalledWith(
+      { kind: 'thread', thread: 't1', comment: 't1.1' },
+      0,
+      0,
+    );
+    expect(first.on.menu).not.toHaveBeenCalled();
   });
 
   test('the popover they share takes the listeners it put on the page and the window with the last', () => {

@@ -290,6 +290,7 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | More tabs              | `⌘⇧A`                                                  | Anywhere but `dialog`, `palette` and `box` | `tab.more`              |
 | Open on GitHub         | None: the app menu or the command palette              | Anywhere                                   | `tab.openOnGithub`      |
 | Copy link              | None: the app menu or the command palette              | Anywhere                                   | `tab.copyLink`          |
+| Refresh                | `⌘R` (macOS only), `F5`                                | Anywhere but `dialog` and `palette`        | `tab.refresh`           |
 | Show local copy folder | None: its control or the command palette               | Anywhere                                   | `tab.showLocalCopy`     |
 | Copy local copy path   | None: its control or the command palette               | Anywhere                                   | `tab.copyLocalPath`     |
 | Choose account…        | None: its control, the app menu or the command palette | Anywhere but `dialog` and `palette`        | `tab.chooseAccount`     |
@@ -444,6 +445,7 @@ These keys are on one system only:
 | Find…                   | `Ctrl+Shift+F`                                                  | Linux | In `diff` and `file`                        | `diff.find`      |
 | Show menu               | `F10`                                                           | Linux | Anywhere but `menu`, `dialog` and `palette` | `keys.appMenu`   |
 | Open pull request…      | `⌘O`                                                            | macOS | Anywhere but `dialog` and `palette`         | `open.box`       |
+| Refresh                 | `⌘R`                                                            | macOS | Anywhere but `dialog` and `palette`         | `tab.refresh`    |
 | Move Lo to Applications | None: its control or the command palette                        | macOS | Anywhere                                    | `updates.move`   |
 
 On Linux, in a comment box in insert mode, and in a field inside a code view such as Vim's search,

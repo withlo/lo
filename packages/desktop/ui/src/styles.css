@@ -666,6 +666,23 @@
   box-shadow: 0 0 0 3px var(--lo-current-strong);
 }
 
+/* A control every card or row of a list repeats, its secondary actions' `⋯` (`MoreButton`'s `shy`):
+   it shows only on the one under the pointer, the one the keyboard is on, the one with focus in it,
+   and while the menu it opened is open. A scope is the nearest element marked `data-shy-scope`, and
+   it's the keyboard's while it has `data-focused`. Hidden, it keeps its room, so nothing beside it
+   moves as it shows, and it's never out of `Tab`'s reach: focus on it shows it. It comes and goes
+   in a hover's Tint. */
+@utility shy {
+  opacity: 0;
+  transition-property: opacity;
+  transition-duration: var(--lo-dur-fast);
+  transition-timing-function: var(--lo-ease-out);
+  [data-shy-scope]:is(:hover, [data-focused], :focus-visible, :has(:focus-visible)) &,
+  &:has([aria-expanded='true']) {
+    opacity: 1;
+  }
+}
+
 /* A thread's popover over the code (`ThreadPopover`): as wide as the code view places it, and as
    tall as its threads, up to the most the view lets it be (`--lo-pop-max`), past which they scroll
    inside it. */
