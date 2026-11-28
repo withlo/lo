@@ -140,12 +140,28 @@ test('` steps from the diff to the timeline, read as it’s first shown; j, k an
     await expect(timeline).toBeFocused();
   });
 
-  await test.step('a row’s menu offers what its buttons do, and the keyboard’s row is the palette’s', async () => {
+  await test.step('a row’s menu, from a right-click or its `⋯`, offers what its buttons do, and the keyboard’s row is the palette’s', async () => {
     const menu = page.getByRole('menu', { name: 'Row actions' });
     // A right-click on the push: the keyboard moves to it, and its menu has no review's actions.
     await rows.nth(1).click({ button: 'right' });
     await expect(menu.getByRole('menuitem', { name: /Open on GitHub/ })).toBeVisible();
     await expect(menu.getByRole('menuitem', { name: /^Show in diff/ })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect.poll(on).toContain('pushed 1 commit');
+    // Its `⋯`, at the end of its line, opens the same menu: by the pointer, and by Tab and ⏎.
+    const more = rows.nth(1).getByRole('button', { name: 'More actions' });
+    await rows.nth(1).hover();
+    await more.click();
+    await expect(menu.getByRole('menuitem', { name: /Open on GitHub/ })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /^Show in diff/ })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(timeline).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(more).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(menu.getByRole('menuitem', { name: /Open on GitHub/ })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(menu).toBeHidden();
     await expect.poll(on).toContain('pushed 1 commit');

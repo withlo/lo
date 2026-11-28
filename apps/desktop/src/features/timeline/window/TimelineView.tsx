@@ -738,6 +738,7 @@ function RowOf({
           {...attributes}
           count={row.count}
           reading={row.reading}
+          menu
           onSee={() => {
             void tabs()
               .openExternal({
@@ -815,11 +816,17 @@ function RowOf({
             oid,
             headline: withoutBidi(headline),
           }))}
+          menu
         />
       );
     case 'checks':
       return (
-        <TimelineChecks {...attributes} state={row.state} revision={revisionOf(row.revision)} />
+        <TimelineChecks
+          {...attributes}
+          state={row.state}
+          revision={revisionOf(row.revision)}
+          menu
+        />
       );
     case 'forcePush': {
       const { compare: pair } = row;
@@ -839,18 +846,25 @@ function RowOf({
               onCompare: () => compare(tab, pair.from, pair.to),
             }
           }
+          menu
         />
       );
     }
     case 'event':
       return (
-        <TimelineEvent {...attributes} glyph={row.glyph} tone={row.tone} when={when(row.at, now)}>
+        <TimelineEvent
+          {...attributes}
+          glyph={row.glyph}
+          tone={row.tone}
+          when={when(row.at, now)}
+          menu
+        >
           <Sentence parts={row.parts} />
         </TimelineEvent>
       );
     case 'sent':
       // Drawn as GitHub's copy will be, which takes its place with nothing moving, from the text
-      // sent and the tree its card will start from.
+      // sent and the tree its card will start from: its `⋯` too, once GitHub has it.
       return (
         <TimelineComment
           {...attributes}
@@ -861,6 +875,7 @@ function RowOf({
           mine
           byAuthor={row.byAuthor}
           sending={row.sending}
+          menu
           body={<Preview view={tab} text={row.body} pull={pull} flush sent />}
         />
       );
