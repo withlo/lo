@@ -92,7 +92,7 @@ describe('marks, against the repository’s definitions', () => {
     ]);
     expect(checked.outcome.kind).toBe('shown');
     expect(checked.findings.map(({ message }) => message)).toEqual([
-      '"Bucket"\'s definition isn\'t the one in the repository\'s definitions, which says "The tokens a tenant has.". Write that, or mark it (changed): **Bucket** (changed): definition.',
+      "\"Bucket\"'s definition isn't the one in the repository's definitions. Write theirs, or mark it (changed): **Bucket** (changed): definition. Theirs reads: The tokens a tenant has.",
       '"Tenant" is marked (changed), and its definition is the repository\'s already. Take the mark off.',
       'The repository\'s definitions don\'t have "Token". Mark it (new): **Token** (new): definition.',
       '"Tenants" is marked (new), and the repository\'s definitions have it, as another name for "Tenant". Mark it (changed) to change its definition.',
@@ -105,6 +105,15 @@ describe('marks, against the repository’s definitions', () => {
     expect(checked.findings[0]?.message).toBe(
       '"Bucket" is marked (new), and the repository\'s definitions have it, with this definition. Take the mark off.',
     );
+  });
+
+  test('a term not marked, whose definition differs, is shown theirs whole, to copy', async () => {
+    const long = `${'The tokens a tenant has to spend, '.repeat(59)}one a request.`;
+    expect(long.length).toBeGreaterThan(2000);
+    const checked = await check(store({ Bucket: long }, ['buckets']), '- **buckets**: Tokens.');
+    expect(checked.findings.map(({ message }) => message)).toEqual([
+      `"buckets"'s definition isn't the one in the repository's definitions, as another name for "Bucket". Write theirs, or mark it (changed): **buckets** (changed): definition. Theirs reads: ${long}`,
+    ]);
   });
 
   test('a term not marked, whose definition is more than a paragraph, differs', async () => {

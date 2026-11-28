@@ -9,10 +9,10 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
-import { STORE_LIMITS } from '@lo/artifact';
+import { CHECK_TIMEOUT, STORE_LIMITS } from '@lo/artifact';
 import { git, gitBytes, testGitEnvironment } from '@lo/testing/git';
 
-import { gitIn } from '../src/git.ts';
+import { GitError, gitIn, TooMuch } from '../src/git.ts';
 import { repositoryStore } from '../src/store.ts';
 import { overview, repositoryOf, runChecker, runJson, scratch } from './support.ts';
 
@@ -202,6 +202,28 @@ describe('check, against them', () => {
           "The repository's definitions, at refs/lo/terms, can't be read, so the glossary's marks weren't checked. refs/lo/terms isn't a commit.",
       },
     ]);
+  });
+
+  test('can’t be read past what git may write for them, saying so of them', async () => {
+    const tree = gitBytes(repo, ['mktree'], `100644 blob ${blob(store())}\tterms.json\n`)
+      .toString('utf8')
+      .trim();
+    // A commit of more than a mebibyte, its message mostly.
+    point(
+      gitBytes(repo, ['commit-tree', tree], `Definitions.\n\n${'a'.repeat(1024 * 1024)}\n`)
+        .toString('utf8')
+        .trim(),
+    );
+    const reading = repositoryStore(gitIn(repo, testGitEnvironment()), CHECK_TIMEOUT, 1024 * 1024);
+    await expect(reading).rejects.toThrow(
+      new GitError(
+        'Reading terms.json would read more than 1 MiB from git, the most the checker reads for it.',
+      ),
+    );
+    // Not git's own words, which are about the overview's code, and which the check says alone.
+    await expect(reading).rejects.not.toBeInstanceOf(TooMuch);
+    // Within it, the same commit reads.
+    expect(await read()).toBe('read');
   });
 
   test('can’t check when git can’t read them, saying why', () => {

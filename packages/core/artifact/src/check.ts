@@ -263,10 +263,11 @@ function checkMarks(
         );
       }
     } else if (!same) {
+      // Whole, to be copied: the store holds it on one line, with nothing unsafe, in 2,048 bytes.
       findings.add(
         'term-differs',
         line,
-        `${term}'s definition isn't the one in the repository's definitions${as}, which says "${quote(stored.definition)}". Write that, or mark it (changed): **${quote(name)}** (changed): definition.`,
+        `${term}'s definition isn't the one in the repository's definitions${as}. Write theirs, or mark it (changed): **${quote(name)}** (changed): definition. Theirs reads: ${stored.definition}`,
       );
     }
   }

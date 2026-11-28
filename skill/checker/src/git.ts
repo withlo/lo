@@ -249,7 +249,8 @@ async function readObject(output: Output, info: ObjectInfo, keep: number): Promi
   return bytes;
 }
 
-function mebibytes(bytes: number): string {
+/** `bytes`, in whole mebibytes, as `256 MiB`. */
+export function mebibytes(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))} MiB`;
 }
 
