@@ -1158,6 +1158,16 @@ test('shows what the pull request does to the repo’s definitions at the top, i
     await expect
       .poll(async () => ((await heading.boundingBox())?.y ?? -1) - (view?.y ?? 0))
       .toBeGreaterThanOrEqual(0);
+
+    // Collapsed by hand, the Glossary expands as Go to glossary goes there.
+    await shown
+      .locator('.lo-section-head')
+      .filter({ has: page.getByRole('heading', { name: 'Glossary', exact: true }) })
+      .getByRole('button', { name: 'Collapse section' })
+      .click();
+    await expect(rows).toHaveCount(0);
+    await line.getByRole('button', { name: 'Go to glossary' }).click();
+    await expect(row('Bucket').locator('.lo-term-row__term')).toBeFocused();
   });
 
   await test.step('shows who wrote the repo’s definition in a term’s card', async () => {
@@ -1184,6 +1194,32 @@ test('shows what the pull request does to the repo’s definitions at the top, i
     );
     await expect(row('Credit').locator('[data-lo-before]')).toHaveCount(0);
     await expect(row('Tenant')).toContainText('the accounts a quota is counted for.');
+  });
+});
+
+test.describe('with the Glossary in every repo’s list of sections that start collapsed', () => {
+  test.use({ settings: JSON.stringify({ 'overview.collapsed': { '*': ['Glossary'] } }) });
+
+  test('expands it as Go to glossary goes there', async ({ page, ref }) => {
+    ref.holds = { kind: 'made', overview: overviewOf({ 'artifact.md': DEFINING }) };
+    ref.terms = overviewOf({ 'terms.json': DEFINED });
+    await open(page);
+    await overviewTab(page).click();
+    const shown = overview(page, 'shown');
+    const head = shown
+      .locator('.lo-section-head')
+      .filter({ has: page.getByRole('heading', { name: 'Glossary', exact: true }) });
+    await expect(head).toHaveAttribute('data-collapsed', '', { timeout: 20_000 });
+    const rows = shown.locator('[data-lo-glossary] [data-lo-term-row]');
+    await expect(rows).toHaveCount(0);
+    const line = shown.getByRole('note').filter({ hasText: 'definitions' });
+    await line.getByRole('button', { name: 'Go to glossary' }).click();
+    await expect(head).not.toHaveAttribute('data-collapsed');
+    await expect(
+      rows
+        .filter({ has: page.locator('.lo-term-row__term', { hasText: 'Bucket' }) })
+        .locator('.lo-term-row__term'),
+    ).toBeFocused();
   });
 });
 

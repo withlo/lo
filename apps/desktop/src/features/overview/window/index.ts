@@ -46,7 +46,9 @@ import {
   inEveryRepo,
   inThisRepo,
   isCollapsed,
+  glossaryBlock,
   isHeading,
+  openGlossary,
   openShown,
   sectionFor,
 } from './sections.ts';
@@ -60,7 +62,6 @@ import {
   follow,
   followName,
   followOf,
-  glossaryOf,
   goToGlossary,
   keepPlaces,
   loadNewer,
@@ -341,11 +342,17 @@ export default {
     pageDown: scrolling('pageDown'),
     pageUp: scrolling('pageUp'),
     goGlossary: {
-      run: withOverview(goToGlossary),
+      // A collapsed Glossary expands first, at once, as anything going into a section does.
+      run: withOverview((overview) => {
+        const tab = activeTab();
+        if (tab?.kind === 'pull') openGlossary(tab, overview);
+        goToGlossary(overview);
+      }),
+      // By the overview's own blocks, which a collapsed Glossary still has.
       enabled: () => {
         const overview = onScreen();
         if (typeof overview === 'string') return overview;
-        return glossaryOf(overview) ? true : 'This overview has no glossary';
+        return glossaryBlock(overview.tree) === undefined ? 'This overview has no glossary' : true;
       },
     },
     loadNewer: {

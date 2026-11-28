@@ -154,6 +154,21 @@ export function openTo(tab: PullTab, tree: OverviewTree, block: number): void {
   }
 }
 
+/** The block number of the glossary under `tree`'s Glossary heading, if it has one. */
+export function glossaryBlock(tree: OverviewTree): number | undefined {
+  const at = tree.blocks.findIndex((block) => block.kind === 'glossary');
+  return at === -1 ? undefined : at;
+}
+
+/**
+ * Expands the overview's Glossary in the tab `tab`, if it's collapsed, drawn now, so Go to glossary
+ * has its terms to go to.
+ */
+export function openGlossary(tab: PullTab, overview: DrawnOverview): void {
+  const at = glossaryBlock(overview.tree);
+  if (at !== undefined) flushSync(() => openTo(tab, overview.tree, at));
+}
+
 /**
  * As {@link openTo}, in the overview main last said tab `tab` has, whether it's drawn yet or not:
  * history and a note's "Show in overview" go there from the diff or the timeline, before the
