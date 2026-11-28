@@ -4,6 +4,7 @@ import {
   useLayoutEffect,
   useRef,
   useSyncExternalStore,
+  type MouseEvent,
   type ReactNode,
   type Ref,
 } from 'react';
@@ -18,9 +19,11 @@ import type { IconName } from './icons.ts';
 import { onVim, vimOn } from './vim.ts';
 import { Key } from './Key.tsx';
 import { Meter } from './Meter.tsx';
+import { openMenuUnder } from './MoreButton.tsx';
 import { useDetails } from './Problem.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
 import { Spinner } from './Spinner.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 /** The acting account, which the box shows and never chooses. */
 export interface CommentBoxAccount {
@@ -49,7 +52,24 @@ export interface CommentBoxHead {
   close?: CommentBoxClose | undefined;
   /** Write | Preview can't be changed now, as while the box's comment is sent: it's dimmed. */
   held?: boolean | undefined;
+  /**
+   * On a new comment on lines, `where` is a button whose menu changes them: the caller's menu of
+   * the box's lines, which its right-click opens, and its press too, under it.
+   */
+  lines?: CommentBoxLines | undefined;
 }
+
+/** What makes a box's words for its lines a button: see `CommentBoxHead.lines`. */
+export interface CommentBoxLines {
+  /**
+   * Props for the element around the button, whose right-click opens the menu of the box's lines,
+   * the caller's: the button opens it under itself (`openMenuUnder`).
+   */
+  readonly menu: { onContextMenu(event: MouseEvent<HTMLElement>): void };
+}
+
+/** The tooltip of a box's lines button. */
+export const CHANGE_LINES = 'Change lines';
 
 /** The control that closes a box. */
 export interface CommentBoxClose {
@@ -546,11 +566,14 @@ export function CommentBoxHeadBar({
         ref={row}
         className="give-up flex items-center gap-8 py-4 ps-12 pe-4 whitespace-nowrap text-small"
       >
-        {head.where !== undefined && (
-          <span data-fit className="min-w-0 truncate text-small-medium text-fg">
-            {head.where}
-          </span>
-        )}
+        {head.where !== undefined &&
+          (head.lines === undefined ? (
+            <span data-fit className="min-w-0 truncate text-small-medium text-fg">
+              {head.where}
+            </span>
+          ) : (
+            <LinesButton where={head.where} lines={head.lines} />
+          ))}
         <span className="flex-1" />
         {head.account !== undefined && (
           <span
@@ -591,6 +614,29 @@ export function CommentBoxHeadBar({
       </div>
       {head.why !== undefined && <p className="px-12 pb-6 text-fg-muted text-small">{head.why}</p>}
     </div>
+  );
+}
+
+/**
+ * A new comment's words for its lines as a button, built as `MoreButton` is: the words, then a
+ * chevron, which open the menu that changes them under it. Its words start where the words alone
+ * would, and are what the head cuts short last.
+ */
+function LinesButton({ where, lines }: { where: ReactNode; lines: CommentBoxLines }) {
+  return (
+    <span data-fit className="flex min-w-0" {...lines.menu}>
+      <Tooltip label={CHANGE_LINES}>
+        <button
+          type="button"
+          aria-haspopup="menu"
+          className="-ms-6 inline-flex h-control-h-sm min-w-0 items-center gap-4 rounded-sm px-6 text-small-medium text-fg move-tint hover:bg-hover focus-visible:shadow-ring"
+          onClick={(event) => openMenuUnder(event.currentTarget)}
+        >
+          <span className="min-w-0 truncate">{where}</span>
+          <Icon name="chevron-down" size={12} />
+        </button>
+      </Tooltip>
+    </span>
   );
 }
 

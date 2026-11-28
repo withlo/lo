@@ -473,6 +473,12 @@ export interface ComposerEvents {
    * dropzone shows meanwhile.
    */
   dragging?(count: number): void;
+  /**
+   * The reader dragged an end of the new comment's lines in the gutter, the cell of its bracket's
+   * tick or of its mark, to make them `at`, on the box's side: the caller moves the box there with
+   * `move`, in this call, or leaves it where it was, saying why. Unheard, it stays where it was.
+   */
+  lines?(at: Place | Span): void;
 }
 
 /** A comment box's handle. */
@@ -550,6 +556,20 @@ export interface Composer {
    * it's in is about to be drawn anew.
    */
   keep(): KeptBox;
+  /**
+   * Moves a new comment's box to lines `at` of its file, as the lines it's on change while it's
+   * open: under their last line, as it is, with its text, caret, selection, undo history, mode and
+   * preview, and focus where it was. Side by side, a last line on the other side, as a removed
+   * line's range down to an unchanged line has, takes it to that column. Beside lines the popover
+   * is placed again under them; between lines the box's block, and the room the other side keeps
+   * for it, leave its last line and come under the new one in one change, the box's element moved,
+   * not made again.
+   * Its bracket and the rows it picks follow in the same frame, a key in it acts on its new lines,
+   * and the pane scrolls the least that keeps it whole. Says whether it moved: not where its view
+   * draws none of those lines, nor where another box of the view is open, nor for a box on a file
+   * or in a thread, nor one outside a code view.
+   */
+  move(at: Place | Span): boolean;
 }
 
 /**

@@ -466,6 +466,8 @@ function sampleTarget(kind: TargetKind): Target {
       return { kind, row: 'r' };
     case 'box':
       return { kind, box: 'b' };
+    case 'lines':
+      return { kind, box: 'b' };
     case 'notice':
       return { kind, notice: 'n', tab: 't', pull: 1 };
     case 'none':
