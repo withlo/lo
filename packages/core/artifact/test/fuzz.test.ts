@@ -66,6 +66,8 @@ const PIECES = [
   '- **Term** (new)&#58; an entity.\n',
   '- **Term** (new): **bold**, [web](https://example.com).\n',
   '- **`t `** (new): a space.\n',
+  '- **Term** (new): a\ttab, a soft\u00ADhyphen.\n',
+  '- **Term** (new): see [ref][r] and [r].\n',
   ' (new):',
   '(changed)',
   '- **Hash  map**:\n  on the next line.\n',
@@ -224,7 +226,7 @@ function isPlain(text: string): boolean {
 
 /** Whether `text`, a definition, reads as only text, inline code and links to code and terms. */
 function isDefinition(text: string): boolean {
-  return (inlineTokens(text) ?? []).every(
+  return (inlineTokens(text, { references: 'any' }) ?? []).every(
     (token) =>
       ['text', 'code_inline', 'link_close'].includes(token.type) ||
       (token.type === 'link_open' && /^(?:code|term):/.test(String(token.attrGet('href') ?? ''))),

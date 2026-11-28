@@ -5,7 +5,7 @@
  * both are held to these rules, so whatever an overview may mark, they may hold.
  */
 
-import { inlineTokens } from '@lo/markdown';
+import { ANY_REFERENCE, inlineTokens } from '@lo/markdown';
 import type { Token } from 'markdown-it';
 
 import { UNSAFE } from './findings.ts';
@@ -38,6 +38,7 @@ export function notDefinition(
         continue;
       case 'link_open': {
         const href = token.attrGet('href');
+        if (href === ANY_REFERENCE) return { what: 'a reference-style link', why: REFERENCES };
         const read =
           typeof href !== 'string'
             ? undefined
@@ -57,6 +58,9 @@ export function notDefinition(
   return undefined;
 }
 
+const REFERENCES =
+  'A definition is read alone, where no reference is defined: write the link inline, as [label](code:path), or put a backslash before its brackets.';
+
 /** What each other token a definition may not hold is, in words. */
 const KINDS: ReadonlyMap<string, string> = new Map([
   ['strong_open', 'bold text'],
@@ -69,10 +73,22 @@ const KINDS: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
+ * `text`, a definition as written, read alone as part of a paragraph, as the repository's
+ * definitions hold it: its tokens, with each reference-style link read as a link to
+ * {@link ANY_REFERENCE}, since it reads as a link wherever its label is defined. Undefined for text
+ * nested too deep to read.
+ */
+export function definitionTokens(text: string): Token[] | undefined {
+  return inlineTokens(text, { depth: LIMITS.depth, references: 'any' });
+}
+
+/**
  * What `text`, a definition as written, holds that a definition can't, read alone as part of a
- * paragraph; undefined when it holds nothing else.
+ * paragraph: a control or invisible character, or what {@link notDefinition} says of its tokens.
+ * Undefined when it holds nothing else.
  */
 export function notDefinitionText(text: string): { what: string; why?: string } | undefined {
-  const tokens = inlineTokens(text, LIMITS.depth);
+  if (UNSAFE.test(text)) return { what: 'a control or invisible character' };
+  const tokens = definitionTokens(text);
   return tokens === undefined ? { what: 'formatting nested too deep' } : notDefinition(tokens);
 }

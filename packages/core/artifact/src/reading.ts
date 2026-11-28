@@ -10,8 +10,8 @@ import { inlineTokens, MAX_NAME } from '@lo/markdown';
 import type { Token } from 'markdown-it';
 
 import { OTHER, unreadLink } from './addresses.ts';
-import { isPlainTerm, notDefinition, notDefinitionText } from './definitions.ts';
-import { quote, type FindingCode, type Findings } from './findings.ts';
+import { definitionTokens, isPlainTerm, notDefinition } from './definitions.ts';
+import { quote, UNSAFE, type FindingCode, type Findings } from './findings.ts';
 import { LIMITS, MIN_STEPS, MIN_TABS } from './limits.ts';
 import { utf8Length } from './source.ts';
 import { STORE_LIMITS } from './store.ts';
@@ -1173,7 +1173,7 @@ const TRIES = 32;
  * end there, `later`; or as anything else, `not`.
  */
 function readsAsTerm(source: string, name: string, after: string): 'term' | 'later' | 'not' {
-  const kept = (inlineTokens(source, LIMITS.depth) ?? []).filter(isWritten);
+  const kept = (inlineTokens(source, { depth: LIMITS.depth }) ?? []).filter(isWritten);
   if (kept[0]?.type !== 'strong_open') return 'not';
   let depth = 0;
   let end = -1;
@@ -1221,14 +1221,48 @@ function isPunctuation(unit: number): boolean {
 
 /**
  * Why the repository's definitions can't hold `written`, a glossary item's definition as written,
- * whose tokens in the overview are `children`: too long, or holding what a definition can't, as
- * the overview reads it or as it reads alone. Undefined when they can.
+ * whose tokens in the overview are `children`: too long, holding a control or invisible character,
+ * holding what a definition can't, as the overview reads it or as it reads alone, or reading alone
+ * other than it does in the overview. Undefined when they can, which is exactly when the store
+ * would read it, and show it, as the overview does.
  */
 function unstorableOf(written: string, children: readonly Token[]): string | undefined {
   const length = utf8Length(written);
   if (length > STORE_LIMITS.definition) return `is ${length.toLocaleString('en-US')} bytes`;
-  const not = notDefinition(children) ?? notDefinitionText(written);
-  return not === undefined ? undefined : `holds ${not.what}`;
+  if (UNSAFE.test(written)) return 'holds a control or invisible character';
+  const alone = definitionTokens(written);
+  if (alone === undefined) return 'holds formatting nested too deep';
+  const not = notDefinition(children) ?? notDefinition(alone);
+  if (not !== undefined) return `holds ${not.what}`;
+  return sameReading(children, alone) ? undefined : 'reads otherwise on its own';
+}
+
+/**
+ * Whether `a` and `b`, the tokens of text a definition may hold, read the same: the same code and
+ * links, with the same text between them, a line break being a space.
+ */
+function sameReading(a: readonly Token[], b: readonly Token[]): boolean {
+  const left = readingOf(a);
+  const right = readingOf(b);
+  return left.length === right.length && left.every((each, index) => each === right[index]);
+}
+
+/** How `tokens` read: each run of text, a line break as a space, and each other token. */
+function readingOf(tokens: readonly Token[]): string[] {
+  const read: string[] = [];
+  let text = '';
+  for (const token of tokens) {
+    if (token.type === 'text' || token.type === 'text_special') text += token.content;
+    else if (token.type === 'softbreak') text += ' ';
+    else {
+      read.push(`text ${text}`);
+      text = '';
+      const detail = token.type === 'link_open' ? String(token.attrGet('href')) : token.content;
+      read.push(`${token.type} ${detail}`);
+    }
+  }
+  read.push(`text ${text}`);
+  return read;
 }
 
 /** Whether `token` isn't empty text, which markdown-it leaves where emphasis was looked for. */
