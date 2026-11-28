@@ -1,7 +1,8 @@
 // The repo's definitions in a tab's overview: what each of its terms shows with them, for the
-// document to draw (the definition, its tags, the one a Changed term replaces, and who it's by);
-// the line under the byline that says what the pull request adds and changes, with "Go to
-// glossary"; and the note under the Glossary heading when they can't be used.
+// document to draw (the definition, its tags, the one a Changed term replaces, who it's by, and
+// whether the reader ignores it), with the term's menu and "Stop ignoring"; the line under the
+// byline that says what the pull request adds and changes, with "Go to glossary"; and the note
+// under the Glossary heading when they can't be used.
 
 import { ago, Collapse, Problem, Ticks, type ProblemAction } from '@lo/ui';
 import { OverviewLine, type OverviewTerms, type TermShown } from '@lo/ui/overview';
@@ -11,8 +12,9 @@ import { client } from '../../../window/ipc.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import { usePull, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
-import type { Definitions, ShownTerm, TermByline } from './definitions.ts';
+import { namesOf, type Definitions, type ShownTerm, type TermByline } from './definitions.ts';
 import { useNow } from './hooks.ts';
+import { stopIgnoringTerm } from './ignoring.ts';
 import {
   definitionsLine,
   OWN_DEFINITIONS,
@@ -21,18 +23,20 @@ import {
   storeReason,
 } from './says.ts';
 import { readAction } from './States.tsx';
+import { termMenu } from './termMenu.ts';
 import { readTermsAgain, type RepoName, type StoreFailure } from './terms.ts';
 
 /** The command that goes to the Glossary section, from the line under the byline. */
 const GO_GLOSSARY = `${keys.feature}.goGlossary`;
 
 /**
- * What tab `tab`'s overview shows for each of its terms with the repo's definitions, `definitions`
- * (`useDefinitions`), once it shows, and the note its Glossary section has when they can't be
- * used. Who wrote a definition ages as it stays on screen.
+ * What tab `tab`'s overview, of a pull request in `repo`, shows for each of its terms with the
+ * repo's definitions, `definitions` (`useDefinitions`), once it shows, and the note its Glossary
+ * section has when they can't be used. Who wrote a definition ages as it stays on screen.
  */
 export function useOverviewTerms(
   tab: string,
+  repo: string,
   definitions: Definitions | undefined,
 ): OverviewTerms | undefined {
   const now = useNow(true, 60_000);
@@ -42,13 +46,21 @@ export function useOverviewTerms(
     [tab, terms],
   );
   return useMemo(
-    () => (definitions === undefined ? undefined : shownWith(definitions, now, note)),
-    [definitions, now, note],
+    () => (definitions === undefined ? undefined : shownWith(definitions, repo, now, note)),
+    [definitions, repo, now, note],
   );
 }
 
-/** What the document shows for each term of `definitions`, each worked out once, as asked for. */
-function shownWith(definitions: Definitions, now: number, note: ReactNode): OverviewTerms {
+/**
+ * What the document shows for each term of `definitions`, each worked out once, as asked for, with
+ * the terms' menu, and "Stop ignoring", which turns off both of a term's switches in `repo`.
+ */
+function shownWith(
+  definitions: Definitions,
+  repo: string,
+  now: number,
+  note: ReactNode,
+): OverviewTerms {
   const { terms } = definitions;
   const reading = terms.kind === 'reading';
   const repository = terms.kind === 'reading' ? undefined : terms.repository;
@@ -62,6 +74,11 @@ function shownWith(definitions: Definitions, now: number, note: ReactNode): Over
       return shown;
     },
     note,
+    menu: termMenu,
+    stopIgnoring(key) {
+      const term = definitions.of(key);
+      if (term) stopIgnoringTerm(repo, namesOf(term), key);
+    },
   };
 }
 
@@ -87,6 +104,7 @@ export function shownOf(
     },
     before: term.before?.blocks,
     byline: reading ? { reading: true } : term.byline && bylineFacts(term.byline, now, repository),
+    ignored: term.ignored,
   };
 }
 

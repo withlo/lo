@@ -188,6 +188,8 @@ export function TermRow({
             ref={termElement}
             id={termId}
             tabIndex={stop ? 0 : -1}
+            // What `Tab` goes between in an overview's block (`linksIn`).
+            data-lo-stop={stop ? '' : undefined}
             // `⏎` on it expands the row, as its chevron does.
             role={expand === undefined ? undefined : 'button'}
             aria-expanded={expand === undefined ? undefined : expanded}

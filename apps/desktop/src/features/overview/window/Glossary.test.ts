@@ -43,6 +43,7 @@ function term(more: Partial<ShownTerm> = {}): ShownTerm {
     stored: held,
     byline: { written: held.written, by: held.by, from: held.from, at: held.at },
     own: undefined,
+    ignored: false,
     ...more,
   };
 }

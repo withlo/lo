@@ -560,14 +560,14 @@ export interface Composer {
    * Moves a new comment's box to lines `at` of its file, as the lines it's on change while it's
    * open: under their last line, as it is, with its text, caret, selection, undo history, mode and
    * preview, and focus where it was. Side by side, a last line on the other side, as a removed
-   * line's range down to an unchanged line has, takes it to that column. Beside lines the popover
-   * is placed again under them; between lines the box's block, and the room the other side keeps
-   * for it, leave its last line and come under the new one in one change, the box's element moved,
-   * not made again.
-   * Its bracket and the rows it picks follow in the same frame, a key in it acts on its new lines,
-   * and the pane scrolls the least that keeps it whole. Says whether it moved: not where its view
-   * draws none of those lines, nor where another box of the view is open, nor for a box on a file
-   * or in a thread, nor one outside a code view.
+   * line's range down to an unchanged line has, takes it to that column; in an overview's code
+   * block, the lines are those it shows (`ExcerptView`'s `lines`). Beside lines the popover is
+   * placed again under them; between lines the box's block, and in a diff side by side the room the
+   * other side keeps for it, leave its last line and come under the new one in one change, the
+   * box's element moved, not made again. Its bracket and the rows it picks follow in the same
+   * frame, a key in it acts on its new lines, and the pane scrolls the least that keeps it whole.
+   * Says whether it moved: not where its view draws none of those lines, nor where another box of
+   * the view is open, nor for a box on a file or in a thread, nor one outside a code view.
    */
   move(at: Place | Span): boolean;
 }
@@ -1446,6 +1446,11 @@ export interface ExcerptView extends KeySource {
    * does, which the line's target says (`draft`).
    */
   setDrafts(drafts: readonly DraftMark[]): void;
+  /**
+   * The lines of `side` it shows, in order, as places on that side: an unchanged line's are on the
+   * range's side. A new comment's lines change within these (`Composer.move`).
+   */
+  lines(side: Side): readonly number[];
   /**
    * Beside lines, opens the box of the draft whose mark is on line `at`, or on thread `thread`'s
    * line, as a click on the mark does. Says whether there was one.

@@ -34,9 +34,11 @@ import {
   HOVER_CLOSE_MS,
   HOVER_OPEN_MS,
   isStop,
+  linksIn,
   OverviewDocument,
   type OverviewTarget,
   type OverviewTerms,
+  type TermMenu,
   type TermShown,
 } from './index.ts';
 
@@ -407,6 +409,7 @@ describe('blocks', () => {
       'tabs',
       'details',
       'paragraph',
+      'glossary',
     ]);
     // The tl;dr links to nothing; the paragraph that links to a term is a stop.
     expect(isStop(tree.blocks[1]!)).toBe(false);
@@ -443,20 +446,18 @@ describe('blocks', () => {
     expect(page.querySelector('.lo-toc__label')?.textContent).toBe('Overview');
   });
 
-  it('stops at the glossary when a definition links to code or a term', () => {
+  it('stops at the glossary, whose rows’ terms Tab goes between', () => {
     const plain = overview(
       'Uses [a cache](term:cache).\n\n## Glossary\n\n- **Cache**: kept in memory.\n',
     );
-    expect(isStop(glossaryOf(plain))).toBe(false);
-    const linked = overview(
-      'Uses [a cache](term:cache).\n\n## Glossary\n\n- **Cache**: kept by [the store](code:src/store.ts).\n',
-    );
+    expect(isStop(glossaryOf(plain))).toBe(true);
     const page = render(
-      <OverviewDocument tree={linked} focused={linked.blocks.indexOf(glossaryOf(linked))} />,
+      <OverviewDocument tree={plain} focused={plain.blocks.indexOf(glossaryOf(plain))} />,
     );
-    const block = page.querySelector('.is-focused')!;
+    const block = page.querySelector<HTMLElement>('.is-focused')!;
     expect(block.className).toBe('lo-block lo-block--prose is-focused');
     expect(block.firstElementChild?.className).toBe('lo-glossary');
+    expect(linksIn(block).map((each) => each.textContent)).toEqual(['Cache']);
   });
 
   it('stops at prose whose only links go to web pages, which can be followed, but not to http ones', () => {
@@ -906,6 +907,15 @@ function defining(...names: string[]): OverviewTree {
   );
 }
 
+/** What an overview shows for its own term `name`, which the reader may ignore. */
+const ownTerm = (name: string, ignored: boolean, mark?: 'new'): TermShown => ({
+  source: 'overview',
+  name,
+  blocks: paragraph(`own ${name}.`),
+  marks: { mark },
+  ignored,
+});
+
 /** The glossary's row for the term `name`. */
 const rowOf = (page: HTMLElement, name: string) =>
   [...page.querySelectorAll<HTMLElement>('[data-lo-term-row]')].find(
@@ -1138,6 +1148,117 @@ describe('with the repo’s definitions', () => {
     expect(parts.first?.contains(parts.term!)).toBe(true);
     expect(glossaryIn(render(<OverviewDocument tree={overview('No terms.')} />))).toBeUndefined();
   });
+
+  it('draws a term the reader ignores as its words, and its row in the Ignored group, closed', () => {
+    const stopIgnoring = vi.fn<(key: string) => void>();
+    const page = render(
+      <OverviewDocument
+        tree={defining('weight', 'limit', 'cost')}
+        terms={{
+          ...shownTerms({
+            weight: ownTerm('weight', true, 'new'),
+            limit: ownTerm('limit', false, 'new'),
+            cost: ownTerm('cost', true),
+          }),
+          stopIgnoring,
+        }}
+      />,
+    );
+    // In the text, it's its words: no link, no stop for `Tab`, no card.
+    const uses = [...page.querySelectorAll<HTMLElement>('.lo-term')];
+    const weight = uses.find((use) => use.textContent === 'weight')!;
+    expect(weight.className).toBe('lo-term is-plain move-tint');
+    expect(weight.getAttribute('role')).toBeNull();
+    expect(weight.tabIndex).toBe(-1);
+    expect(weight.hasAttribute('data-lo-term')).toBe(false);
+    vi.useFakeTimers();
+    move(document.body, weight);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_OPEN_MS);
+    });
+    expect(card()).toBeNull();
+
+    // Its row has left the list, and the marked one left keeps no hairline under it.
+    const glossary = page.querySelector('.lo-glossary')!;
+    const listed = [...glossary.querySelectorAll('[data-lo-term-row]')].filter(
+      (row) => row.closest('[data-lo-ignored], [data-closed]') === null,
+    );
+    expect(listed.map((row) => row.getAttribute('data-lo-term'))).toEqual(['limit']);
+    expect(glossary.querySelector('.lo-glossary__rest')).toBeNull();
+    expect(glossaryIn(page.querySelector('.lo-ov')!)?.term?.textContent).toBe('limit');
+
+    // The group is closed, with how many it holds; opened, its rows, marked first, with
+    // "Stop ignoring".
+    const fold = glossary.querySelector<HTMLElement>('[data-lo-ignored-fold]')!;
+    expect(fold.textContent).toBe('Ignored2');
+    expect(fold.getAttribute('aria-expanded')).toBe('false');
+    expect(names(glossary.querySelector('[data-lo-ignored]'))).toEqual([]);
+    click(fold);
+    expect(fold.getAttribute('aria-expanded')).toBe('true');
+    const group = glossary.querySelector('[data-lo-ignored]');
+    expect(names(group)).toEqual(['weight', 'cost']);
+    // The text's terms go to the list's rows, not these.
+    expect(group?.querySelector('[data-lo-marked], .lo-term-row__term[id]')).toBeNull();
+    const stop = [...(group?.querySelectorAll<HTMLElement>('button') ?? [])].find(
+      (button) => button.textContent === 'Stop ignoring',
+    )!;
+    click(stop);
+    expect(stopIgnoring).toHaveBeenCalledWith('weight');
+  });
+
+  it('goes to the Ignored group’s row for the glossary when the reader ignores every term', () => {
+    const page = render(
+      <OverviewDocument
+        tree={defining('cost')}
+        terms={shownTerms({
+          cost: { source: 'overview', name: 'cost', blocks: [], marks: {}, ignored: true },
+        })}
+      />,
+    );
+    const parts = glossaryIn(page.querySelector('.lo-ov')!)!;
+    expect(parts.term?.hasAttribute('data-lo-ignored-fold')).toBe(true);
+    expect(parts.first).toBe(parts.term);
+  });
+
+  it('keeps a term’s card open while its menu is, which a right-click on the card opens', () => {
+    let opened: { key: string; from: Element | null } | undefined;
+    const listeners = new Set<() => void>();
+    const menu: TermMenu = {
+      open: (key, from) => {
+        opened = { key, from };
+        for (const listener of listeners) listener();
+        return true;
+      },
+      isOpen: (key, element) => opened?.key === key && opened.from === element,
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const page = render(
+      <OverviewDocument tree={defining('cost')} terms={{ ...shownTerms({}), menu }} />,
+    );
+    const use = term(page);
+    expect(use.getAttribute('data-lo-term')).toBe('cost');
+    focus(use);
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    act(() => {
+      card()!.dispatchEvent(event);
+    });
+    expect(event.defaultPrevented).toBe(true);
+    expect(opened).toEqual({ key: 'cost', from: use });
+    expect(card()?.querySelector('[aria-label="More actions for cost"]')).not.toBeNull();
+
+    // Focus gone, the card stays while the menu's open, and its term looks it.
+    act(() => use.blur());
+    expect(card()).not.toBeNull();
+    expect(use.className).toBe('lo-term is-active move-tint');
+    act(() => {
+      opened = undefined;
+      for (const listener of listeners) listener();
+    });
+    expect(use.className).toBe('lo-term move-tint');
+  });
 });
 
 describe('tabs', () => {
@@ -1231,6 +1352,7 @@ const DOCUMENT: Readonly<Record<string, readonly string[]>> = {
     'tabindex',
     'data-lo-glossary',
     'data-lo-term-row',
+    'data-lo-term',
     'data-key-scope',
   ],
   nav: ['aria-label'],
@@ -1239,7 +1361,15 @@ const DOCUMENT: Readonly<Record<string, readonly string[]>> = {
   figure: [],
   figcaption: [],
   b: [],
-  span: ['role', 'id', 'tabindex', 'aria-describedby', 'aria-hidden'],
+  span: [
+    'role',
+    'id',
+    'tabindex',
+    'aria-describedby',
+    'aria-hidden',
+    'data-lo-term',
+    'data-lo-stop',
+  ],
   details: ['data-lo-block'],
   kbd: ['aria-hidden'],
   // The shapes of Lo's own icons, as `Icon` draws them, beside the paths the renderer's have.
@@ -1344,7 +1474,20 @@ describe('hostile overviews', () => {
 describe('styles', () => {
   it('uses only utilities Lo’s stylesheet has, and the design’s own classes', async () => {
     const tree = fixture('valid/example');
-    const markup = renderToStaticMarkup(<OverviewDocument tree={tree} focused={1} />);
+    const ignored: TermShown = {
+      source: 'overview',
+      name: 'bucket',
+      blocks: [],
+      marks: {},
+      ignored: true,
+    };
+    const markup = [
+      renderToStaticMarkup(<OverviewDocument tree={tree} focused={1} />),
+      // A term the reader ignores, and the Ignored group.
+      renderToStaticMarkup(
+        <OverviewDocument tree={tree} terms={shownTerms({ bucket: ignored })} />,
+      ),
+    ].join('');
     const classes = [
       ...new Set(
         [...markup.matchAll(/class="([^"]*)"/g)].flatMap(([, value]) => (value ?? '').split(/\s+/)),

@@ -4,10 +4,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  addedBy,
   addToEvery,
   collapsed,
   entryKey,
+  entryMax,
   everywhere,
+  ignored,
   inRepo,
   listIn,
   readScoped,
@@ -15,6 +18,7 @@ import {
   resetRepo,
   setEverywhere,
   setInRepo,
+  undoAdded,
   type ScopedValue,
 } from './settings.ts';
 
@@ -124,6 +128,78 @@ describe('“Collapse in every repo”', () => {
       '*': ['Rollout'],
       'rozed-dev/e2e': ['Rollout'],
     });
+  });
+});
+
+describe('a term’s other names', () => {
+  it('go from the list as its switch writes its name, so a term is in each list once', () => {
+    const value = { '*': ['buckets'], 'rozed-dev/e2e': ['Token bucket', 'Lease'] };
+    expect(setInRepo(value, 'rozed-dev/e2e', 'Bucket', true, ['buckets', 'token bucket'])).toEqual({
+      '*': ['buckets'],
+      'rozed-dev/e2e': ['Lease', 'Bucket'],
+    });
+    expect(setInRepo(value, 'rozed-dev/e2e', 'Bucket', false, ['Token  bucket'])).toEqual({
+      '*': ['buckets'],
+      'rozed-dev/e2e': ['Lease'],
+    });
+    expect(setEverywhere(value, 'Bucket', false, ['buckets', 'token bucket'])).toEqual({
+      '*': [],
+      'rozed-dev/e2e': ['Lease'],
+    });
+  });
+
+  it('are kept in a setting of their own, whose problems name it', () => {
+    expect(ignored.key).toBe('overview.ignored');
+    expect(ignored.fallback).toEqual({});
+    expect(ignored.problems?.({ '*': [7] })).toEqual([
+      'overview.ignored’s entry 1 under “*” isn’t text, so Lo ignores it.',
+    ]);
+  });
+});
+
+describe('what a switch turned on added', () => {
+  it('is the lists that gained the entry, those it made, and a repo’s own list it took away', () => {
+    const before = { '*': ['Lease', 'Bucket'], 'rozed-dev/e2e': ['Lease'], 'a/b': ['buckets'] };
+    const here = setInRepo(before, 'rozed-dev/e2e', 'Bucket', true, ['buckets']);
+    // The repo's list, now every repo's, goes.
+    expect(here).toEqual({ '*': ['Lease', 'Bucket'], 'a/b': ['buckets'] });
+    const added = addedBy(before, here, 'Bucket', ['buckets']);
+    expect(added).toEqual({
+      gained: [],
+      made: new Map(),
+      dropped: { scope: 'rozed-dev/e2e', list: ['Lease'] },
+    });
+    // Undone, it comes back, unless the repo has one of its own again.
+    expect(undoAdded(here, added, 'Bucket', ['buckets'])).toEqual(before);
+    const since = { ...here, 'rozed-dev/e2e': ['Quota'] };
+    expect(undoAdded(since, added, 'Bucket', ['buckets'])).toEqual(since);
+  });
+
+  it('is undone from the lists that gained it alone, a list it made going while it’s as made', () => {
+    const before = { 'a/b': ['Bucket'] };
+    const every = setEverywhere(before, 'Bucket', true);
+    const added = addedBy(before, every, 'Bucket');
+    expect(added.gained).toEqual(['*']);
+    expect(added.made).toEqual(new Map([['*', ['Bucket']]]));
+    expect(undoAdded(every, added, 'Bucket')).toEqual(before);
+    // Every repo's list changed since: it stays, without the entry, and a/b keeps its own.
+    const since = { ...every, '*': ['Bucket', 'Quota'] };
+    expect(undoAdded(since, added, 'Bucket')).toEqual({ '*': ['Quota'], 'a/b': ['Bucket'] });
+  });
+});
+
+describe('how long an entry may be', () => {
+  it('is a heading’s 200 characters, and as many as a term’s 1,024 bytes', () => {
+    const term = 'a'.repeat(1_024);
+    expect(entryMax('overview.collapsed')).toBe(200);
+    expect(entryMax('overview.ignored')).toBe(1_024);
+    expect(readScoped({ '*': [term] }, 'overview.ignored').scoped.every).toEqual([term]);
+    expect(readScoped({ '*': [`${term}a`] }, 'overview.ignored').problems).toEqual([
+      'overview.ignored’s entry 1 under “*” is longer than 1,024 characters, so Lo ignores it.',
+    ]);
+    expect(read({ '*': ['a'.repeat(201)] }).problems).toEqual([
+      'overview.collapsed’s entry 1 under “*” is longer than 200 characters, so Lo ignores it.',
+    ]);
   });
 });
 

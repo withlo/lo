@@ -22,7 +22,7 @@ import { crc32, deflateSync } from 'node:zlib';
 
 import { APP_PULL, GitHttpServer, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
-import type { ElectronApplication, Page } from '@playwright/test';
+import type { ElectronApplication, Locator, Page } from '@playwright/test';
 
 import { promptOf } from '../src/features/overview/window/prompts.ts';
 import { HOLD_LIMIT } from '../src/features/revisions/contract.ts';
@@ -1194,6 +1194,117 @@ test('shows what the pull request does to the repo’s definitions at the top, i
     );
     await expect(row('Credit').locator('[data-lo-before]')).toHaveCount(0);
     await expect(row('Tenant')).toContainText('the accounts a quota is counted for.');
+  });
+});
+
+test('ignores a term from its menu, in this repo or every repo: plain text at once, a toast whose Undo shows it again, and its row in the Ignored group, which Settings lists', async ({
+  page,
+  ref,
+}) => {
+  ref.holds = { kind: 'made', overview: overviewOf({ 'artifact.md': DEFINING }) };
+  ref.terms = overviewOf({ 'terms.json': DEFINED });
+  await open(page);
+  await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
+  await overviewTab(page).click();
+  const shown = overview(page, 'shown');
+  const line = shown.getByRole('note').filter({ hasText: 'definitions' });
+  await expect(line).toContainText('Adds 2 definitions · changes 1', { timeout: 20_000 });
+  const glossary = shown.locator('[data-lo-glossary]');
+  const listed = glossary.locator('[data-lo-term-row]:not([data-lo-ignored] *)');
+  const fold = glossary.locator('[data-lo-ignored-fold]');
+  const group = glossary.locator('[data-lo-ignored] [data-lo-term-row]');
+  const menu = page.getByRole('menu');
+  const here = menu.getByRole('menuitemcheckbox', { name: /^Ignore in this repo/ });
+  const every = menu.getByRole('menuitemcheckbox', { name: /^Ignore in every repo/ });
+  const bucket = shown.locator('.lo-ov__article p .lo-term', { hasText: 'bucket' });
+  /** The row of the term `name` in `rows`. */
+  const rowIn = (rows: Locator, name: string) =>
+    rows.filter({ has: page.locator('.lo-term-row__term', { hasText: name }) });
+  const palette = page.getByRole('dialog', { name: 'Command palette' });
+
+  await test.step('a term’s menu has the two switches, off', async () => {
+    await bucket.click({ button: 'right' });
+    await expect(menu.getByRole('menuitemcheckbox')).toHaveText([
+      /^Ignore in this repo/,
+      /^Ignore in every repo/,
+    ]);
+    await expect(here).toHaveAttribute('aria-checked', 'false');
+    await expect(every).toHaveAttribute('aria-checked', 'false');
+  });
+
+  await test.step('Ignore in this repo makes it plain text, says so with Undo, and moves its row to the Ignored group', async () => {
+    await here.click();
+    await expect(bucket).toHaveClass(/\bis-plain\b/);
+    await expect(bucket).not.toHaveAttribute('role', 'link');
+    await expect.poll(saved).toEqual({ 'overview.ignored': { 'rozed-dev/e2e': ['Bucket'] } });
+    const toast = page.getByRole('status').filter({ hasText: 'Ignored Bucket in rozed-dev/e2e' });
+    await expect(toast.getByRole('button', { name: 'Undo' })).toBeVisible();
+    await expect(bucket).not.toHaveAttribute('tabindex');
+
+    await expect(listed.locator('.lo-term-row__term')).toHaveText(['Credit', 'Lease', 'Tenant']);
+    await expect(fold).toHaveText('Ignored1');
+    await expect(fold).toHaveAttribute('aria-expanded', 'false');
+    await fold.click();
+    await expect(group.locator('.lo-term-row__term')).toHaveText(['Bucket']);
+    // It keeps its tag, and still counts.
+    await expect(group).toContainText('New');
+    await expect(line).toContainText('Adds 2 definitions · changes 1');
+
+    await toast.getByRole('button', { name: 'Undo' }).click();
+    await expect(bucket).toHaveAttribute('role', 'link');
+    await expect.poll(saved).toEqual({ 'overview.ignored': {} });
+    await expect(fold).toHaveCount(0);
+  });
+
+  await test.step('from ⇧F10 and the palette, on the term with focus, which goes on to the next row; Stop ignoring shows it again', async () => {
+    await line.getByRole('button', { name: 'Go to glossary' }).click();
+    await expect(rowIn(listed, 'Bucket').locator('.lo-term-row__term')).toBeFocused();
+    // ⇧F10 opens its menu too.
+    await page.keyboard.press('Shift+F10');
+    await expect(here).toHaveAttribute('aria-checked', 'false');
+    await page.keyboard.press('Escape');
+    await expect(rowIn(listed, 'Bucket').locator('.lo-term-row__term')).toBeFocused();
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+    await palette.getByRole('combobox', { name: 'Command palette' }).fill('Ignore in this repo');
+    await expect(palette.getByRole('option').first()).toHaveText(/^Ignore in this repo/);
+    await page.keyboard.press('Enter');
+    await expect.poll(saved).toEqual({ 'overview.ignored': { 'rozed-dev/e2e': ['Bucket'] } });
+    await expect(rowIn(listed, 'Credit').locator('.lo-term-row__term')).toBeFocused();
+    await fold.click();
+    // Pressed with focus on its row's term, focus follows the term back to the list.
+    await rowIn(group, 'Bucket').locator('.lo-term-row__term').focus();
+    await rowIn(group, 'Bucket').hover();
+    await rowIn(group, 'Bucket').getByRole('button', { name: 'Stop ignoring' }).click();
+    await expect.poll(saved).toEqual({ 'overview.ignored': { '*': [] } });
+    await expect(fold).toHaveCount(0);
+    await expect(rowIn(listed, 'Bucket').locator('.lo-term-row__term')).toBeFocused();
+  });
+
+  await test.step('Ignore in every repo, from a row’s menu, ticks both switches', async () => {
+    await rowIn(listed, 'Lease').click({ button: 'right' });
+    await every.click();
+    await expect.poll(saved).toEqual({ 'overview.ignored': { '*': ['Lease'] } });
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Ignored Lease in every repo' }),
+    ).toBeVisible();
+    await expect(shown.locator('.lo-ov__article p .lo-term', { hasText: 'lease' })).toHaveClass(
+      /\bis-plain\b/,
+    );
+    await fold.click();
+    await rowIn(group, 'Lease').click({ button: 'right' });
+    await expect(here).toHaveAttribute('aria-checked', 'true');
+    await expect(every).toHaveAttribute('aria-checked', 'true');
+    await page.keyboard.press('Escape');
+  });
+
+  await test.step('Settings lists it under every repo', async () => {
+    await page.evaluate(() => window.lo.invoke('tab.open', { kind: 'settings' }));
+    await page
+      .getByRole('navigation', { name: 'Settings' })
+      .getByRole('button', { name: 'Pull requests' })
+      .click();
+    const list = page.getByRole('group', { name: 'Ignored terms' }).last();
+    await expect(list.locator('[data-scope]')).toHaveText([/^Every repoLeaseStop ignoring$/]);
   });
 });
 
