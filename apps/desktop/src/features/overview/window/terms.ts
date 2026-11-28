@@ -200,11 +200,11 @@ function settle(state: StoreState): void {
     take(file.value);
     return;
   }
-  // The terms read before stay while the newer ones are read, unless they're another
-  // repository's.
+  // What was known before stays while the newer ones are read, unless it's another repository's:
+  // the terms read, or why they couldn't be, as Try again reads the file again.
   const before = terms.get(id);
   if (
-    before.kind !== 'read' ||
+    (before.kind !== 'read' && before.kind !== 'unreadable') ||
     before.repository.owner.toLowerCase() !== repository.owner.toLowerCase() ||
     before.repository.name.toLowerCase() !== repository.name.toLowerCase()
   ) {
