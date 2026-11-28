@@ -44,7 +44,7 @@ import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import { explain, REMEDY_LABELS, remedyOf } from '../../../window/explain.ts';
 import { avatarImage } from '../../../window/images.ts';
-import { signInAgain } from '../../accounts/window/shared.ts';
+import { signInAgain, signInTo, useAdding } from '../../accounts/window/shared.ts';
 import {
   deletePullComment,
   editPullComment,
@@ -260,14 +260,18 @@ function Failed({ tab, view }: { tab: PullTab; view: TimelineView | undefined })
   );
 }
 
-/** A timeline read as no one, which shows only to an account. */
+/**
+ * A timeline read as no one, which shows only to an account. Its button is the command that signs
+ * in, named as it is now: "Add account…" once one is listed, which the title says too.
+ */
 function SignIn() {
   useKeys();
+  const adding = useAdding();
   return (
     <EmptyState
       icon="user-round"
-      title="Sign in to see comments"
-      actions={[{ command: 'accounts.addAccount', label: 'Sign in with GitHub…' }]}
+      title={signInTo('see comments', adding)}
+      actions={['accounts.addAccount']}
     />
   );
 }

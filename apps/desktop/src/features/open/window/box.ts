@@ -8,7 +8,7 @@ import { IpcError } from '../../../ipc/contract.ts';
 import { announce } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
 import { contract as accounts } from '../../accounts/contract.ts';
-import { signIn, signInAgain } from '../../accounts/window/shared.ts';
+import { addAccount, signIn, signInAgain } from '../../accounts/window/shared.ts';
 import { contract as tabs } from '../../tab/contract.ts';
 import type { Opened, Preview, Refusal } from '../contract.ts';
 import { main } from './main.ts';
@@ -289,6 +289,7 @@ export function takeWay(way: BlockedWay, text: string): void {
       else signIn();
       return;
     case 'addAccount':
+      closeBox();
       addAccount();
       return;
     case 'retry':
@@ -324,10 +325,4 @@ export async function copyLink(url: string): Promise<void> {
     console.error("Lo couldn't copy the link:", error);
     boxStore.setState({ error: { title: 'Couldn’t copy the link', details: said(error) } });
   }
-}
-
-/** Closes the box and starts signing in, for an account that can see the pull request. */
-export function addAccount(): void {
-  closeBox();
-  signIn();
 }
