@@ -200,6 +200,10 @@ describe('the open box', () => {
     expect(enterAction(holding(E2E, refused({ kind: 'hidden', signedIn: false })))).toBe(
       'Sign in with GitHub…',
     );
+    // With an account that can't see it, the way is another account.
+    expect(enterAction(holding(E2E, refused({ kind: 'hidden', signedIn: true })))).toBe(
+      'Add account…',
+    );
     expect(enterAction(holding(E2E, refused({ kind: 'missing' })))).toBeUndefined();
     // GitHub's rate limit holds opening anyway too: nothing to press.
     const limit = { kind: 'rateLimit', resets: null } as const;

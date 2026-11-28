@@ -35,6 +35,7 @@ import { useStore } from 'zustand';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
+import { signInAgain } from '../../accounts/window/shared.ts';
 import type { QueueTab } from '../../tab/contract.ts';
 import { useTabState, withoutBidi } from '../../tab/window/shared.ts';
 import { QUEUE_EVERY, type QueueRead, type QueueState } from '../contract.ts';
@@ -293,7 +294,7 @@ function useTryNow(id: string): { busy: boolean; run: () => void } {
 
 /** Signs in to the queue's account again. */
 function signIn(): void {
-  registry().run('accounts.addAccount', { kind: 'none' });
+  signInAgain();
 }
 
 /**

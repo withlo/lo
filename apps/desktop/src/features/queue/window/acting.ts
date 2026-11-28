@@ -14,7 +14,7 @@ import { createStore } from 'zustand/vanilla';
 
 import { announce } from '../../../window/commands/notices.tsx';
 import { explain } from '../../../window/explain.ts';
-import { registry } from '../../../window/commands/registry.ts';
+import { signInAgain } from '../../accounts/window/shared.ts';
 import { askAutoMerge } from '../../merge/window/shared.ts';
 import type { QueueTab } from '../../tab/contract.ts';
 import { withoutBidi } from '../../tab/window/shared.ts';
@@ -739,7 +739,7 @@ export function nextLabel(next: ActNext | undefined): string | undefined {
 function follow(id: string, number: number, next: 'signIn' | 'open' | 'remove'): void {
   switch (next) {
     case 'signIn':
-      registry().run('accounts.addAccount', { kind: 'none' });
+      signInAgain();
       return;
     case 'open':
       openPull(id, number);

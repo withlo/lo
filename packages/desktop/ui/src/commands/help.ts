@@ -293,6 +293,11 @@ export interface PaletteItem {
    * chosen. The row draws a check, as the app menu does.
    */
   readonly checked: boolean | undefined;
+  /**
+   * The command's own label, where its handler names it otherwise now: a search still finds it by
+   * those words, as "sign in" finds "Add account…". Not shown.
+   */
+  readonly declared?: string | undefined;
 }
 
 /** The palette's own command, which it doesn't list. */
@@ -317,18 +322,19 @@ export function paletteItems(registry: Registry, scope: string, target: Target):
   return groups.flatMap((group) =>
     commands
       .filter((command) => command.group === group)
-      .map((command) => ({
-        id: command.id,
-        label: withDetail(
-          registry.labelled(command.id, target) ?? command.label,
-          registry.detail(command.id, target),
-        ),
-        description: registry.described(command.id, target) ?? command.description,
-        group,
-        keys: liveKeys(registry, command)[0],
-        shortcut: liveShortcut(registry, command),
-        checked: registry.checked(command.id, target),
-      })),
+      .map((command) => {
+        const named = registry.labelled(command.id, target);
+        return {
+          id: command.id,
+          label: withDetail(named ?? command.label, registry.detail(command.id, target)),
+          description: registry.described(command.id, target) ?? command.description,
+          group,
+          keys: liveKeys(registry, command)[0],
+          shortcut: liveShortcut(registry, command),
+          checked: registry.checked(command.id, target),
+          declared: named === undefined || named === command.label ? undefined : command.label,
+        };
+      }),
   );
 }
 
@@ -381,8 +387,8 @@ function matchLabel(label: string, query: string): { marks: number[]; score: num
 
 /**
  * The palette's items that match `query`, the best first: its letters in order in the label, or
- * else every word of it in the command's description, group or id. With nothing typed, every item,
- * in order.
+ * else every word of it in the command's description, group, id or own label, where its handler
+ * names it otherwise now. With nothing typed, every item, in order.
  */
 export function filterPalette(items: readonly PaletteItem[], query: string): PaletteMatch[] {
   if (query.trim() === '') return items.map((item) => ({ item, marks: [] }));
@@ -390,7 +396,8 @@ export function filterPalette(items: readonly PaletteItem[], query: string): Pal
   const scored = items.flatMap((item, index) => {
     const label = matchLabel(plainLabel(item.label), query);
     if (label) return [{ item, marks: label.marks, score: label.score, index }];
-    const other = `${item.description ?? ''} ${item.group} ${item.id}`.toLowerCase();
+    const other =
+      `${item.description ?? ''} ${item.group} ${item.id} ${item.declared ?? ''}`.toLowerCase();
     return wanted.every((word) => other.includes(word))
       ? [{ item, marks: [], score: -100, index }]
       : [];

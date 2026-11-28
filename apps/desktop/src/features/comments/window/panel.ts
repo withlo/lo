@@ -15,6 +15,7 @@ import { createStore } from 'zustand/vanilla';
 import { refuse, withdraw } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { explain } from '../../../window/explain.ts';
+import { signInTo } from '../../accounts/window/shared.ts';
 import { diffStateOf, showThread as showInDiff, type ShowWhen } from '../../diff/window/shared.ts';
 import {
   comparedIn,
@@ -89,11 +90,16 @@ const NO_THREADS = 'No threads yet';
 /** What the panel says where it has threads its filter lists none of. */
 const NO_MATCHES = 'No matches';
 
-/** What view `view`'s panel shows when it lists nothing, for what main last sent of its threads. */
+/**
+ * What view `view`'s panel shows when it lists nothing, for what main last sent of its threads.
+ * `adding` is whether signing in now adds an account, as it does once one is listed: read as no one,
+ * it then asks for one to be added.
+ */
 export function emptyOf(
   threads: ThreadsView | undefined,
   filter: PanelFilter,
   run?: readonly number[],
+  adding = false,
 ): PanelEmpty {
   const status = threads?.status;
   switch (status) {
@@ -116,7 +122,7 @@ export function emptyOf(
       return {
         kind: 'none',
         icon: 'user-round',
-        title: 'Sign in to see threads',
+        title: signInTo('see threads', adding),
         action: 'accounts.addAccount',
       };
     case 'failed':

@@ -46,6 +46,7 @@ import { focusMiddle, registry, systemOf } from '../../../window/commands/regist
 import { chipLabel, explain } from '../../../window/explain.ts';
 import { client } from '../../../window/ipc.ts';
 import { useViews, type View } from '../../../window/slots.tsx';
+import { signInAgain } from '../../accounts/window/shared.ts';
 import { useRevisions } from '../../revisions/window/shared.ts';
 import { contract as settings } from '../../settings/contract.ts';
 import { viewIds, type Connection, type LocalState, type PullView } from '../contract.ts';
@@ -89,7 +90,8 @@ export function run(id: string, action: BannerDo): void {
       case 'choose':
         return main().choose({ id, login: action.login });
       case 'signIn':
-        registry().run('accounts.addAccount', NO_TARGET);
+        if (action.again === true) signInAgain();
+        else registry().run('accounts.addAccount', NO_TARGET);
         return Promise.resolve();
       case 'close':
         return main().close({ id });

@@ -22,8 +22,11 @@ export type BannerDo =
   /** Clears Lo's cache of local copies, then tries again. */
   | { kind: 'clearCache' }
   | { kind: 'choose'; login: string }
-  /** Signs in with GitHub: for an account GitHub signed out, or a pull request none can see. */
-  | { kind: 'signIn' }
+  /**
+   * Signs in with GitHub: for a pull request none can see, adding an account to those listed, or
+   * `again`, for an account GitHub signed out.
+   */
+  | { kind: 'signIn'; again?: true }
   /** Closes the tab. */
   | { kind: 'close' }
   /** Opens a page on github.com: GitHub's own link to fix a problem. */
@@ -78,6 +81,11 @@ export function short(oid: string): string {
 const retry = { label: 'Try again', do: { kind: 'retry' } } as const;
 const tryNow = { label: 'Try now', do: { kind: 'retry' } } as const;
 
+/** What a remedy's button does: signs in, adding an account, or again, for one signed out. */
+function signInOf(remedy: 'signIn' | 'addAccount' | 'signInAgain'): BannerDo {
+  return remedy === 'signInAgain' ? { kind: 'signIn', again: true } : { kind: 'signIn' };
+}
+
 /**
  * Why a tab can't show its pull request, which takes the place of its view, or nothing while it
  * can: GitHub has no such pull request or won't show it, an organization blocks the account, or
@@ -100,8 +108,8 @@ export function failureOf(
       // which; or the tab can go.
       const remedy = remedyOf(problem.cause);
       const signIn =
-        remedy === 'signIn' || remedy === 'signInAgain'
-          ? [{ label: REMEDY_LABELS[remedy], do: { kind: 'signIn' } } as const]
+        remedy === 'signIn' || remedy === 'addAccount' || remedy === 'signInAgain'
+          ? [{ label: REMEDY_LABELS[remedy], do: signInOf(remedy) }]
           : [];
       const page = `https://github.com/${repository}/pull/${shown.number}`;
       return {
@@ -154,7 +162,7 @@ export function failureOf(
             ? []
             : remedy === 'tryAgain'
               ? [at === null ? retry : tryNow]
-              : [{ label: REMEDY_LABELS[remedy], do: { kind: 'signIn' } }],
+              : [{ label: REMEDY_LABELS[remedy], do: signInOf(remedy) }],
       };
     }
     case 'ask':
@@ -233,7 +241,7 @@ export function connectionNote(
         tone: 'danger',
         label: 'Signed out',
         line: `${connection.login} is signed out.`,
-        action: { label: 'Sign in again', do: { kind: 'signIn' } },
+        action: { label: 'Sign in again', do: { kind: 'signIn', again: true } },
       };
     case 'rateLimited':
       // One wording, whoever the limit is for, and whether GitHub asked Lo to slow down.
@@ -406,7 +414,12 @@ export function localNote(
             local.failure === 'diskFull'
               ? [{ label: 'Clear cache', do: { kind: 'clearCache' } }]
               : local.failure === 'auth'
-                ? [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } }]
+                ? [
+                    {
+                      label: REMEDY_LABELS[login === undefined ? 'signIn' : 'addAccount'],
+                      do: { kind: 'signIn' },
+                    },
+                  ]
                 : held === undefined
                   ? [retry]
                   : [],

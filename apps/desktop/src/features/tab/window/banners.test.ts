@@ -62,9 +62,9 @@ describe('a pull request’s tab that can’t show it', () => {
       title: 'Can’t open #9',
       detail: 'It doesn’t exist, or rozed-bot can’t see it.',
       details: 'Not Found',
-      // Another account may see it: signing in with one works out the tab's account again.
+      // Another account may see it: adding one works out the tab's account again.
       actions: [
-        { label: 'Sign in with GitHub…', do: { kind: 'signIn' } },
+        { label: 'Add account…', do: { kind: 'signIn' } },
         {
           label: 'Open on GitHub',
           do: { kind: 'link', url: 'https://github.com/rozed-dev/e2e/pull/9' },
@@ -177,11 +177,11 @@ describe('a pull request’s tab that can’t show it', () => {
     });
     expect(failed({ kind: 'signedOut', login: 'rozed-bot' })).toMatchObject({
       detail: 'rozed-bot is signed out.',
-      actions: [{ label: 'Sign in again', do: { kind: 'signIn' } }],
+      actions: [{ label: 'Sign in again', do: { kind: 'signIn', again: true } }],
     });
     expect(failed({ kind: 'hidden', login: 'rozed-bot' })).toMatchObject({
       detail: 'It doesn’t exist, or rozed-bot can’t see it.',
-      actions: [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } }],
+      actions: [{ label: 'Add account…', do: { kind: 'signIn' } }],
     });
   });
 
@@ -217,7 +217,7 @@ describe('how a tab stands with GitHub', () => {
       tone: 'danger',
       label: 'Signed out',
       line: 'rozed-bot is signed out.',
-      action: { label: 'Sign in again', do: { kind: 'signIn' } },
+      action: { label: 'Sign in again', do: { kind: 'signIn', again: true } },
     });
   });
 
@@ -383,9 +383,14 @@ describe('the local copy’s item', () => {
       problem: { detail: 'GitHub returned an error.', details: 'fatal: bad pack header' },
     });
     expect(local({ kind: 'failed', failure: 'local' })?.problem?.detail).toBe(undefined);
+    // One the account can't read offers another; with nobody signed in, a first.
     expect(local({ kind: 'failed', failure: 'auth' })?.problem?.actions).toEqual([
-      { label: 'Sign in with GitHub…', do: { kind: 'signIn' } },
+      { label: 'Add account…', do: { kind: 'signIn' } },
     ]);
+    expect(
+      local({ kind: 'failed', failure: 'auth' }, view({ acting: { kind: 'anonymous' } }))?.problem
+        ?.actions,
+    ).toEqual([{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } }]);
     // A copy held open says what it waits for, with nothing to press and no time, even while
     // main looks again by itself.
     expect(
