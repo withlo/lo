@@ -12,6 +12,15 @@
 
 import type { RenderThread, ThreadContent, ThreadView } from './api.ts';
 
+/**
+ * The comment of the thread drawn in `card` that `element` is in, by the id its element's
+ * `data-comment` names, as a right-click on one of your comments, or its `⋯`, asks for its menu.
+ */
+export function commentIn(card: Element, element: Element): string | undefined {
+  const comment = element.closest<HTMLElement>('[data-comment]');
+  return comment && card.contains(comment) ? comment.dataset['comment'] : undefined;
+}
+
 /** About how tall a thread is before it's been measured: open, or collapsed to one line. */
 const GUESS = { open: 120, closed: 36 } as const;
 

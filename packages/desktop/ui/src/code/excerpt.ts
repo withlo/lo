@@ -84,7 +84,7 @@ import {
 import { type LaneRange, type LaneUpdate, laneUpdate, setLane, threadLane } from './lanes.ts';
 import { marking } from './marks.ts';
 import { type PopRoom, sharedPop } from './popover.ts';
-import { type ThreadHost, Threads } from './threads.ts';
+import { commentIn, type ThreadHost, Threads } from './threads.ts';
 import { type Tip, tips } from './tip.ts';
 import { FileNoteWidget, ThreadSizes, ThreadWidget } from './widgets.ts';
 
@@ -540,8 +540,10 @@ class Excerpt implements ExcerptView {
         return box();
       },
       nonce: this.#nonce,
-      // One popover for every excerpt in the scroll, as an overview's code blocks have.
+      // One popover for every excerpt in the scroll, as an overview's code blocks have: out in
+      // the scroll, where its own right-click doesn't reach, so the popover says what was clicked.
       popover: (pop) => sharedPop(pop),
+      menu: (target, x, y) => this.#on.menu(target, x, y),
       mode: () => this.#mode,
       threadsIn: (file) => (file === 0 ? this.#byPlace : undefined),
       fileOf: (id) => (id === this.#id ? 0 : undefined),
@@ -1436,8 +1438,15 @@ class Excerpt implements ExcerptView {
     const thread = this.#hosts.around(target);
     if (thread) {
       event.preventDefault();
+      // On a comment of it, the comment's own menu: what Edit and Delete act on.
+      const comment = commentIn(thread.dom, target);
       this.#on.menu(
-        { kind: 'thread', thread: thread.id, collapsed: !thread.open },
+        {
+          kind: 'thread',
+          thread: thread.id,
+          collapsed: !thread.open,
+          ...(comment === undefined ? {} : { comment }),
+        },
         event.clientX,
         event.clientY,
       );
