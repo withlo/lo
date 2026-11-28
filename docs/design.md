@@ -223,10 +223,12 @@ and the whole-file view.
   refs.
 - **Client.** Lo makes both through its own small client on `fetch`, typed from GitHub's published
   REST description and GraphQL schema, with one client per account.
-- **Polling.** The open PR and its queue are checked every 15–30 seconds, everything else less
-  often, and everything slows to every 5 minutes while Lo is in the background. Each poll asks first
-  whether anything changed, and only then fetches the details. REST calls use ETags, so unchanged
-  answers don't count against the rate limit.
+- **Polling.** The open PR is checked every 10 seconds while Lo is in front, and every 20 while it's
+  on screen behind another window, as beside a browser; its merge queue every 20 seconds. Everything
+  else is checked less often, and everything slows to every 5 minutes while Lo is off screen:
+  minimized, hidden or behind a locked screen. Each poll asks first whether anything changed, and
+  only then fetches the details. REST calls use ETags, so unchanged answers don't count against the
+  rate limit.
 - **Rate limit.** Lo tracks how much of the limit is left, slows polling when it runs low and tells
   you when it does.
 

@@ -23,6 +23,7 @@ import {
   type Grant,
   type GitHubUrls,
   type PollConfig,
+  type Presence,
   type PullFiles,
   type PullRef,
   type ReadFiles,
@@ -90,7 +91,7 @@ export class Github implements GithubAccess {
   readonly #listeners = new Set<(event: GithubEvent) => void>();
   readonly #observers = new Set<() => void>();
   readonly #unsubscribe: (() => void)[] = [];
-  #foreground = true;
+  #presence: Presence = 'front';
   #stopped = false;
 
   constructor(options: GithubOptions) {
@@ -253,10 +254,13 @@ export class Github implements GithubAccess {
     for (const { login } of accounts.accounts) this.#noteKeyring(login, true);
   }
 
-  /** Says whether Lo is in the foreground: each poller polls faster while it is. */
-  setForeground(foreground: boolean): void {
-    this.#foreground = foreground;
-    for (const poller of this.#pollers.values()) poller.setForeground(foreground);
+  /**
+   * Says where Lo is for the person at the computer: each poller polls most often while Lo is in
+   * front, and least while it isn't on screen.
+   */
+  setPresence(presence: Presence): void {
+    this.#presence = presence;
+    for (const poller of this.#pollers.values()) poller.setPresence(presence);
   }
 
   /**
@@ -348,7 +352,7 @@ export class Github implements GithubAccess {
         },
         log: (message) => this.#log(`polling as ${login}: ${message}`),
       });
-      poller.setForeground(this.#foreground);
+      poller.setPresence(this.#presence);
       this.#pollers.set(login.toLowerCase(), poller);
     }
   }

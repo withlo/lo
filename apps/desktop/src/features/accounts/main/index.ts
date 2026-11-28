@@ -22,6 +22,7 @@ import {
 import { defineFeature, STOP_LIMITS } from '../../../main/features.ts';
 import { netFetch } from '../../../main/fetch.ts';
 import { authorities, onceFetch, writesOnce } from '../../../main/once.ts';
+import { watchPresence } from '../../../main/screen.ts';
 import { provides } from '../../../main/services.ts';
 import {
   accountSummary,
@@ -70,15 +71,16 @@ function thisBuild(): string {
 const log = (message: string) => console.error(`accounts: ${message}`);
 
 /**
- * What a test run asks of the pollers: how often they read the pull request on screen, and what
- * they watch beyond it. Nothing in a packaged build, nor unless a test asks.
+ * What a test run asks of the pollers: how often they read the pull request on screen, in front of
+ * other windows or behind them, and what they watch beyond it. Nothing in a packaged build, nor
+ * unless a test asks.
  */
 function testPolls(): Partial<PollConfig> {
   const options = { packaged: app.isPackaged, env: process.env };
   const open = pollEvery(options);
   const watched = watchedEvery(options);
   return {
-    ...(open === undefined ? {} : { openInterval: open }),
+    ...(open === undefined ? {} : { openInterval: open, shownInterval: open }),
     ...(watched === undefined ? {} : { watchedInterval: watched }),
   };
 }
@@ -266,10 +268,8 @@ export default defineFeature(contract, {
     accounts.onEvent((event) => {
       if (event.kind !== 'seen' && event.kind !== 'added') publish('event', event);
     });
-    // Each poller polls faster while Lo's window is in front.
-    accounts.setForeground(false);
-    app.on('browser-window-focus', () => accounts.setForeground(true));
-    app.on('browser-window-blur', () => accounts.setForeground(false));
+    // Each poller polls most often while Lo's window is in front, and least while it's off screen.
+    watchPresence((presence) => accounts.setPresence(presence));
     // A sign-in stops polling once the page that asked for it is gone or loads again.
     app.on('web-contents-created', (_event, contents) => {
       contents.once('destroyed', () => signIns.cancel());

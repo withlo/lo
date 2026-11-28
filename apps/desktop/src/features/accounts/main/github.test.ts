@@ -383,23 +383,23 @@ describe('polling', () => {
     expect(await (await local.github.poller(LOGIN)).setOpen(pr(1))).toBeUndefined();
   });
 
-  it('polls faster while Lo is in the foreground', async () => {
+  it('tells each poller where Lo is', async () => {
     const fetch = replaying('poll_playground');
     const { github } = start({ fetch });
     await github.add(user(), { token: new Token(TOKEN) }, 'deviceFlow');
-    github.setForeground(false);
+    github.setPresence('away');
     const poller = await github.poller(LOGIN);
-    expect(poller.foreground).toBe(false);
-    github.setForeground(true);
-    expect(poller.foreground).toBe(true);
+    expect(poller.presence).toBe('away');
+    github.setPresence('front');
+    expect(poller.presence).toBe('front');
     // A poller for an account added later starts as Lo is.
-    github.setForeground(false);
+    github.setPresence('shown');
     await github.add(
       { user: { login: 'other', id: 2 }, scopes: ['repo', 'read:org', 'workflow'] },
       { token: new Token('gho_FAKE_OTHER') },
       'deviceFlow',
     );
-    expect((await github.poller('other')).foreground).toBe(false);
+    expect((await github.poller('other')).presence).toBe('shown');
   });
 
   it("looks up the merged pull requests a watched repository's stacks link through", async () => {

@@ -295,9 +295,9 @@ pnpm nx run desktop:release  # build it, then make a release's DMGs and zips (ne
   own (`@lo/testing/display`), so a window one worker opens or closes never takes the other's focus:
   a run there needs Xvfb, and shows nothing on the screen. With no window manager, X gives focus to
   the window under the pointer, which rests in the middle, in Lo's centered window, so Lo is in
-  front, and reads GitHub every 20 s, for the whole test; a test fails at once if no window of Lo's
-  has focus once it has drawn. CI runs it in four shards, one job each (`app (1)` to `app (4)`),
-  which split the tests by count with Playwright's `--shard`;
+  front, and reads the pull request on screen every 10 s, for the whole test; a test fails at once
+  if no window of Lo's has focus once it has drawn. CI runs it in four shards, one job each
+  (`app (1)` to `app (4)`), which split the tests by count with Playwright's `--shard`;
   `pnpm nx run desktop:e2e -- --shard=2/4` runs one. In CI each test records a trace of the window,
   kept in its results when it fails, which CI uploads as `app-test-results-<shard>`; a test that
   times the page's frames opts out (`traced: false`), since recording slows them, and holds each
@@ -902,13 +902,14 @@ repositories, which account opens a repository, and the pull requests opened lat
   ignores all four.
 - A build run from source takes other waits on GitHub from three more, for its tests, so a test
   needn't wait out Lo's own; a packaged build ignores them. `LO_POLL_MS` is how often it reads
-  what's on screen, in place of 20 s: the pull request on screen, the merge queue a queued one is
-  in, and a merge queue's tab. `LO_WATCHED_POLL_MS` is how often it lists each watched repository's
-  open pull requests, each list looking up the merged pull requests the last one left out, and reads
-  the pull requests it watches off screen, in place of 2 minutes. `LO_ANSWER_START_MS` is how long a
-  request waits for GitHub's answer to begin before Lo gives up on it, in place of 15 s. For these,
-  `LO_DEVICE_POLL_MS` and `LO_HOLD_LIMIT_MS`, a wait below 1 ms, or past the longest a timer takes,
-  2,147,483,647 ms, is left for Lo's own.
+  what's on screen: the pull request on screen, in place of 10 s in front of other windows and 20 s
+  behind them, and the merge queue a queued one is in and a merge queue's tab, in place of 20 s.
+  `LO_WATCHED_POLL_MS` is how often it lists each watched repository's open pull requests, each list
+  looking up the merged pull requests the last one left out, and reads the pull requests it watches
+  off screen, in place of 2 minutes. `LO_ANSWER_START_MS` is how long a request waits for GitHub's
+  answer to begin before Lo gives up on it, in place of 15 s. For these, `LO_DEVICE_POLL_MS` and
+  `LO_HOLD_LIMIT_MS`, a wait below 1 ms, or past the longest a timer takes, 2,147,483,647 ms, is
+  left for Lo's own.
 
 ### A pull request's tab
 
