@@ -201,6 +201,24 @@ export const queue = defineCommands('queue', {
   },
 });
 
+/**
+ * What a glossary's pieces run: a term's, on its row, and an overview's sections' and lines'. They
+ * aren't in `all`, since their keys would change what the other tests see: a test adds them.
+ */
+export const terms = defineCommands('terms', {
+  edit: { label: 'Edit term…', group: 'Review', keys: ['i'], targets: ['row'] },
+  history: { label: 'Show history', group: 'Review', keys: [], targets: ['row'] },
+  expand: { label: 'Expand term', group: 'Review', keys: ['enter'], targets: ['row'] },
+  accept: { label: 'Accept suggestion', group: 'Review', keys: ['a'], targets: ['row'] },
+  dismiss: { label: 'Dismiss suggestion', group: 'Review', keys: ['x'], targets: ['row'] },
+});
+
+export const sections = defineCommands('sections', {
+  fold: { label: 'Collapse section', group: 'View', keys: ['z a'], targets: ['block'] },
+  glossary: { label: 'Go to glossary', group: 'Go', keys: [] },
+  stack: { label: 'Stack overview', group: 'Go', keys: ['g s'] },
+});
+
 /** A run of a command: its id and the target it got. */
 export type Ran = readonly [string, Target];
 

@@ -227,3 +227,32 @@ test('the more button opens its surface’s right-click menu under itself', () =
   act(() => button.click());
   expect(heard).toEqual([[40, 32]]);
 });
+
+test('a hint without its chip gives its key in its tooltip, and one on a surface that takes no focus takes none', () => {
+  vi.useFakeTimers();
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  held();
+  const host = draw(
+    <HintButton command="diff.comment" target={LINE} chip={false} focusable={false} />,
+  );
+  const button = host.querySelector('button')!;
+  expect(button.querySelector('kbd')).toBeNull();
+  expect(button.getAttribute('aria-keyshortcuts')).toBe('c');
+  expect(button.tabIndex).toBe(-1);
+  act(() => {
+    button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: host }));
+    button.dispatchEvent(new MouseEvent('mouseenter', { relatedTarget: host }));
+    button.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+    vi.advanceTimersByTime(TOOLTIP_DELAY);
+  });
+  expect(host.querySelector('.tooltip')?.textContent).toBe('Commentc');
+  const more = draw(<MoreButton label="More actions for bucket" focusable={false} />);
+  const dots = more.querySelector('button')!;
+  expect(dots.tabIndex).toBe(-1);
+  // A click on it leaves focus where it was.
+  expect(dots.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))).toBe(
+    false,
+  );
+});

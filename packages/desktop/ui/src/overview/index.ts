@@ -32,3 +32,35 @@ export { Held, useNear, useNearness, type Nearness } from './Held.tsx';
 export { OverviewNote, type OverviewNoteProps } from './Note.tsx';
 export { OutOfDate } from './Stale.tsx';
 export { Walkthrough } from './Walkthrough.tsx';
+export { Chevron, type ChevronProps } from './Chevron.tsx';
+export { OverviewLine, type OverviewLineProps } from './OverviewLine.tsx';
+export { SectionHead, type SectionHeadProps } from './SectionHead.tsx';
+export {
+  StackLayers,
+  type LayerSummary,
+  type StackLayer,
+  type StackLayersProps,
+} from './StackLayers.tsx';
+export {
+  TermByline,
+  type TermBylineFacts,
+  type TermBylineProps,
+  type TermWriter,
+  type TermWritten,
+} from './TermByline.tsx';
+export { TermCard, type TermCardProps, type TermHint } from './TermCard.tsx';
+export {
+  EARLIER_SHOWN,
+  TermRow,
+  type TermDetails,
+  type TermEarlier,
+  type TermRowProps,
+  type TermSuggestion,
+} from './TermRow.tsx';
+export {
+  suggestionsCount,
+  TermBefore,
+  TermTags,
+  type TermMark,
+  type TermMarks,
+} from './TermTags.tsx';

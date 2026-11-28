@@ -1,11 +1,17 @@
 import type { MouseEvent } from 'react';
 
 import { Button } from './Button.tsx';
+import { UNFOCUSABLE } from './focus.ts';
 import { Icon } from './Icon.tsx';
 
 export interface MoreButtonProps {
   /** What it's the actions of, where a row has several: "More actions for retry.ts". */
   label?: string | undefined;
+  /**
+   * `false` for one the keyboard never reaches, in what takes no focus, as a term's card: it's out
+   * of the tab order, and a click leaves focus where it was. Its menu's key does what it does.
+   */
+  focusable?: boolean | undefined;
 }
 
 /** The words a `⋯` button is named with, and its tooltip. */
@@ -32,7 +38,7 @@ export function openMenuUnder(control: Element): void {
  * The `⋯` button: anything with a right-click menu has one, which opens that menu under itself.
  * It goes inside the element whose right-click opens the menu, at the end of its row.
  */
-export function MoreButton({ label = MORE_ACTIONS }: MoreButtonProps) {
+export function MoreButton({ label = MORE_ACTIONS, focusable = true }: MoreButtonProps) {
   return (
     <Button
       variant="ghost"
@@ -41,6 +47,7 @@ export function MoreButton({ label = MORE_ACTIONS }: MoreButtonProps) {
       aria-label={label}
       aria-haspopup="menu"
       hint={label}
+      {...(focusable ? {} : UNFOCUSABLE)}
       onClick={(event: MouseEvent<HTMLButtonElement>) => openMenuUnder(event.currentTarget)}
     >
       <Icon name="ellipsis" size={16} />

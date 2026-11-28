@@ -14,6 +14,16 @@ export interface HintButtonProps {
   target?: Target | undefined;
   /** Its words, where the command's label isn't what the row says. */
   children?: ReactNode;
+  /**
+   * `false` where its key doesn't work now, as on a term's card while the term hasn't keyboard
+   * focus: no chip, and its key is in its tooltip with its label, as in a row too narrow for chips.
+   */
+  chip?: boolean | undefined;
+  /**
+   * `false` for one the keyboard never reaches, on a surface that takes no focus, as a term's card:
+   * it's out of the tab order. A click leaves focus where it was either way.
+   */
+  focusable?: boolean | undefined;
 }
 
 /**
@@ -25,9 +35,15 @@ export interface HintButtonProps {
  * command's label. A click leaves focus where it was, on what the key acts on. It draws nothing
  * for a command that isn't there.
  */
-export function HintButton({ command, target, children }: HintButtonProps) {
+export function HintButton({
+  command,
+  target,
+  children,
+  chip = true,
+  focusable = true,
+}: HintButtonProps) {
   const why = useId();
-  const squeezed = useHintsSqueezed();
+  const squeezed = useHintsSqueezed() || !chip;
   const control = useControl(command, target);
   // Every hook comes before this: a command can come and go while its hint is drawn.
   if (!control) return null;
@@ -44,6 +60,7 @@ export function HintButton({ command, target, children }: HintButtonProps) {
         hint={control.off || (keyTip ? control.label : null)}
         hintKeys={keyTip ? control.keys : undefined}
         {...keyAria(control.keys, control.shortcut)}
+        tabIndex={focusable ? undefined : -1}
         // A click leaves focus where the key works, so the keys beside it go on working.
         onMouseDown={(event: MouseEvent) => event.preventDefault()}
         onClick={() => {
@@ -51,7 +68,7 @@ export function HintButton({ command, target, children }: HintButtonProps) {
         }}
       >
         {children ?? control.label}
-        {control.keys && <Key keys={control.keys} quiet decorative />}
+        {chip && control.keys && <Key keys={control.keys} quiet decorative />}
       </Button>
       {control.off && (
         <span id={why} className="sr-only">
