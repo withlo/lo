@@ -61,7 +61,14 @@ import type {
   ThreadView,
   VimKey,
 } from './api.ts';
-import { type At, Beside, type BesideHost, type LaneLines, type Pane } from './beside.ts';
+import {
+  type At,
+  Beside,
+  type BesideHost,
+  isDraftKey,
+  type LaneLines,
+  type Pane,
+} from './beside.ts';
 import { CommentBox, placeKey } from './comments.ts';
 import { fileMarks } from './decorations.ts';
 import { askToShowLine, codeEditor } from './editor.ts';
@@ -98,7 +105,7 @@ import {
   setLit,
   UNLIT,
 } from './ranges.ts';
-import { type ThreadHost, Threads } from './threads.ts';
+import { commentIn, type ThreadHost, Threads } from './threads.ts';
 import { type Tip, tips } from './tip.ts';
 import { FileNoteWidget, ThreadSizes, ThreadWidget } from './widgets.ts';
 
@@ -597,7 +604,8 @@ class Excerpt implements ExcerptView {
     let next: LitRange | undefined;
     const { target } = event;
     if (event.type !== 'pointerleave' && target instanceof Element) {
-      const under = rangeUnder(event);
+      // A thread's stem or mark before a draft's in one cell, as the preview takes it.
+      const under = rangeUnder(event, (key) => !isDraftKey(key)) ?? rangeUnder(event);
       const card = target.closest<HTMLElement>('.lo-diffthread [data-thread-id]')?.dataset.threadId;
       if (under) next = { lane: under.kind, key: under.key };
       else if (card !== undefined) next = { lane: 'threads', key: card };
@@ -658,8 +666,10 @@ class Excerpt implements ExcerptView {
         return box();
       },
       nonce: this.#nonce,
-      // One popover for every excerpt in the scroll, as an overview's code blocks have.
+      // One popover for every excerpt in the scroll, as an overview's code blocks have: out in
+      // the scroll, where its own right-click doesn't reach, so the popover says what was clicked.
       popover: (pop) => sharedPop(pop),
+      menu: (target, x, y) => this.#on.menu(target, x, y),
       mode: () => this.#mode,
       threadsIn: (file) => (file === 0 ? this.#byPlace : undefined),
       fileOf: (id) => (id === this.#id ? 0 : undefined),
@@ -1014,11 +1024,17 @@ class Excerpt implements ExcerptView {
     this.#rooms.get(line)?.destroy();
     this.#rooms.delete(line);
     this.#boxes.set(line, box);
-    // A new comment's lines are picked while it has focus, or had it last.
-    if (!('thread' in at)) {
-      const first =
-        'line' in at ? line : (this.#docLine(at.side, Math.min(at.from, at.to)) ?? line);
-      this.#boxSpans.set(box, { from: Math.min(first, line), to: line });
+    // A new comment's lines are picked while it has focus, or had it last, from the top where they
+    // start above the first line shown. A box on a thread's line is a reply.
+    if (thread === undefined && !('thread' in at)) {
+      const span =
+        'line' in at
+          ? undefined
+          : this.#laneRange(
+              { side: at.side, line: Math.min(at.from, at.to) },
+              { side: at.side, line: Math.max(at.from, at.to) },
+            );
+      this.#boxSpans.set(box, { from: Math.min(span?.from ?? line, line), to: line });
     }
     // The lines `v` selected are the box's now.
     if (focus) endSelection(this.#view);
@@ -1571,8 +1587,15 @@ class Excerpt implements ExcerptView {
     const thread = this.#hosts.around(target);
     if (thread) {
       event.preventDefault();
+      // On a comment of it, the comment's own menu: what Edit and Delete act on.
+      const comment = commentIn(thread.dom, target);
       this.#on.menu(
-        { kind: 'thread', thread: thread.id, collapsed: !thread.open },
+        {
+          kind: 'thread',
+          thread: thread.id,
+          collapsed: !thread.open,
+          ...(comment === undefined ? {} : { comment }),
+        },
         event.clientX,
         event.clientY,
       );

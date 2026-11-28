@@ -89,6 +89,9 @@ node testing/scripts/add-answers.ts --copy <recorded request's file> <cassette> 
 
 A REST read is added with `--rest <path>`, such as `/repos/rozed-dev/e2e/rules/branches/main`:
 GitHub's first answer, and its `304` to the read again with the first's `ETag`, as a poll reads it.
+For a read the cassette holds but never asked again, such as one Lo now reads again on a refresh, it
+adds only GitHub's `304` to the read with the `ETag` of the last answer held, and refuses when
+GitHub's answer has moved on.
 
 ### What GitHub can't be made to answer
 

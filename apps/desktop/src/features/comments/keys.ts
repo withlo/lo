@@ -7,7 +7,9 @@
 // else on the pull request itself. On a thread, the one `]t` landed on or the only one on the
 // cursor's line or the header's file, `r` replies, `x` resolves or unresolves it, `i` edits your
 // newest comment in it and `dd` deletes that comment, after asking. Each replaces Vim's key, since
-// the code is read-only.
+// the code is read-only. The thread's menu, from a right-click on it or the `⋯` in its head, has
+// them too. A right-click on one of your comments, or its own `⋯`, opens the same menu, with Edit
+// and Delete acting on that comment.
 // A line GitHub takes no comment on says so, and then `⏎` comments on its file instead; anywhere
 // else `⏎` is Vim's. The box's own keys, in the Comment box group, are the box's editor's: `⌘⏎` adds
 // the comment to your review (in the pull request's own box, which joins no review, it posts it; in
@@ -240,11 +242,10 @@ export default defineCommands(
     },
     /**
      * A box with your newest comment in the thread, to edit it and save it over GitHub's text: in a
-     * thread's popover, the comment the ring is on.
+     * thread's popover, the comment the ring is on, and from a comment's own menu, that comment.
      */
     edit: {
       label: 'Edit comment',
-      control: 'Edit on your comment',
       group: 'Comments',
       keys: ['i'],
       targets: ['line', 'header', 'thread'],
@@ -252,10 +253,12 @@ export default defineCommands(
       when: onThread,
       menu: { on: 'thread', order: 40, label: 'Edit' },
     },
-    /** Deletes your newest comment in the thread, once you say so: in a popover, the ringed one. */
+    /**
+     * Deletes your newest comment in the thread, once you say so: in a popover, the ringed one, and
+     * from a comment's own menu, that one.
+     */
     remove: {
       label: 'Delete comment…',
-      control: 'Delete on your comment',
       group: 'Comments',
       keys: ['d d'],
       targets: ['line', 'header', 'thread'],

@@ -146,13 +146,15 @@ in Settings.
 ## Linux
 
 Ctrl takes the place of `⌘` in every key. Vim's `⌃` keys keep their meanings, so two keys differ
-from what that rule would give, on both systems, and one on Linux alone:
+from what that rule would give, on both systems, and two on Linux alone:
 
 - **`⌘L` opens a PR,** the browser's "type an address" key. `⌘O` would become Ctrl+O, which is `⌃o`
   (back), so it stays a macOS alias only.
 - **`⌥⏎` shows a command's key in the palettes.** `⌃⏎` would be the same as `⌘⏎`, the other way.
 - **Find… is Ctrl+Shift+F,** as in a terminal, whose program keeps Ctrl+F. Ctrl+F is Vim's `⌃f`, a
   page down. With Vim keys off, a code view's own Ctrl+F opens its search, as `/` does.
+- **Refresh is `F5`,** as in browsers on Linux. `⌘R` would become Ctrl+R, which is `⌃r` (redo), so
+  it stays a macOS alias only, beside `F5`.
 
 `⌃⇥` and `⌃⇧⇥` also move to the next and previous tab, on both systems, beside `⌘⇧]` and `⌘⇧[`.
 

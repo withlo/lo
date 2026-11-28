@@ -287,6 +287,57 @@ test('adds a REST read’s first answer and its 304 after the rest, and leaves t
   ).rejects.toThrow('holds GET');
 });
 
+test('adds only the 304 to a REST read a cassette holds but never asked again', async () => {
+  const dir = cassette();
+  const url = `https://api.github.com${RULES}`;
+  const read: Interaction = {
+    request: { method: 'GET', url },
+    response: { status: 200, headers: { etag: ETAG }, body: [] },
+  };
+  writeFileSync(join(dir, '003-GET-rules.json'), JSON.stringify(read));
+  const { fetch, sent } = restAnswering();
+  const counts = await addRestAnswers({
+    fetch,
+    token: FAKE_TOKEN,
+    path: RULES,
+    dirs: [dir],
+    at: 'now',
+  });
+  expect(counts.get(dir)).toBe(1);
+  expect(sent.map((request) => request.headers.get('if-none-match'))).toEqual([ETAG]);
+  const { info, interactions } = readCassette(dir);
+  expect(info.added).toEqual({ [`GET ${url}`]: 'now' });
+  expect(interactions.map(({ file }) => file)).toEqual([
+    '001-GET-user.json',
+    '002-POST-graphql-Layers.json',
+    '003-GET-rules.json',
+    '004-GET-repos_rozed-dev_e2e_rules_branches_e4_gated.json',
+  ]);
+  expect(interactions[2]?.interaction).toEqual(read);
+  expect(interactions[3]?.interaction).toEqual({
+    request: { method: 'GET', url, if_none_match: ETAG },
+    response: { status: 304, headers: { etag: ETAG } },
+  });
+  await expect(
+    addRestAnswers({ fetch, token: FAKE_TOKEN, path: RULES, dirs: [dir], at: 'later' }),
+  ).rejects.toThrow('holds GET');
+});
+
+test('adds no 304 to a REST read a cassette holds without an ETag', async () => {
+  const dir = cassette();
+  const read: Interaction = {
+    request: { method: 'GET', url: `https://api.github.com${RULES}` },
+    response: { status: 200, headers: {}, body: [] },
+  };
+  writeFileSync(join(dir, '003-GET-rules.json'), JSON.stringify(read));
+  const { fetch, sent } = restAnswering();
+  await expect(
+    addRestAnswers({ fetch, token: FAKE_TOKEN, path: RULES, dirs: [dir], at: 'now' }),
+  ).rejects.toThrow('without an ETag');
+  expect(sent).toEqual([]);
+  expect(readCassette(dir).interactions).toHaveLength(3);
+});
+
 test('adds no REST read whose ETag GitHub doesn’t answer 304, nor one off GitHub’s API', async () => {
   const dir = cassette();
   const { fetch } = restAnswering(true);

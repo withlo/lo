@@ -56,6 +56,7 @@ import {
   viewsOf,
 } from './panels.ts';
 import { PullRequestTab } from './PullRequestTab.tsx';
+import { refresh, refreshable, refreshingStore } from './refresh.ts';
 import { activeTab, kinds, middleShown, viewsShown } from './shared.ts';
 import { pullsStore, showFiles, showLocal, showPull, showTabs, tabsStore } from './store.ts';
 
@@ -350,6 +351,7 @@ export default {
     previousView: { run: () => stepMiddle(-1), enabled: middleSteps },
     openOnGithub: { run: openOnGithub, enabled: linkable },
     copyLink: { run: copyLink, enabled: linkable },
+    refresh: { run: refresh, enabled: refreshable },
     showLocalCopy: { run: showLocalCopy, enabled: localShowable },
     copyLocalPath: { run: copyLocalPath, enabled: localShowable },
     // As a click on the banner's own button, which hands focus on as it does.
@@ -415,7 +417,7 @@ export default {
     // The app menu's checks, and what it dims, follow the tabs and their panels however they move:
     // as the layout changes, and as the row's width puts a panel away or brings it back, but not at
     // each frame of a drag.
-    for (const store of [tabsStore, panels, layout]) {
+    for (const store of [tabsStore, panels, layout, refreshingStore]) {
       store.subscribe(() => menuStale());
     }
     let shownRow = rowShown();

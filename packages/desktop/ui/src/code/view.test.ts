@@ -716,14 +716,23 @@ describe('targets', () => {
     expect(shown.keyState().target).toMatchObject({ across });
   });
 
-  test('a right-click on a thread is its menu', () => {
+  test('a right-click on a thread is its menu, and on one of its comments, that comment’s', () => {
     const on = events();
     const shown = open(on);
-    shown.setThreads([thread('right', at('a', 'new', 10))], plain().render);
+    shown.setThreads([thread('right', at('a', 'new', 10))], oneComment);
     const card = parent!.querySelector('[data-thread-id="right"]')!;
     card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
-    expect(on.menu).toHaveBeenCalledWith(
+    expect(on.menu).toHaveBeenLastCalledWith(
       { kind: 'thread', thread: 'right', collapsed: false },
+      0,
+      0,
+    );
+    // As a comment's own `⋯` asks: the menu whose Edit and Delete act on that comment.
+    card
+      .querySelector('[data-comment] button')!
+      .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    expect(on.menu).toHaveBeenLastCalledWith(
+      { kind: 'thread', thread: 'right', collapsed: false, comment: 'c1' },
       0,
       0,
     );
@@ -3862,6 +3871,11 @@ describe('writing beside lines', () => {
       's0 edge-edge amber, s1 mid-edge muted, tick s1 muted',
       's0 under-edge amber, s1 edge-mark muted, muted Draft · lines 5–6',
     ]);
+    // The pointer on it lights the thread, as it previews the thread.
+    laneCells('After')[1]!
+      .querySelector('.lo-stem--muted')!
+      .dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 7 }));
+    expect(litLines('After')).toEqual(['line 4', 'line 5, changed', 'line 6', 'line 7', 'line 8']);
     // On new line 5, nearer the draft's stem than the thread's.
     laneCells('After')[1]!
       .querySelector('.lo-stem--muted')!
@@ -4918,4 +4932,10 @@ function leftHeader(): Element {
 /** How many columns ring the first file's header. */
 function rungHeaders(): number {
   return document.querySelectorAll('[data-row="h:0"].is-keyed').length;
+}
+
+/** A thread's card with one comment, `c1`, and its `⋯`. */
+function oneComment(host: HTMLElement): ReturnType<RenderThread> {
+  host.innerHTML = '<div data-comment="c1"><button>⋯</button></div>';
+  return { update() {}, destroy() {} };
 }

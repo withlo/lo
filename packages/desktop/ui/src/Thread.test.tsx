@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // A review thread: open with its comments, collapsed to one line, pending, outdated, and the
-// actions that show only where they apply: Edit and Delete on your own comments.
+// actions that show only where they apply: a `⋯` of its own on each of your comments.
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -66,8 +66,7 @@ describe('Thread', () => {
     );
     expect(host.querySelector('[data-comment="c2"]')?.textContent).toContain('Author');
     // Nothing on someone else's comments, and nothing to resolve or reply with unless allowed.
-    expect(buttons(host, 'Edit')).toHaveLength(0);
-    expect(buttons(host, 'Delete')).toHaveLength(0);
+    expect(host.querySelectorAll('[data-comment] button')).toHaveLength(0);
     expect(buttons(host, 'Resolve')).toHaveLength(0);
     expect(host.textContent).not.toContain('Reply…');
   });
@@ -206,41 +205,67 @@ describe('Thread', () => {
     expect(head?.textContent).toContain('On a newer push');
   });
 
-  it('offers Edit and Delete on your own comments only, with their keys on your newest', () => {
+  it('gives each of your comments a `⋯` of its own, which opens the menu of a right-click on it', () => {
     const older: ThreadComment = { ...MINE, id: 'm1', when: '3 d ago' };
     const newest: ThreadComment = { ...MINE, id: 'm2' };
-    const onEdit = vi.fn<(id: string) => void>();
-    const onDelete = vi.fn<(id: string) => void>();
-    const host = render(
-      <Thread
-        {...PROPS}
-        comments={[MIRA, older, RAVI, newest]}
-        keys={{ edit: ['i'], delete: ['d', 'd'] }}
-        onEdit={onEdit}
-        onDelete={onDelete}
-      />,
-    );
-    const edits = buttons(host, 'Edit');
-    const deletes = buttons(host, 'Delete');
-    expect(edits).toHaveLength(2);
-    expect(deletes).toHaveLength(2);
-    // They're inside your comments, and no one else's.
+    const comments = [MIRA, older, RAVI, newest];
+    // Where the thread has no menu, there's none.
     expect(
-      edits.every((each) => each.closest('[data-comment]')?.textContent.includes('(you)')),
-    ).toBe(true);
-    expect(host.querySelector('[data-comment="c1"]')?.textContent).not.toContain('Edit');
-    expect(host.querySelector('[data-comment="c2"]')?.textContent).not.toContain('Delete');
-    // The keys act on the newest of yours, so only its buttons show them.
-    expect(edits.map((each) => each.textContent)).toEqual(['Edit', 'Editi']);
-    // Each also holds what it says while its delete is on its way.
-    expect(deletes.map((each) => each.textContent)).toEqual([
-      'Delete…Deleting…',
-      'Delete…ddDeleting…',
+      render(<Thread {...PROPS} comments={comments} />).querySelectorAll('[data-comment] button'),
+    ).toHaveLength(0);
+    cleanUp();
+    const host = render(<Thread {...PROPS} comments={comments} menu />);
+    const mores = [...host.querySelectorAll<HTMLButtonElement>('[data-comment] button')];
+    // Named for its comment, in your comments, and no one else's: no Edit or Delete drawn.
+    expect(mores.map((each) => each.getAttribute('aria-label'))).toEqual([
+      'More actions for comment from 3 d ago',
+      'More actions for comment from just now',
     ]);
-    click(edits[0]!);
-    click(deletes[1]!);
-    expect(onEdit).toHaveBeenCalledWith('m1');
-    expect(onDelete).toHaveBeenCalledWith('m2');
+    expect(
+      mores.map((each) => each.closest('[data-comment]')?.getAttribute('data-comment')),
+    ).toEqual(['m1', 'm2']);
+    expect(buttons(host, 'Edit')).toHaveLength(0);
+    expect(buttons(host, 'Delete')).toHaveLength(0);
+    // Only your comments are where it shows, under the pointer or with focus in them.
+    expect(
+      [...host.querySelectorAll('[data-shy-scope]')].map((each) =>
+        each.getAttribute('data-comment'),
+      ),
+    ).toEqual(['m1', 'm2']);
+    // A click opens the menu a right-click on that comment opens.
+    const asked: (string | null | undefined)[] = [];
+    host.addEventListener('contextmenu', (event) => {
+      if (event.target instanceof Element) {
+        asked.push(event.target.closest('[data-comment]')?.getAttribute('data-comment'));
+      }
+    });
+    click(mores[0]!);
+    expect(asked).toEqual(['m1']);
+  });
+
+  it('shows the `⋯` of your newest comment on a card the keyboard is on, which its keys act on', () => {
+    const older: ThreadComment = { ...MINE, id: 'm1', when: '3 d ago' };
+    const newest: ThreadComment = { ...MINE, id: 'm2' };
+    const comments = [older, RAVI, newest];
+    expect(keyboardOn(render(<Thread {...PROPS} comments={comments} menu />))).toEqual([]);
+    cleanUp();
+    expect(keyboardOn(render(<Thread {...PROPS} comments={comments} menu focused />))).toEqual([
+      'm2',
+    ]);
+    cleanUp();
+    // In a popover, the ring says which: it's focus on a comment.
+    expect(
+      keyboardOn(render(<Thread {...PROPS} comments={comments} menu focused variant="popover" />)),
+    ).toEqual([]);
+  });
+
+  it('says a delete is at work in place of its comment’s `⋯`', () => {
+    const host = render(
+      <Thread {...PROPS} comments={[MIRA, { ...MINE, id: 'm1' }]} menu deleting="m1" />,
+    );
+    const mine = host.querySelector('[data-comment="m1"]')!;
+    expect(mine.querySelector('button')).toBeNull();
+    expect(mine.textContent).toContain('Deleting…');
   });
 
   it('offers a reply where it can be made, and shows an open reply box in its place', () => {
@@ -283,9 +308,9 @@ describe('Thread', () => {
   });
 
   it('gives up what a narrow comment head draws, in order, until the name is whole', () => {
-    // The name takes 120 px. Each step given up gives it more room: none, the key chips, the
-    // "Author" tag, then the controls' words, which is enough.
-    const room = [40, 60, 90, 130, 160];
+    // The name takes 120 px. Each step given up gives it more room: none, the "Author" tag, then
+    // the words of a delete at work, which is enough.
+    const room = [40, 90, 130, 160];
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
       configurable: true,
       get(this: HTMLElement) {
@@ -299,13 +324,11 @@ describe('Thread', () => {
       },
     });
     try {
-      const host = render(<Thread {...PROPS} comments={[{ ...MINE, byAuthor: true }]} />);
+      const host = render(
+        <Thread {...PROPS} comments={[{ ...MINE, byAuthor: true }]} menu deleting="c3" />,
+      );
       const head = host.querySelector('[data-fit]')?.parentElement?.parentElement;
-      expect(head?.getAttribute('data-gave-up')).toBe('keys tag labels');
-      // Each control is its icon then, with its words as its tooltip, and keeps its name.
-      const [edit] = buttons(host, 'Edit');
-      expect(edit?.getAttribute('aria-label')).toBe('Edit comment from just now');
-      expect(edit?.querySelector('[data-takes="labels"] svg')).not.toBeNull();
+      expect(head?.getAttribute('data-gave-up')).toBe('tag labels');
     } finally {
       delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
       delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
@@ -326,7 +349,8 @@ describe('Thread', () => {
           canResolve
           canReply
           focused
-          keys={{ resolve: ['x'], reply: ['r'], edit: ['i'], delete: ['d', 'd'] }}
+          menu
+          keys={{ resolve: ['x'], reply: ['r'] }}
         />
         <Thread {...PROPS} resolved open={false} excerpt="Import order" />
       </>,
@@ -419,3 +443,10 @@ describe('Thread in a popover', () => {
     expect(ringed()).toBe('c1');
   });
 });
+
+/** The comments in `host` the keyboard is on, by their ids. */
+function keyboardOn(host: HTMLElement): (string | null)[] {
+  return [...host.querySelectorAll('[data-comment][data-focused]')].map((each) =>
+    each.getAttribute('data-comment'),
+  );
+}
