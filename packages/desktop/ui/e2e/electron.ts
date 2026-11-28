@@ -47,7 +47,7 @@ app.whenReady().then(() => {
   const window = new BrowserWindow({
     width: 1200,
     height: 900,
-    show: false,
+    show: process.platform === 'linux',
     webPreferences: {
       sandbox: true,
       contextIsolation: true,

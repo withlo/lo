@@ -1,4 +1,5 @@
-// A probe, for one CI run only: how a window that's never shown draws on Linux, throttled or not.
+// A probe, for one CI run only: how a window draws on Linux, shown or not, throttled or not, as
+// what's on the page changes each frame or doesn't.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +16,7 @@ const { app, BrowserWindow } = require('electron');
 const { join } = require('node:path');
 app.whenReady().then(() => {
   const window = new BrowserWindow({
-    width: 1200, height: 900, show: false,
+    width: 1200, height: 900, show: process.env.PROBE_SHOW === 'yes',
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false,
       backgroundThrottling: process.env.PROBE_THROTTLING !== 'off' },
   });
@@ -24,24 +25,32 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => app.quit());
 `;
 
-for (const throttling of ['on', 'off']) {
-  test(`probe: a window never shown, throttling ${throttling}`, async () => {
-    test.setTimeout(240_000);
-    const folder = fileURLToPath(new URL(`../test-results/probe-${throttling}/`, import.meta.url));
-    mkdirSync(folder, { recursive: true });
-    writeFileSync(
-      `${folder}index.html`,
-      '<!doctype html><meta charset="utf-8"><div id="box" style="width:100px;height:20px"></div>',
-    );
-    writeFileSync(`${folder}main.cjs`, MAIN);
-    writeFileSync(`${folder}package.json`, JSON.stringify({ main: 'main.cjs' }));
-    for (let run = 0; run < 3; run += 1) {
+const LINES = Array.from(
+  { length: 400 },
+  (_, line) => `<div>line ${line} of the text, some words to draw</div>`,
+).join('');
+
+for (const show of ['no', 'yes']) {
+  for (const throttling of ['on', 'off']) {
+    test(`probe: shown ${show}, throttling ${throttling}`, async () => {
+      test.setTimeout(120_000);
+      const folder = fileURLToPath(
+        new URL(`../test-results/probe-${show}-${throttling}/`, import.meta.url),
+      );
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(
+        `${folder}index.html`,
+        `<!doctype html><meta charset="utf-8"><div id="box" style="width:100px;height:20px;background:red"></div><div id="text">${LINES}</div>`,
+      );
+      writeFileSync(`${folder}main.cjs`, MAIN);
+      writeFileSync(`${folder}package.json`, JSON.stringify({ main: 'main.cjs' }));
       const env: Record<string, string> = {};
-      for (const [name, value] of Object.entries(process.env))
+      for (const [name, value] of Object.entries(process.env)) {
         if (value !== undefined) env[name] = value;
+      }
       delete env.ELECTRON_RUN_AS_NODE;
       env.PROBE_THROTTLING = throttling;
-      const started = performance.now();
+      env.PROBE_SHOW = show;
       if (typeof binary !== 'string') throw new Error('No electron binary.');
       const app = await electron.launch({
         args: [folder],
@@ -54,87 +63,52 @@ for (const throttling of ['on', 'off']) {
         await page.waitForFunction(() => document.getElementById('box') !== null, undefined, {
           polling: 100,
         });
-        const launched = Math.round(performance.now() - started);
         const result = await page.evaluate(async () => {
           const visibility = document.visibilityState;
-          const race = <T>(wait: Promise<T>, ms: number) =>
-            Promise.race([
-              wait,
-              new Promise<string>((r) =>
-                setTimeout(() => r(`none in ${ms} ms (${visibility})`), ms),
-              ),
-            ]);
-          const at = performance.now();
-          const first = await race(
-            new Promise<number>((r) =>
-              requestAnimationFrame(() => r(Math.round(performance.now() - at))),
-            ),
-            40_000,
-          );
-          const sample = async (ms: number) => {
-            let frames = 0;
-            let gap = 0;
-            let last = performance.now();
-            const from = last;
-            await race(
-              new Promise<void>((resolve) => {
-                const tick = (now: number) => {
-                  frames += 1;
-                  gap = Math.max(gap, now - last);
-                  last = now;
-                  if (now - from < ms) requestAnimationFrame(tick);
-                  else resolve();
-                };
-                requestAnimationFrame(tick);
-              }),
-              ms + 5_000,
-            );
-            return { frames, maxGap: Math.round(gap) };
-          };
-          const start = await sample(3_000);
-          let timers = 0;
-          const tFrom = performance.now();
-          await new Promise<void>((resolve) => {
-            const tick = () => {
-              timers += 1;
-              if (performance.now() - tFrom < 1_000) setTimeout(tick, 0);
-              else resolve();
-            };
-            tick();
-          });
-          await new Promise((r) => setTimeout(r, 10_000));
-          const idleFor = Math.round(performance.now() - tFrom);
-          const later = await sample(2_000);
           const box = document.getElementById('box')!;
-          const roAt = performance.now();
-          box.style.width = '150px';
-          const resize = await race(
-            new Promise<number>((r) => {
-              const o = new ResizeObserver(() => {
-                o.disconnect();
-                r(Math.round(performance.now() - roAt));
-              });
-              o.observe(box);
-            }),
-            10_000,
-          );
-          return {
-            visibility,
-            firstFrameMs: first,
-            start,
-            timersIn1s: timers,
-            idleFor,
-            later,
-            resizeNoticeMs: resize,
-            after: document.visibilityState,
-          };
+          const text = document.getElementById('text')!;
+          const sample = (ms: number, change: (frame: number) => void) =>
+            new Promise<{ frames: number; maxGap: number }>((resolve) => {
+              let frames = 0;
+              let gap = 0;
+              let last = performance.now();
+              const from = last;
+              const done = setTimeout(
+                () => resolve({ frames, maxGap: Math.round(gap) }),
+                ms + 5_000,
+              );
+              const tick = (now: number) => {
+                frames += 1;
+                gap = Math.max(gap, now - last);
+                last = now;
+                change(frames);
+                if (now - from < ms) requestAnimationFrame(tick);
+                else {
+                  clearTimeout(done);
+                  resolve({ frames, maxGap: Math.round(gap) });
+                }
+              };
+              requestAnimationFrame(tick);
+            });
+          const still = await sample(3_000, () => {});
+          const small = await sample(3_000, (frame) => {
+            box.style.width = `${100 + (frame % 2)}px`;
+          });
+          const large = await sample(3_000, (frame) => {
+            text.style.width = `${600 + (frame % 2) * 50}px`;
+          });
+          const sized = await sample(3_000, (frame) => {
+            text.style.width = `${600 + (frame % 2) * 50}px`;
+            void text.getBoundingClientRect();
+          });
+          return { visibility, still, small, large, sized };
         });
         console.log(
-          `PROBE ${JSON.stringify({ throttling, run, platform: process.platform, launchedMs: launched, ...result })}`,
+          `PROBE ${JSON.stringify({ show, throttling, platform: process.platform, ...result })}`,
         );
       } finally {
         await app.close();
       }
-    }
-  });
+    });
+  }
 }
