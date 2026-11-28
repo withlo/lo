@@ -25,6 +25,7 @@ import { standingOf } from './facts.ts';
 import { revealBlock } from './follow.ts';
 import { runsOnHead, type Run } from './mapping.ts';
 import { fileSince, knownSince } from './since.ts';
+import { subjects } from './stack.ts';
 import { staleAgainst } from './stale.ts';
 import { checked, states } from './store.ts';
 import { targetsOf } from './targets.ts';
@@ -159,6 +160,8 @@ function read(tab: string, id: string): boolean {
   const node = standing.parsed.tree.blocks[named.block];
   if (!node) return false;
   if (named.step !== undefined && node.kind === 'walkthrough') setStep(node, named.step);
+  // The note is of the layer's own overview, which shows in place of its stack's.
+  subjects.set(tab, 'pull');
   revealBlock(tab, named.block);
   return true;
 }

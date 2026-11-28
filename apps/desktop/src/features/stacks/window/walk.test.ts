@@ -254,8 +254,10 @@ describe('a stack overview’s code', () => {
     expect(branchFor(rows, undefined)).toEqual([90, 91, 92]);
     expect(branchFor(rows, 93)).toEqual([90, 91, 93]);
     expect(branchFor(rows, 95)).toEqual([90, 95]);
-    // A layer the stack doesn't have isn't the top.
+    // A layer the stack doesn't have isn't the top, nor one that merged, which is in no branch.
     expect(branchFor(rows, 7)).toEqual([90, 91, 92]);
+    const merged = { ...row(94, []), path: [] };
+    expect(branchFor([...rows, merged], 94)).toEqual([90, 91, 92]);
     expect(branchFor([], undefined)).toEqual([]);
   });
 });

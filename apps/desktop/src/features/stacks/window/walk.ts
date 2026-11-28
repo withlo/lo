@@ -367,13 +367,13 @@ function writersOrder(a: readonly number[], b: readonly number[]): number {
 
 /**
  * The layers of `rows`, a stack, a stack overview's code shows as one diff, from the bottom: up to
- * `top`, the layer whose head the overview describes, when it's one of them; else up the branch
- * the overview's writer goes up, through the lowest-numbered layer wherever more than one sits on
- * another, to the top.
+ * `top`, the layer whose head the overview describes, when it's one of them still in the stack;
+ * else up the branch the overview's writer goes up, through the lowest-numbered layer wherever more
+ * than one sits on another, to the top. A layer that merged or closed is in none.
  */
 export function branchFor(rows: readonly Row[], top: number | undefined): readonly number[] {
   const at = rows.find((row) => row.number === top);
-  if (at) return at.path;
+  if (at && at.path.length > 0) return at.path;
   let first: readonly number[] = [];
   for (const row of rows) {
     if (first.length === 0 || writersOrder(row.path, first) < 0) first = row.path;

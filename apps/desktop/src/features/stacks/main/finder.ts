@@ -336,16 +336,22 @@ export class StackFinder {
   }
 
   /**
-   * The open pull request of tab `id`'s repository whose head is `commit`, as the stacks were last
-   * worked out: none when no head is, or they aren't known.
+   * The layer of the stack tab `id` last showed whose head is `commit`, as the stacks were last
+   * worked out: none when no layer's is, or they aren't known. Another pull request at the same
+   * head, outside the stack, isn't one.
    */
   layerAt(id: string, commit: string): number | undefined {
-    const tab = this.#followed.get(id)?.tab;
+    const followed = this.#followed.get(id);
+    const tab = followed?.tab;
     const entry = tab?.login === undefined ? undefined : this.#pollers.get(tab.login.toLowerCase());
     const forest =
       tab && entry?.kind === 'ready' ? this.#forest(entry.poller, tab.pull.repo) : undefined;
+    const view = followed?.state?.stack;
+    if (!forest || view?.kind !== 'stack') return undefined;
+    const layers = new Set(view.rows.map((row) => row.number));
     const at = commit.toLowerCase();
-    return forest?.prs.find((pr) => pr.headOid.toLowerCase() === at)?.number;
+    return forest.prs.find((pr) => layers.has(pr.number) && pr.headOid.toLowerCase() === at)
+      ?.number;
   }
 
   /** Forgets what was kept for an account that was removed, whose poller stopped. */

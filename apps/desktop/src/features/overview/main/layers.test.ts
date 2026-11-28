@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Acting } from '../../tab/contract.ts';
 import { Blobs } from './blobs.ts';
-import { firstLine, LayerReads, LINE_LIMIT, REFS_FRESH } from './layers.ts';
+import { firstLine, LayerReads, LINE_LIMIT, REFS_FRESH, REFS_FRESH_OFF_SCREEN } from './layers.ts';
 import { artifactText, database, FakeGithub, overview } from './test/support.ts';
 
 const REPO = new RepoRef('rozed-dev', 'e2e');
@@ -16,9 +16,10 @@ const ACTING: Acting = { kind: 'account', login: 'rozed-bot' };
 /** Reads through `github`, as main's queue would, with the priority each read asked for. */
 function readsOf(github: FakeGithub) {
   const priorities: unknown[] = [];
-  const clock = { now: 0 };
+  const clock = { now: 0, onScreen: true };
   const reads = new LayerReads({
     now: () => clock.now,
+    onScreen: () => clock.onScreen,
     blobs: new Blobs(database()),
     github: <T>(
       _acting: Acting,
@@ -66,6 +67,26 @@ describe("a stack's layers' overviews", () => {
         etag: expect.any(String),
       }),
     ]);
+  });
+
+  it('are read again only every five minutes while Lo is off screen', async () => {
+    const github = new FakeGithub();
+    github.push('rozed-dev/e2e', 2, overview('two', { 'artifact.md': artifactText(2) }));
+    const { reads, clock } = readsOf(github);
+    await reads.overviews(ACTING, REPO, [2]);
+    const refs = () => github.paths().filter((path) => path.includes('matching-refs')).length;
+    clock.onScreen = false;
+    clock.now = REFS_FRESH;
+    await reads.overviews(ACTING, REPO, [2]);
+    expect(refs()).toBe(1);
+    clock.now = REFS_FRESH_OFF_SCREEN;
+    await reads.overviews(ACTING, REPO, [2]);
+    expect(refs()).toBe(2);
+    // Back on screen, a minute is enough again.
+    clock.onScreen = true;
+    clock.now = REFS_FRESH_OFF_SCREEN + REFS_FRESH;
+    await reads.overviews(ACTING, REPO, [2]);
+    expect(refs()).toBe(3);
   });
 
   it("say one is unread when it can't be read now, or its text isn't there to read", async () => {

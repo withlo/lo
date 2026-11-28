@@ -67,7 +67,7 @@ const linesAsked = new Map<string, Set<number>>();
  * What each overview's commit says, read once: by the commit, and the layer whose ref held it. The
  * last {@link PARSED_LIMIT} read are kept.
  */
-const parsedAt = new Map<string, Promise<Omit<LayerSaid, 'line'>>>();
+const parsedAt = new Map<string, Promise<Omit<LayerSaid, 'line'> | undefined>>();
 
 /** The most overviews' commits {@link parsedAt} keeps what they say of. */
 const PARSED_LIMIT = 200;
@@ -183,12 +183,16 @@ export function tldrOf(blocks: readonly OverviewBlock[]): string | undefined {
   return textOf(blocks.slice(1, end < 0 ? undefined : end));
 }
 
-/** What the overview of layer `number`, `artifact` at `commit`, says: read once for the commit. */
+/**
+ * What the overview of layer `number`, `artifact` at `commit`, says: read once for the commit. None
+ * when it couldn't be parsed now, so what the layer said before stands, and it's parsed again on
+ * the next read.
+ */
 function parsedOf(
   number: number,
   commit: string,
   artifact: Uint8Array,
-): Promise<Omit<LayerSaid, 'line'>> {
+): Promise<Omit<LayerSaid, 'line'> | undefined> {
   const key = `${number} ${commit}`;
   let parsed = parsedAt.get(key);
   if (!parsed) {
@@ -202,7 +206,7 @@ function parsedOf(
       .catch((error: unknown) => {
         parsedAt.delete(key);
         console.error("Lo couldn't read a layer's overview:", error);
-        return { stack: undefined, tldr: undefined };
+        return undefined;
       });
     parsedAt.set(key, parsed);
     // The oldest goes first: a Map keeps the order its keys were set in.
@@ -270,7 +274,7 @@ function inParts<T>(
  * once, with no tl;dr. `again` reads them whatever was read before, as the stack's overview is
  * shown and every {@link LAYERS_AGAIN_MS} while the view is on screen, so an overview pushed since
  * is read. When none of them could be read, they're read again as anything changes. A layer whose
- * overview couldn't be read keeps what it said before.
+ * overview couldn't be read or parsed keeps what it said before.
  */
 export function readLayers(id: string, view: StackView | undefined, again = false): void {
   const rows = rowsOf(view);
@@ -309,7 +313,8 @@ export function readLayers(id: string, view: StackView | undefined, again = fals
         const number = reading[at];
         if (number === undefined) return;
         const was = next.get(number);
-        const now = overview.kind === 'unread' ? (was ?? UNKNOWN) : (parsed[at] ?? UNKNOWN);
+        // One that can't be read or parsed now keeps what it said; one with none says nothing.
+        const now = overview.kind === 'none' ? UNKNOWN : (parsed[at] ?? was ?? UNKNOWN);
         next.set(number, { stack: now.stack, tldr: now.tldr, line: was?.line });
       });
       setSaid(id, next);

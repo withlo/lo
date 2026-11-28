@@ -393,9 +393,9 @@ export const contract = defineContract('stacks', {
       reply: reply<string>(),
     },
     /**
-     * The open pull request of tab `id`'s repository whose head is `commit`, as its stacks were
-     * last worked out: none when no head is, or they aren't known yet. A stack overview's code goes
-     * up to the layer whose head it describes.
+     * The layer of the stack tab `id` shows whose head is `commit`, as its repository's stacks were
+     * last worked out: none when no layer's is, or they aren't known yet. A stack overview's code
+     * goes up to the layer whose head it describes.
      */
     layerAt: {
       input: z.strictObject({ id: tabId, commit: oid }),

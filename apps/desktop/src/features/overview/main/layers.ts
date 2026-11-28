@@ -5,8 +5,9 @@
 // - Only the tab's own repository's pull requests are a stack's layers, so everything is read
 //   there, as the tab's account, behind what the reader waits on.
 // - Every overview's ref is read in one request, kept for a minute for every view of the
-//   repository's stacks, then read again with an ETag, so reading them again while none changed
-//   costs nothing; and each description with its own.
+//   repository's stacks, or five while Lo is off screen, as a tab's own overview is read then;
+//   then read again with an ETag, so reading them again while none changed costs nothing; and
+//   each description with its own.
 // - A commit's listing is kept by its ID, which names the same files for good, and `artifact.md`
 //   with the rest of the overviews' files, so a layer's overview is read once while it's the same.
 //
@@ -27,6 +28,7 @@ import type { LayerOverview, OverviewCommit } from '../contract.ts';
 import type { Blobs } from './blobs.ts';
 import { fetchBlob, readOverview, type Github } from './fetch.ts';
 import { entryAt } from './listing.ts';
+import { BACKGROUND_EVERY } from './watch.ts';
 
 /** The most commits' listings kept, the oldest let go first. */
 export const LISTINGS = 100;
@@ -40,6 +42,9 @@ export const LINE_LIMIT = 300;
 /** How long a read of a repository's overviews' refs is used before it's read again, in ms. */
 export const REFS_FRESH = 60_000;
 
+/** How long while Lo is off screen: as long as a tab's own overview's ref goes unread then. */
+export const REFS_FRESH_OFF_SCREEN = BACKGROUND_EVERY;
+
 export interface LayerReadsOptions {
   /** Where the overviews' files are kept. */
   blobs: Blobs;
@@ -52,6 +57,8 @@ export interface LayerReadsOptions {
   log?: ((line: string) => void) | undefined;
   /** The time now, in milliseconds. */
   now?: (() => number) | undefined;
+  /** Whether Lo is on screen, in front or behind another window: it is, unless this says not. */
+  onScreen?: (() => boolean) | undefined;
 }
 
 /** The first line of a pull request's description, and the ETag of the read it's from. */
@@ -110,13 +117,15 @@ export class LayerReads {
 
   /**
    * What every overview's ref in `repo` holds, as `acting` reads it: as last read, within
-   * {@link REFS_FRESH} of it, else read again, with the ETag of the read before.
+   * {@link REFS_FRESH} of it, or {@link REFS_FRESH_OFF_SCREEN} while Lo is off screen, else read
+   * again, with the ETag of the read before.
    */
   #refsOf(github: Github, acting: Acting, repo: RepoRef): Promise<OverviewRefCommits> {
     const now = this.#options.now?.() ?? Date.now();
     const key = `${acting.kind === 'account' ? acting.login : ''} ${repo.key}`;
     const kept = this.#refs.get(key);
-    if (kept && now - kept.at < REFS_FRESH) return Promise.resolve(kept.refs);
+    const fresh = (this.#options.onScreen?.() ?? true) ? REFS_FRESH : REFS_FRESH_OFF_SCREEN;
+    if (kept && now - kept.at < fresh) return Promise.resolve(kept.refs);
     const reading = this.#reading.get(key);
     if (reading) return reading;
     const read = github((client) => overviewRefCommits(client, repo, kept?.refs))

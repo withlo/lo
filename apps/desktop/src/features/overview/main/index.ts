@@ -110,6 +110,7 @@ function keptIn(context: FeatureContext<typeof contract>): Kept {
       blobs,
       github: (acting, request, priority) => readAs(context, acting, request, priority),
       log,
+      onScreen: () => foreground,
     }),
   };
   return kept;

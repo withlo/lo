@@ -33,14 +33,16 @@ import { summaryOf } from './StackParts.tsx';
 vi.mock('./main.ts', async (original) => ({
   ...(await original<typeof Main>()),
   overviewJobs: () => ({
-    parse: async ({ artifact }: { artifact: Uint8Array }) => ({
-      parsed: parseArtifact(new TextDecoder().decode(artifact)),
-    }),
+    parse: async ({ artifact }: { artifact: Uint8Array }) => {
+      if (answers.parseFails) throw new Error('The background process stopped.');
+      return { parsed: parseArtifact(new TextDecoder().decode(artifact)) };
+    },
   }),
 }));
 
 /** What main answers for each layer's overview, and for each description's first line. */
 const answers = vi.hoisted(() => ({
+  parseFails: false,
   overviews: (_layers: readonly number[]): LayerOverview[] => [],
   lines: (layers: readonly number[]): (string | null)[] => layers.map(() => null),
 }));
@@ -265,6 +267,24 @@ describe("what's read of the layers", () => {
     readLayers('unread', view);
     await settled();
     expect(asked('layerOverviews')).toEqual([2, 2, 2]);
+  });
+
+  it('keeps what a layer said while its overview pushed since can’t be parsed, until it can', async () => {
+    const view = stackOfRows([row(82, true)]);
+    // Pushed after what the other tests read: parsed once for each commit, whichever view asks.
+    answers.overviews = (layers) => layers.map((number) => overviewOf(number, 9, 'First.', 3));
+    readLayers('parse', view);
+    await settled();
+    answers.overviews = (layers) => layers.map((number) => overviewOf(number, 9, 'Second.', 4));
+    answers.parseFails = true;
+    readLayersAgain('parse', view);
+    await settled();
+    expect(layersSaid.get('parse').get(82)).toMatchObject({ stack: 9, tldr: 'First.' });
+    // Parsed on the next read.
+    answers.parseFails = false;
+    readLayersAgain('parse', view);
+    await settled();
+    expect(layersSaid.get('parse').get(82)).toMatchObject({ stack: 9, tldr: 'Second.' });
   });
 
   it('asks for at most 100 layers at once, overviews and descriptions', async () => {

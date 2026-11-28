@@ -696,6 +696,28 @@ describe('a run of layers', () => {
     expect(finder.layerAt('gone', head)).toBeUndefined();
   });
 
+  it('is one of the stack’s layers, not another pull request at the same head', async () => {
+    const found = await recorded('app_stack', E2E);
+    const head = headIn(found.list, 83);
+    const at83 = openPullRequest(found.list, 83);
+    if (!at83) throw new Error('#83 wasn’t recorded');
+    // A fork's pull request of #83's branch, listed first, into another branch: no layer.
+    const twin = {
+      ...at83,
+      id: 'PR_twin',
+      number: 70,
+      isCrossRepository: true,
+      baseRefName: 'elsewhere',
+    };
+    const list = { ...found.list, pullRequests: [twin, ...found.list.pullRequests] };
+    const poller = new FakePoller();
+    poller.set(E2E, { list, rules: found.rules });
+    const { finder } = started(poller);
+    finder.follow([tab(84, { onScreen: true, head: headIn(list, 84) })]);
+    await settle();
+    expect(finder.layerAt('t84', head)).toBe(83);
+  });
+
   it('is set no start and offered none: it starts where it was made to', async () => {
     const found = await recorded('app_stack', E2E);
     const poller = new FakePoller();

@@ -87,6 +87,7 @@ vi.mock(import('./store.ts'), async (original) => ({
 
 const { followMarkers } = await import('./markers.ts');
 const { reveals } = await import('./follow.ts');
+const { subjects } = await import('./stack.ts');
 
 /** What main answers for each file since the overview's commit, by its path there. */
 const files = new Map<string, FileSinceText>();
@@ -281,7 +282,10 @@ describe('the overview’s markers', () => {
   it('show the overview at the note’s block when it asks, only for the overview the tab has now', async () => {
     const tree = await shown(R1);
     at(R1);
+    // The tab's Overview showed its stack's overview last: the note is of the layer's own.
+    subjects.set(tab, 'stack');
     expect(fake.explainer?.read(tab, `${tree}.4`)).toBe(true);
+    expect(subjects.get(tab)).toBe('pull');
     expect(fake.shown).toEqual([[tab, OVERVIEW_VIEW]]);
     expect(reveals.get(tab)?.block).toBe(4);
     // A note from an overview the tab had before.
