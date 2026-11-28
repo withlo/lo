@@ -1965,6 +1965,8 @@ function clashOf(relining: BlockRelining, goes: BlockGoes): string | undefined {
  */
 interface Placing {
   readonly settled: DraftHomeRow;
+  /** What its head said there. */
+  readonly where: BoxWhere | undefined;
   done: Promise<void>;
 }
 
@@ -2005,24 +2007,35 @@ function reliningOnBlock(box: Box, change: (relining: BlockRelining) => BlockSpa
 /**
  * Moves the box being relined to its block's lines `at` before Lo knows where its comment goes on
  * them, and places its comment once it does, as {@link reliningOnBlock} says. Meanwhile its comment
- * is where it was, and a send waits for it.
+ * is where it was, and a send waits for it; its bracket is on the new lines, and its head names
+ * them as the block does.
  */
 function placeLater(relining: BlockRelining, at: BlockSpan): void {
   const { box, writing } = relining;
   const { view, composer } = box;
   if (!composer) return;
-  const settled = placings.get(box)?.settled ?? relining.home;
+  const before = placings.get(box);
+  const settled = before?.settled ?? relining.home;
+  const where = before ? before.where : box.state.where;
   const lines: DraftHomeRow = { ...relining.home, at };
   if (!composer.move(blockAt(writing, lines))) return;
   box.home = { kind: 'block', block: lines };
-  const placing: Placing = { settled, done: Promise.resolve() };
+  box.set({ where: blockLinesWhere(view, lines) });
+  const placing: Placing = { settled, where, done: Promise.resolve() };
   placings.set(box, placing);
+  markDrafts(view);
   placing.done = blockGoesLater({ ...relining, home: lines }, at)
+    // Where Lo couldn't work it out, it goes back.
+    .catch((error: unknown) => {
+      console.error("Lo couldn't follow a comment's lines to the head:", error);
+      return undefined;
+    })
     .then((goes) => {
       // Another change, or one Lo could place at once, came after it.
       if (placings.get(box) !== placing) return;
       placings.delete(box);
-      // Moved on meanwhile, as to its file.
+      // Gone meanwhile, discarded or moved to its file: nothing of it comes back.
+      if (boxesOf(view).get(box.key) !== box) return;
       const here = box.home.kind === 'block' && box.home.block === lines;
       if (!here) return;
       const why =
@@ -2032,18 +2045,37 @@ function placeLater(relining: BlockRelining, at: BlockSpan): void {
         landOnBlock(box, goes);
         return;
       }
-      // Back where it was, its draft's home with it, in the block it's drawn in now.
+      // Back where it was, its draft's home, its head and its bracket with it, in the block it's
+      // drawn in now.
       box.home = { kind: 'block', block: settled };
+      box.set({ where: placing.where });
       const drawn =
         box.drawnIn === 'block' ? blockDrawn(view, keyOfBlock(settled), box.drawnBlock) : undefined;
       if (drawn) box.composer?.move(blockAt(drawn, settled));
       const text = box.composer?.text ?? box.state.text;
       if (text.trim() !== '') save(view, box.state.place, text, settled);
+      markDrafts(view);
       if (why) refuse(why);
     })
     .catch((error: unknown) => {
       console.error("Lo couldn't change a comment's lines:", error);
+    })
+    // Its answer's in, whatever it was: a send waiting for it goes on.
+    .finally(() => {
+      if (placings.get(box) === placing) placings.delete(box);
     });
+}
+
+/**
+ * What the head of a box moved to its block's lines `home` says while Lo works out where its
+ * comment goes on them: those lines, as the block names them, at its revision where that's not the
+ * head's.
+ */
+function blockLinesWhere(view: string, home: DraftHomeRow): BoxWhere {
+  const written = revisionName(view, home.commit);
+  const now = revisionName(view, home.head);
+  const lines = linesOfBlock(home.at);
+  return { head: lineRefText({ lines, revision: written === now ? undefined : written }) };
 }
 
 /**
@@ -2280,11 +2312,15 @@ function sendable(box: Box): boolean {
 export async function send(box: Box, how: Send): Promise<void> {
   const { view } = box;
   if (!sendable(box) || drawing.has(box)) return;
-  // Its lines changed on a code block before Lo knew where its comment goes on them: it goes there.
-  const placing = placings.get(box);
-  if (placing) {
-    await placing.done;
-    if (!sendable(box) || drawing.has(box)) return;
+  // Its lines changed on a code block before Lo knew where its comment goes on them: it goes where
+  // they end up once Lo knows, the lines the box shows then, whatever changed them meanwhile.
+  if (placings.has(box)) {
+    for (let placing = placings.get(box); placing; placing = placings.get(box)) {
+      await placing.done;
+    }
+    // Gone meanwhile, as discarded.
+    const gone = boxesOf(view).get(box.key) !== box;
+    if (gone || !sendable(box) || drawing.has(box)) return;
   }
   // Its tree is made first, for a moment at most, so what's sent draws formatted from its first
   // frame, as its card from GitHub then does: the box shows it as it is meanwhile.
