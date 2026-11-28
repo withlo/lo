@@ -179,7 +179,7 @@ describe('Markdown', () => {
     const expected: [word: string, icon: IconName, tone: string][] = [
       ['Note', 'info', 'text-info'],
       ['Tip', 'lightbulb', 'text-success'],
-      ['Important', 'message-square-exclamation-point', 'text-info'],
+      ['Important', 'message-square-exclamation-point', 'text-important'],
       ['Warning', 'triangle-exclamation-point', 'text-warning'],
       ['Caution', 'octagon-exclamation-point', 'text-danger'],
     ];
@@ -191,15 +191,23 @@ describe('Markdown', () => {
         titles.map((title) => [
           title.textContent,
           title.firstElementChild?.outerHTML,
-          // The icon and the word are in the alert's tone, which never shows without them.
-          [...title.classList].find((name) => /^text-(info|success|warning|danger)$/.test(name)),
+          // The icon and the word are in the alert's tone, which never shows without them, and
+          // so is its box: Important is GitHub's purple, apart from Note's blue.
+          [...title.classList].find((name) =>
+            /^text-(info|success|important|warning|danger)$/.test(name),
+          ),
+          [...(title.parentElement?.classList ?? [])].filter((name) => /^(bg|border)-/.test(name)),
         ]),
       ).toEqual(
-        expected.map(([word, icon, tone]) => [
-          word,
-          renderToStaticMarkup(<Icon name={icon} size={16} />),
-          tone,
-        ]),
+        expected.map(([word, icon, tone]) => {
+          const status = tone.replace('text-', '');
+          return [
+            word,
+            renderToStaticMarkup(<Icon name={icon} size={16} />),
+            tone,
+            [`border-${status}-border`, `bg-${status}-bg`],
+          ];
+        }),
       );
       expect(disallowed(page.firstElementChild!, allowed)).toEqual([]);
     }

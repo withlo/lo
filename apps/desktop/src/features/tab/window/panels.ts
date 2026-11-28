@@ -55,6 +55,13 @@ export const panels = makeTabState<Panels>(() => ({}));
 export const INSTEAD = 'timeline.view';
 
 /**
+ * The middle view each tab went to by itself as it opened, before its wait showed, which the
+ * header's view switch goes to at once, its thumb in one frame, as if the tab had opened there:
+ * the timeline, in place of an overview there isn't. The switch takes it as it draws it.
+ */
+export const wentAtOnce = makeTabState<string | undefined>(() => undefined);
+
+/**
  * Which of the middle views `ids`, those there now, a tab shows: `chosen`, the one it shows by id,
  * or before it has one, the view Settings says to open on (`open`, nothing while it isn't known);
  * and in place of one that isn't there, the timeline, or the first there is.

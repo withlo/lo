@@ -15,7 +15,7 @@ import { createStore } from 'zustand/vanilla';
 import { refuse, withdraw } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { explain } from '../../../window/explain.ts';
-import { signInTo } from '../../accounts/window/shared.ts';
+import { signInAsk, type SignedIn } from '../../accounts/window/shared.ts';
 import { diffStateOf, showThread as showInDiff, type ShowWhen } from '../../diff/window/shared.ts';
 import {
   comparedIn,
@@ -81,7 +81,12 @@ export type PanelEmpty =
       readonly title: string;
       readonly line?: string | undefined;
       /** The command its button runs. */
-      readonly action?: 'stacks.back' | 'accounts.addAccount' | 'comments.clearFilter' | undefined;
+      readonly action?:
+        | 'stacks.back'
+        | 'accounts.addAccount'
+        | 'accounts.signInAgain'
+        | 'comments.clearFilter'
+        | undefined;
     }
   | { readonly kind: 'failed'; readonly reason: string | undefined };
 
@@ -92,14 +97,14 @@ const NO_MATCHES = 'No matches';
 
 /**
  * What view `view`'s panel shows when it lists nothing, for what main last sent of its threads.
- * `adding` is whether signing in now adds an account, as it does once one is listed: read as no one,
- * it then asks for one to be added.
+ * Read as no one, it asks for an account as `signed`, how the accounts stand, says: to sign in
+ * while none is signed in, and to add one while one is.
  */
 export function emptyOf(
   threads: ThreadsView | undefined,
   filter: PanelFilter,
   run?: readonly number[],
-  adding = false,
+  signed: SignedIn = 'none',
 ): PanelEmpty {
   const status = threads?.status;
   switch (status) {
@@ -118,13 +123,10 @@ export function emptyOf(
         line: 'Each layer has its own.',
         action: 'stacks.back',
       };
-    case 'signIn':
-      return {
-        kind: 'none',
-        icon: 'user-round',
-        title: signInTo('see threads', adding),
-        action: 'accounts.addAccount',
-      };
+    case 'signIn': {
+      const ask = signInAsk('see threads', signed);
+      return { kind: 'none', icon: 'user-round', title: ask.title, action: ask.command };
+    }
     case 'failed':
       return {
         kind: 'failed',

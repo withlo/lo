@@ -83,6 +83,15 @@ export function useWaiting(tab: string): (view: string) => boolean {
   return useCallback((view: string) => (waiting?.get(view) ?? 0) > 0, [waiting]);
 }
 
+/**
+ * How long tab `tab` has waited, in milliseconds, since its wait began, as its first placeholder
+ * was drawn: nothing while it isn't waiting.
+ */
+export function waitedFor(tab: string): number | undefined {
+  const wait = waits.get(tab);
+  return wait === undefined ? undefined : Date.now() - wait.since;
+}
+
 /** The room a held mark keeps from its box's edges: enough for it, its line and Cancel. */
 const HELD_MARGIN = 72;
 

@@ -63,6 +63,8 @@ function Scene() {
   const [logo, setLogo] = useState<LogoPlay | undefined>();
   const [waiting, setWaiting] = useState(false);
   const [view, setView] = useState<'overview' | 'diff' | 'timeline'>('overview');
+  // Whether the view switch's last choice was made by the page itself, so its thumb jumps there.
+  const [jumped, setJumped] = useState(false);
   const [on, setOn] = useState(false);
   const [row, setRow] = useState<HTMLElement | null>(null);
 
@@ -118,13 +120,28 @@ function Scene() {
           label="View"
           kind="views"
           value={view}
-          onChange={setView}
+          onChange={(chosen) => {
+            setJumped(false);
+            setView(chosen);
+          }}
+          jump={jumped}
           items={[
             { value: 'overview', label: 'Overview' },
             { value: 'diff', label: 'Diff' },
             { value: 'timeline', label: 'Timeline' },
           ]}
         />
+        {/* The page going to the timeline by itself, as a tab with no overview does as it opens. */}
+        <Button
+          id="jump-timeline"
+          size="sm"
+          onClick={() => {
+            setJumped(true);
+            setView('timeline');
+          }}
+        >
+          Go to Timeline
+        </Button>
 
         <div
           id="row"
