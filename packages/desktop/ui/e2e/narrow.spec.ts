@@ -226,13 +226,10 @@ function spills(page: Page, frames: readonly string[], widths: readonly number[]
       }[] = [];
       for (const width of each) {
         for (const frame of rows) frame.style.width = `${width}px`;
-        await new Promise<void>((resolve) => {
-          const sized = new ResizeObserver(() => {
-            sized.disconnect();
-            resolve();
-          });
-          sized.observe(rows[0]!);
-        });
+        await window.waits.resized(
+          `${selectors.join(' and ')} laid out ${width} px wide`,
+          rows[0]!,
+        );
         for (const [index, frame] of rows.entries()) {
           const head = frame.querySelector<HTMLElement>('.border-b')!;
           // On screen, where what's drawn there can be hit.
