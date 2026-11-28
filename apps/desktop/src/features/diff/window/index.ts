@@ -4,7 +4,7 @@
 // the tree and the file finder.
 
 import type { FileFold } from '@lo/ui/code';
-import type { HeaderTarget, LineTarget, Place, Span, Target } from '@lo/ui/commands';
+import type { HeaderTarget, LineTarget, NoteTarget, Place, Span, Target } from '@lo/ui/commands';
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
 
@@ -177,15 +177,33 @@ function placeOf(at: Place | Span): Place {
 }
 
 /** Whether the diff on screen has an overview's note on the target's line. */
-function hasNote(target: LineTarget): boolean {
+function hasNote(target: LineTarget | NoteTarget): boolean {
   return noteNow(target) === true;
 }
 
 /** Whether "Overview note" can open a note on the target's line, or why not. */
-function noteNow(target: LineTarget): true | string {
+function noteNow(target: LineTarget | NoteTarget): true | string {
   const drawn = onScreen();
   if (typeof drawn === 'string') return drawn;
   return drawn.view.hasNote(placeOf(target.at)) || 'No overview note on this line';
+}
+
+/** Whether `] o` and `[ o` have a note to go to, or why not. */
+function noteStops(target: Target): true | string {
+  const stops = threadStops(target);
+  const drawn = onScreen();
+  if (stops !== true || typeof drawn === 'string') return stops;
+  return drawn.view.hasNotes() || 'No overview notes in this diff';
+}
+
+/** Whether "Show in overview" has an open note on the target's line, or why not. */
+function shownNote(target: LineTarget | NoteTarget): true | string {
+  const drawn = onScreen();
+  if (typeof drawn === 'string') return drawn;
+  const at = placeOf(target.at);
+  if (target.kind === 'note' && target.note !== undefined) return true;
+  if (drawn.view.noteOpenAt(at)) return true;
+  return drawn.view.hasNote(at) ? 'Show the overview note first' : 'No overview note on this line';
 }
 
 /** Whether `gm` can go from the target's line, in moved code, to the other end, or why not. */
@@ -303,6 +321,8 @@ export default {
     previousFile: { run: withDiff(({ view }) => view.jump('file', -1)), enabled: drawnNow },
     nextThread: { run: withDiff(({ view }) => view.jump('thread', 1)), enabled: threadStops },
     previousThread: { run: withDiff(({ view }) => view.jump('thread', -1)), enabled: threadStops },
+    nextNote: { run: withDiff(({ view }) => view.jump('note', 1)), enabled: noteStops },
+    previousNote: { run: withDiff(({ view }) => view.jump('note', -1)), enabled: noteStops },
     otherEnd: {
       run: withDiff((drawn, target: LineTarget) => fromMoved(drawn, placeOf(target.at))),
       enabled: otherEndNow,
@@ -398,11 +418,17 @@ export default {
       },
     },
     overviewNote: {
-      run: withDiff(({ view }, target: LineTarget) => {
+      run: withDiff(({ view }, target: LineTarget | NoteTarget) => {
         view.openNote(placeOf(target.at));
       }),
       enabled: noteNow,
       listed: hasNote,
+    },
+    showInOverview: {
+      run: withDiff(({ view }, target: LineTarget | NoteTarget) => {
+        view.showInOverview(placeOf(target.at), target.kind === 'note' ? target.note : undefined);
+      }),
+      enabled: shownNote,
     },
     copyLines: {
       // Code another feature draws, such as an overview's code block, copies from what it draws.
@@ -481,7 +507,12 @@ export default {
   ],
   start() {
     // An overview's note has nothing to show while overviews are off.
-    followOverviews((on) => registry().setOff(['diff.overviewNote'], !on));
+    followOverviews((on) =>
+      registry().setOff(
+        ['diff.overviewNote', 'diff.nextNote', 'diff.previousNote', 'diff.showInOverview'],
+        !on,
+      ),
+    );
     main().subscribe('state', takeState);
     showTreeFiles();
     // `>`, `<` and `=` size the side the cursor is on, in a side-by-side diff with focus.

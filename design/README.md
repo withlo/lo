@@ -597,14 +597,14 @@ that floats.
   "Unresolve thread" on a resolved thread. Its foot's `PaletteHint`s say what a key does, then the
   key, and one given `onClick` is that key's control too. Its field shows no key: the key that
   opened it is in the menu bar and Keyboard shortcuts.
-- **`ThreadPopover`** is the review threads that end on a line, over the code, beside lines: a
-  thread, a reply and a new comment's box open in it, and nothing in the flow moves. A code view
-  draws one, in a layer of its own scroll, so it moves with its line and passes under the pinned
-  file header as code does. An overview's code blocks share one, in a layer of the overview's
-  scroll, so no block clips it: one opened in a block closes another's. Several threads on the line
-  share it, unresolved first, then oldest, `lo-sp-12` apart with a `lo-border-subtle` hairline
-  between. It's 520 px wide (`lo-thread-pop-w`) at every window width, in its side's column where
-  that has room, else over the other side, 8 px inside the pane; as tall as its threads up to
+- **`ThreadPopover`** is the review threads or the overview notes that end on a line, over the code,
+  beside lines: a thread, a reply and a new comment's box open in it, and nothing in the flow moves.
+  A code view draws one, in a layer of its own scroll, so it moves with its line and passes under
+  the pinned file header as code does. An overview's code blocks share one, in a layer of the
+  overview's scroll, so no block clips it: one opened in a block closes another's. Several threads
+  on the line share it, unresolved first, then oldest, `lo-sp-12` apart with a `lo-border-subtle`
+  hairline between. It's 520 px wide (`lo-thread-pop-w`) at every window width, in its side's column
+  where that has room, else over the other side, 8 px inside the pane; as tall as its threads up to
   `lo-thread-pop-h`, past which they scroll inside it, a box's foot staying at its foot. Its top is
   4 px under the range's last line and its left edge on the thread lane's, so the bubble sits at its
   corner. It never covers its lines unless they fill the pane: under the last line, else its foot 4
@@ -862,7 +862,7 @@ tokens. Their code is the source for how each one looks.
 | Marks            | Icon, Glyphs, StatePill, Tag, Avatar, Marks                                                     |
 | Floating         | Dialog, Popover, ThreadPopover, ContextMenu, Palette, Tooltip, ToastStack                       |
 | Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem, EmptyState                     |
-| Review           | Thread, Diff, CodeView, CommentBox                                                              |
+| Review           | Thread, Note, Diff, CodeView, CommentBox                                                        |
 | Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary                        |
 | Flows            | Choice, Checklist, Composer, Peek, Timeline, SetupList, SetupItem, SetupDone                    |
 | Settings         | SettingsPage, SettingsGroup, Setting, SettingsList, SettingsListItem, SettingsCommand           |
@@ -898,10 +898,10 @@ each picture it has drawn by its address: the empty disc, then the Swap, once.
   three slots 4 px apart, the earliest start outermost, and a stem skips the row of another's mark.
   Ranges that end on one line share its mark and open together. One range is lit at a time, so no
   line carries two grounds.
-- **A thread opens over the code, not in it.** With Threads in code at "Beside lines", the default,
-  a thread, a reply and a new comment's box open in `ThreadPopover` under the last line they're
-  about, and no line of code moves. It never covers its own lines unless they fill the pane.
-  "Between lines" draws them in the flow, with space on the other side.
+- **A thread or an overview note opens over the code, not in it.** With Threads and overview notes
+  at "Beside lines", the default, a thread, a reply and a new comment's box open in `ThreadPopover`
+  under the last line they're about, and no line of code moves. It never covers its own lines unless
+  they fill the pane. "Between lines" draws them in the flow, with space on the other side.
 - **A hover previews, a click pins.** A preview is the pinned popover without its keys, so pinning
   moves nothing. One popover per code view, and one for an overview's code blocks, in its scroll.
 - **Filler is quieter than code.** Everything in a diff that isn't code (that space, folds of

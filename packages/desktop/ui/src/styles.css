@@ -655,6 +655,17 @@
   }
 }
 
+/* An overview note's ball in its head (`Note`), as its mark in the code's lane draws it: the accent
+   with the current line's halo. */
+@utility note-ball {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--lo-accent);
+  box-shadow: 0 0 0 3px var(--lo-current-strong);
+}
+
 /* A thread's popover over the code (`ThreadPopover`): as wide as the code view places it, and as
    tall as its threads, up to the most the view lets it be (`--lo-pop-max`), past which they scroll
    inside it. */

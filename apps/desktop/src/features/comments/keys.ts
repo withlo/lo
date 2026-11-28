@@ -196,14 +196,19 @@ export default defineCommands(
      */
     threadsBeside: {
       label: 'Threads beside lines',
+      description: 'Threads and overview notes open over the code.',
       group: 'View',
       keys: [],
       bar: { menu: 'View', section: 'threads', order: 10 },
       toggle: 'choice',
     },
-    /** Shows review threads in code between their lines, the whole thread under its line. */
+    /**
+     * Shows review threads in code between their lines, the whole thread under its line, and the
+     * overview's notes under theirs.
+     */
     threadsBetween: {
       label: 'Threads between lines',
+      description: 'Threads and overview notes open under their lines.',
       group: 'View',
       keys: [],
       bar: { menu: 'View', section: 'threads', order: 20 },

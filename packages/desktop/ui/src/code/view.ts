@@ -1880,7 +1880,7 @@ class View implements DiffView {
           ?.[side].find((each) => each.block === block && !claimed.has(each.key));
       }
       if (mark) claimed.add(mark.key);
-      return mark ? { key: mark.key, shown: shownOf(mark) } : null;
+      return mark ? { key: mark.key, shown: this.#shownOf(mark) } : null;
     });
     // Their marks are in the lanes, which change where they had any or have any now.
     for (const file of [...this.#marked.keys(), ...next.keys()]) this.#laneDirty.add(file);
@@ -1950,7 +1950,7 @@ class View implements DiffView {
   hasNotes(): boolean {
     if (!this.#renderNotes) return false;
     for (const byFile of this.#marked.values()) {
-      if (byFile.new.some((mark) => this.#drawable(shownOf(mark)))) return true;
+      if (byFile.new.some((mark) => this.#drawable(this.#shownOf(mark)))) return true;
     }
     return false;
   }
@@ -1960,7 +1960,8 @@ class View implements DiffView {
     const [first] = marks;
     if (!first) return false;
     if (this.#mode === 'beside') {
-      return this.#beside.pinNotes({ file: first.file, side: first.side, line: first.to }, true);
+      const { file, side, line } = this.#shownOf(first);
+      return this.#beside.pinNotes({ file, side, line }, true);
     }
     this.#openNotes(marks.map((mark) => mark.key));
     return true;
@@ -1979,7 +1980,8 @@ class View implements DiffView {
       const key = note ?? this.#openNoteAt(at)?.key;
       const mark = marks.find((each) => each.key === key);
       if (!mark) return false;
-      explained(mark.block, { file: this.#ids[mark.file]!, side: mark.side, line: mark.to });
+      const { file, side, line } = this.#shownOf(mark);
+      explained(mark.block, { file: this.#ids[file]!, side, line });
       return true;
     }
     const key = note ?? this.#openNoteAt(at)?.key;
@@ -2004,14 +2006,15 @@ class View implements DiffView {
     const file = this.#index.get(at.file);
     if (file === undefined || !this.#renderNotes) return [];
     const marks = (this.#marked.get(file)?.[at.side] ?? []).filter((mark) =>
-      this.#drawable(shownOf(mark)),
+      this.#drawable(this.#shownOf(mark)),
     );
-    const ending = marks.filter((mark) => mark.to === at.line).toSorted(byOrder);
+    const end = (mark: OverviewAt): number => this.#shownOf(mark).line;
+    const ending = marks.filter((mark) => end(mark) === at.line).toSorted(byOrder);
     if (ending.length > 0) return ending;
     let best: OverviewAt | undefined;
     for (const mark of marks.toSorted(byOrder)) {
-      if (mark.from > at.line || mark.to < at.line) continue;
-      if (!best || mark.to - mark.from < best.to - best.from) best = mark;
+      if (mark.from > at.line || end(mark) < at.line) continue;
+      if (!best || end(mark) - mark.from < end(best) - best.from) best = mark;
     }
     return best ? [best] : [];
   }
@@ -2020,7 +2023,10 @@ class View implements DiffView {
   #endingAt(at: At): OverviewAt[] {
     if (!this.#renderNotes) return [];
     return (this.#marked.get(at.file)?.[at.side] ?? [])
-      .filter((mark) => mark.to === at.line && this.#drawable(shownOf(mark)))
+      .filter((mark) => {
+        const shown = this.#shownOf(mark);
+        return shown.line === at.line && this.#drawable(shown);
+      })
       .toSorted(byOrder);
   }
 
@@ -2039,7 +2045,7 @@ class View implements DiffView {
       at.line <= shown.line;
     if (this.#mode === 'beside') {
       const open = this.#beside.notesOpen;
-      return (open ? this.#endingAt(open) : []).find((mark) => covers(shownOf(mark)));
+      return (open ? this.#endingAt(open) : []).find((mark) => covers(this.#shownOf(mark)));
     }
     const order = (key: string): number => this.#markKeys.get(key)?.order ?? Infinity;
     return this.#notes
@@ -2067,7 +2073,7 @@ class View implements DiffView {
     const marks = file === undefined ? undefined : this.#marked.get(file)?.[at.side];
     return (marks ?? [])
       .filter((mark) => mark.from <= at.line && at.line <= mark.to)
-      .filter((mark) => this.#drawable(shownOf(mark)))
+      .filter((mark) => this.#drawable(this.#shownOf(mark)))
       .map(({ key }) => key);
   }
 
@@ -2092,9 +2098,9 @@ class View implements DiffView {
     const files = new Set<number>();
     for (const key of keys) {
       const mark = this.#markKeys.get(key);
-      if (!mark || this.#noteFor(key) || !this.#drawable(shownOf(mark))) continue;
-      this.#notes.push({ key, shown: shownOf(mark) });
-      this.#noteLines[mark.file]![mark.side].add(mark.to);
+      if (!mark || this.#noteFor(key) || !this.#drawable(this.#shownOf(mark))) continue;
+      this.#notes.push({ key, shown: this.#shownOf(mark) });
+      this.#noteLines[mark.file]![mark.side].add(this.#shownOf(mark).line);
       files.add(mark.file);
       // Its ball says it's open.
       this.#laneDirty.add(mark.file);
@@ -2588,7 +2594,8 @@ class View implements DiffView {
     const mark = key === undefined ? undefined : this.#markKeys.get(key);
     if (!mark || !this.#renderNotes) return;
     this.#hideAdd();
-    this.#beside.clicked(notesPlace({ file: mark.file, side: mark.side, line: mark.to }));
+    const { file, side, line } = this.#shownOf(mark);
+    this.#beside.clicked(notesPlace({ file, side, line }));
   }
 
   /** The notes of `keys` open, or close where one of them is open. */
@@ -2947,10 +2954,12 @@ class View implements DiffView {
       // sides.
       popover: (pop) => new ThreadPop(pop),
       notes: {
-        ending: (at) => this.#endingAt(at).map((mark) => this.#noteView(mark.key, shownOf(mark))),
+        ending: (at) =>
+          this.#endingAt(at).map((mark) => this.#noteView(mark.key, this.#shownOf(mark))),
         end: (key) => {
           const mark = this.#markKeys.get(key);
-          return mark && { file: mark.file, side: mark.side, line: mark.to };
+          const shown = mark && this.#shownOf(mark);
+          return shown && { file: shown.file, side: shown.side, line: shown.line };
         },
         range: (pane, key) => {
           const mark = this.#markKeys.get(key);
@@ -5259,6 +5268,16 @@ class View implements DiffView {
     return [...byPlace.values()];
   }
 
+  /**
+   * What the note of overview mark `mark` shows, and where: under its last line, or its side's last
+   * where it runs past it, as its ball is.
+   */
+  #shownOf(mark: OverviewAt): NoteShown {
+    const { file, side, from, to, words, block, label, text, draw } = mark;
+    const line = this.#noteSpan(mark)?.end.line ?? to;
+    return { file, side, from, line, words, block, label, text, draw };
+  }
+
   /** A note as the caller draws it, by its key: what `shown` shows. */
   #noteView(key: string, shown: NoteShown): NoteView {
     const { file, side, from, line: to, block, label, text, draw } = shown;
@@ -5887,8 +5906,8 @@ class View implements DiffView {
     const stops = new Map<number, At>();
     if (pane === 'inline' && !this.#inline?.layout.lines[file]) return [];
     for (const mark of this.#marked.get(file)?.new ?? []) {
-      if (!this.#renderNotes || !this.#drawable(shownOf(mark))) continue;
-      const end = { file, side: mark.side, line: mark.to };
+      if (!this.#renderNotes || !this.#drawable(this.#shownOf(mark))) continue;
+      const end = { file, side: mark.side, line: this.#shownOf(mark).line };
       const line = this.#docLine(pane, end);
       if (!stops.has(line)) stops.set(line, end);
     }
@@ -5933,8 +5952,9 @@ class View implements DiffView {
       this.#beside.landNotes(end);
       return;
     }
-    this.#keyLit = { lane: 'notes', key: first };
     this.#openNotes(keys);
+    // Lit once they're open, as what opening them draws tells where the cursor is.
+    this.#keyLit = { lane: 'notes', key: first };
     this.#relight();
     const view = this.#viewOf(pane);
     // The frame after the one the editor brings the cursor's line on screen in.
@@ -6315,11 +6335,6 @@ function viewFile(file: DiffFile): ViewFile {
 /** Overview marks in the overview's order. */
 function byOrder(a: OverviewAt, b: OverviewAt): number {
   return a.order - b.order;
-}
-
-function shownOf(mark: OverviewAt): NoteShown {
-  const { file, side, from, to: line, words, block, label, text, draw } = mark;
-  return { file, side, from, line, words, block, label, text, draw };
 }
 
 function sameShown(a: NoteShown, b: NoteShown): boolean {

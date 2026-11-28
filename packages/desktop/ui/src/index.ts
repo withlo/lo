@@ -276,6 +276,7 @@ export {
 } from './StackTree.tsx';
 export { Label, labelColor, type LabelProps } from './Label.tsx';
 export { ThreadCount, type ThreadCountProps } from './ThreadCount.tsx';
+export { CLOSE_NOTE, Note, type NoteProps } from './Note.tsx';
 export {
   CLOSE_THREAD,
   SentPost,
@@ -287,6 +288,7 @@ export {
   type ThreadTag,
 } from './Thread.tsx';
 export {
+  type PoppedNote,
   type PoppedThread,
   ReplySlot,
   ringComment,

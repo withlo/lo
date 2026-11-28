@@ -7,6 +7,7 @@ import { afterEach, beforeAll, describe, expect, type Mock, test, vi } from 'vit
 
 import { testCommands, type Ran } from '../../test/commands.ts';
 import { drawnLane } from '../../test/lanes.ts';
+import { plainNotes } from '../../test/notes.ts';
 import {
   defineCommands,
   findScope,
@@ -168,7 +169,15 @@ function open(on: DiffEvents = events(), init: Partial<DiffInit> = {}): DiffView
   document.body.append(parent);
   view = createDiffView(
     parent,
-    { files, layout: 'split', vimKeys: motions, nonce: 'n', renderProblem: problemTitle, ...init },
+    {
+      files,
+      layout: 'split',
+      vimKeys: motions,
+      nonce: 'n',
+      renderProblem: problemTitle,
+      renderNotes: plainNotes,
+      ...init,
+    },
     on,
   );
   for (const file of init.files ?? files) {
@@ -4082,12 +4091,14 @@ function litLines(label: string): string[] {
   );
 }
 
-/** The notes drawn in the editor labelled `label`: each one's label and text. */
+/** The notes' cards drawn in the editor labelled `label`: each one's head and words. */
 function noted(label: string): string[] {
-  const shown = parent!.querySelectorAll(`.cm-content[aria-label="${label}"] .lo-ovnote`);
+  const shown = parent!.querySelectorAll(
+    `.cm-content[aria-label="${label}"] .lo-diffthread__note .test-note`,
+  );
   return [...shown].map(
     (note) =>
-      `${note.querySelector('.lo-ovnote__label')?.textContent}: ${note.querySelector('.lo-ovnote__text')?.textContent}`,
+      `${note.querySelector('.test-note__head')?.textContent}: ${note.querySelector('[data-note-text]')?.textContent}`,
   );
 }
 
@@ -4212,7 +4223,7 @@ describe('overview marks', () => {
       's0 edge-mark powder, ball open',
     ]);
     // Under line 6: the note's block follows line 6, before line 7.
-    const note = parent!.querySelector('.cm-content[aria-label="After"] .lo-ovnote')!;
+    const note = parent!.querySelector('.cm-content[aria-label="After"] .lo-diffthread__note')!;
     const block = note.closest('.cm-content > *')!;
     expect(block.previousElementSibling?.textContent).toBe('line 6');
     expect(block.nextElementSibling?.textContent).toBe('line 7');
@@ -4245,7 +4256,9 @@ describe('overview marks', () => {
     shown.setMarks([mark]);
     shown.openNote(at('a', 'new', 4));
     expect(draw).toHaveBeenCalledTimes(1);
-    const text = parent!.querySelector('.cm-content[aria-label="After"] .lo-ovnote__text')!;
+    const text = parent!.querySelector(
+      '.cm-content[aria-label="After"] .lo-diffthread__note [data-note-text]',
+    )!;
     expect(text.innerHTML).toBe('<p>A query is <em>refused</em></p>');
     expect(takenDown).not.toHaveBeenCalled();
     shown.closeNote();
@@ -4284,7 +4297,7 @@ describe('overview marks', () => {
     // The note and the box are under the same line, in one block.
     expect(
       parent!.querySelector(
-        '.cm-content[aria-label="After"] .lo-diffthread .lo-ovnote + .lo-diffcomposer',
+        '.cm-content[aria-label="After"] .lo-diffthread .lo-diffthread__note + .lo-diffcomposer',
       ),
     ).not.toBeNull();
   });
@@ -4302,17 +4315,16 @@ describe('overview marks', () => {
     expect(runs()).toEqual(opened);
   });
 
-  test('“Show in overview” names the block, when the caller hears it', () => {
+  test('“Show in overview” names the block of the open note on the line, when the caller hears it', () => {
     const on = { ...events(), explained: vi.fn<NonNullable<DiffEvents['explained']>>() };
     const shown = open(on);
-    shown.setMarks([overview('new', 4, 6, 'block-7')]);
+    shown.setMarks([overview('new', 4, 6, 'block-7'), overview('new', 8, 9, 'two')]);
+    expect(shown.noteOpenAt(at('a', 'new', 5))).toBe(false);
+    expect(shown.showInOverview(at('a', 'new', 5))).toBe(false);
     shown.openNote(at('a', 'new', 4));
-    const link = parent!.querySelector<HTMLElement>('.lo-ovnote__read');
-    expect(link?.textContent).toBe('Show in overview');
-    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
-    link!.dispatchEvent(down);
-    expect(down.defaultPrevented).toBe(true);
-    link!.click();
+    expect(shown.noteOpenAt(at('a', 'new', 5))).toBe(true);
+    expect(shown.noteOpenAt(at('a', 'new', 8))).toBe(false);
+    expect(shown.showInOverview(at('a', 'new', 5))).toBe(true);
     // With the line the note is under, where the reader was.
     expect(on.explained).toHaveBeenCalledWith('block-7', at('a', 'new', 6));
     shown.destroy();
@@ -4320,22 +4332,22 @@ describe('overview marks', () => {
     const quiet = open();
     quiet.setMarks([overview('new', 4, 6)]);
     quiet.openNote(at('a', 'new', 4));
-    expect(parent!.querySelector('.lo-ovnote__read')).toBeNull();
+    expect(quiet.showInOverview(at('a', 'new', 4))).toBe(false);
   });
 
   test('a note that wouldn’t be drawn isn’t opened, and Esc passes over one that isn’t now', () => {
     const shown = open();
     shown.setMarks([
-      // A file kept out, a range past the file's end, and an old-side line.
+      // A file kept out, a range that starts past the file's end, and an old-side line.
       { ...overview('new', 1, 3), at: { file: 'd', side: 'new', from: 1, to: 3 } },
-      overview('new', 39, 45),
+      overview('new', 60, 65),
       overview('old', 4, 6),
       overview('new', 4, 6, 'two'),
     ]);
     expect(shown.hasNote(at('d', 'new', 2))).toBe(false);
     expect(shown.openNote(at('d', 'new', 2))).toBe(false);
-    expect(shown.hasNote(at('a', 'new', 40))).toBe(false);
-    expect(shown.openNote(at('a', 'new', 40))).toBe(false);
+    expect(shown.hasNote(at('a', 'new', 62))).toBe(false);
+    expect(shown.openNote(at('a', 'new', 62))).toBe(false);
     expect(shown.hasNote(at('a', 'old', 5))).toBe(false);
     expect(shown.openNote(at('a', 'old', 5))).toBe(false);
     expect(shown.closeNote()).toBe(false);
@@ -4381,7 +4393,7 @@ describe('overview marks', () => {
     shown.setMarks([overview('new', 4, 6)]);
     shown.openNote(at('a', 'new', 4));
     shown.setMarks([overview('new', 5, 7)]);
-    const note = parent!.querySelector('.cm-content[aria-label="After"] .lo-ovnote')!;
+    const note = parent!.querySelector('.cm-content[aria-label="After"] .lo-diffthread__note')!;
     expect(note.closest('.cm-content > *')!.previousElementSibling?.textContent).toBe('line 7');
     expect(markers('After')).toEqual([
       's0 mid-edge powder, tick s0 powder',
@@ -4410,7 +4422,9 @@ function oneRect(rect: DOMRect): DOMRectList {
 /** jsdom lays nothing out: from now on, the view's box is a screen, and every note is on it. */
 function notesOnScreen(): void {
   vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
-    return this.classList.contains('lo-ovnote') ? oneRect(new DOMRect(0, 100, 400, 80)) : noRects();
+    return this.classList.contains('lo-diffthread__note')
+      ? oneRect(new DOMRect(0, 100, 400, 80))
+      : noRects();
   });
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
     return this.classList.contains('lo-diffview') ? new DOMRect(0, 0, 800, 600) : new DOMRect();
@@ -4480,19 +4494,197 @@ describe('notes held on screen', () => {
     expect(noted('After')).toEqual(['Overview · Where to look: Said again.']);
   });
 
-  test('its link shows the block its mark is from now, and a mark gone closes it', () => {
+  test('“Show in overview” shows the block its mark is from now, and a mark gone closes it', () => {
     const on = { ...events(), explained: vi.fn<NonNullable<DiffEvents['explained']>>() };
     const shown = held(on);
     shown.setMarks([overview('new', 5, 7, 'one', 'Moved on.')]);
-    parent!.querySelector<HTMLElement>('.lo-ovnote__read')!.click();
+    expect(shown.showInOverview(at('a', 'new', 5))).toBe(true);
     expect(on.explained).toHaveBeenCalledWith('one', at('a', 'new', 7));
     expect(noted('After')).toEqual(['Overview · Where to look: Moved on.']);
     shown.setMarks([overview('new', 8, 9, 'two')]);
     expect(noted('After')).toEqual([expect.stringContaining('Moved on.')]);
-    parent!.querySelector<HTMLElement>('.lo-ovnote__read')!.click();
+    expect(shown.showInOverview(at('a', 'new', 6))).toBe(false);
     expect(on.explained).toHaveBeenCalledTimes(1);
     expect(noted('After')).toEqual([]);
     expect(markers('After').some((each) => each.startsWith('open'))).toBe(false);
+  });
+});
+
+/** `mark`, with the words a screen reader hears of its lines, as the caller gives them. */
+function worded(mark: OverviewMark, words: string): OverviewMark {
+  return { ...mark, words };
+}
+
+/**
+ * The first ball in the overview's lane of the new side. jsdom lays nothing out, so a press can't
+ * say which line it's on: the app's own tests press balls.
+ */
+function ball(): HTMLElement {
+  const content = parent!.querySelector('.cm-content[aria-label="After"]')!;
+  return content.closest('.cm-editor')!.querySelector<HTMLElement>('.lo-ovcolumn .lo-ov-marker')!;
+}
+
+/** The heads of the notes in the threads' popover, beside lines. */
+function poppedNotes(): string[] {
+  const heads = layer().querySelectorAll('.test-note__head');
+  return [...heads].map((head) => head.textContent ?? '');
+}
+
+describe('overview notes beside lines', () => {
+  test('the notes that end on a line open together in the popover, and nothing moves', () => {
+    const shown = open(events(), { threads: 'beside' });
+    const before = drawnText('After');
+    shown.setMarks([
+      worded(overview('new', 4, 6), 'lines 4–6'),
+      worded(overview('new', 5, 6, 'two', 'The second.'), 'lines 5–6'),
+    ]);
+    // Heard by its notes, with no tooltip, as a bubble beside lines has none.
+    expect(ball().getAttribute('aria-label')).toBe('2 overview notes, lines 4–6');
+    expect(ball().dataset.tip).toBeUndefined();
+    expect(shown.openNote(at('a', 'new', 6))).toBe(true);
+    expect(layer().hidden).toBe(false);
+    expect(poppedNotes()).toEqual([
+      'Overview · Where to look · lines 4–6',
+      'Overview · Where to look · lines 5–6',
+    ]);
+    expect(layer().querySelector<HTMLElement>('[data-label]')?.dataset.label).toBe(
+      '2 overview notes, lines 4–6',
+    );
+    // Pinned, its first note's range is lit, and nothing is drawn under a line.
+    expect(layer().querySelector('[data-focused]')).not.toBeNull();
+    expect(litLines('After')).toEqual(['line 4', 'line 5, changed', 'line 6']);
+    expect(drawnUnlit('After')).toBe(before);
+    expect(noted('After')).toEqual([]);
+    expect(markers('After').at(-1)).toContain('ball open');
+    expect(ball().getAttribute('aria-expanded')).toBe('true');
+    expect(shown.noteOpenAt(at('a', 'new', 5))).toBe(true);
+    expect(shown.hasOpenNote()).toBe(false);
+    // Its Close is the first note's.
+    expect(layer().querySelectorAll('.test-note__close')).toHaveLength(1);
+    layer().querySelector<HTMLElement>('.test-note__close')!.click();
+    expect(shown.noteOpenAt(at('a', 'new', 5))).toBe(false);
+    expect(markers('After').at(-1)).not.toContain('open');
+  });
+
+  test('⏎ pins the notes that end on the line, else the shortest over it, focus going in', () => {
+    const on = { ...events(), explained: vi.fn<NonNullable<DiffEvents['explained']>>() };
+    const shown = open(on, { threads: 'beside' });
+    shown.setMarks([overview('new', 2, 8), overview('new', 4, 6, 'two', 'The second.')]);
+    expect(shown.openNote(at('a', 'new', 5))).toBe(true);
+    expect(poppedNotes()).toEqual(['Overview · Where to look · lines 4–6']);
+    expect(layer().contains(document.activeElement)).toBe(true);
+    // "Show in overview" acts on the note it shows, from its lines.
+    expect(shown.showInOverview(at('a', 'new', 5))).toBe(true);
+    expect(on.explained).toHaveBeenLastCalledWith('two', at('a', 'new', 6));
+    expect(shown.showInOverview(at('a', 'new', 3))).toBe(false);
+    expect(shown.openNote(at('a', 'new', 8))).toBe(true);
+    expect(poppedNotes()).toEqual(['Overview · Where to look · lines 2–8']);
+    expect(shown.showInOverview(at('a', 'new', 3))).toBe(true);
+    expect(on.explained).toHaveBeenLastCalledWith('one', at('a', 'new', 8));
+    layer().querySelector<HTMLElement>('.test-note__close')!.click();
+    expect(shown.noteOpenAt(at('a', 'new', 8))).toBe(false);
+  });
+
+  test('a thread’s popover takes the pin from a note’s, and a note’s from a thread’s', () => {
+    const shown = open(events(), { threads: 'beside' });
+    const { render, drawn } = popped();
+    shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render, {
+      popover: render,
+    });
+    shown.setMarks([overview('new', 4, 6)]);
+    shown.openNote(at('a', 'new', 6));
+    expect(poppedNotes()).toHaveLength(1);
+    expect(shown.pinThread('one')).toBe(true);
+    expect(drawn.at(-1)).toBe('one pinned');
+    expect(poppedNotes()).toEqual([]);
+    expect(shown.noteOpenAt(at('a', 'new', 6))).toBe(false);
+    shown.openNote(at('a', 'new', 6));
+    expect(shown.pinned()).toEqual([]);
+    expect(poppedNotes()).toHaveLength(1);
+  });
+
+  test('`] o` lands on each ball in turn and pins its popover once the editor has scrolled', async () => {
+    const shown = open(events(), { threads: 'beside' });
+    expect(shown.hasNotes()).toBe(false);
+    shown.setMarks([overview('new', 2, 3), overview('new', 5, 6, 'two', 'The second.')]);
+    expect(shown.hasNotes()).toBe(true);
+    shown.reveal(onLine('a', 'new', 1));
+    shown.focus();
+    shown.jump('note', 1);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 3));
+    await nextFrame();
+    await nextFrame();
+    expect(poppedNotes()).toEqual(['Overview · Where to look · lines 2–3']);
+    shown.jump('note', 1);
+    await nextFrame();
+    await nextFrame();
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 6));
+    expect(poppedNotes()).toEqual(['Overview · Where to look · lines 5–6']);
+    // None after the last.
+    shown.jump('note', 1);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 6));
+  });
+});
+
+describe('overview notes between lines', () => {
+  test('`] o` and `[ o` open each ball’s notes under their line, the range lit', () => {
+    const shown = open();
+    shown.setMarks([overview('new', 2, 3), overview('new', 5, 6, 'two', 'The second.')]);
+    shown.reveal(onLine('a', 'new', 1));
+    shown.focus();
+    shown.jump('note', 1);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 3));
+    expect(noted('After')).toEqual([expect.stringContaining('A query')]);
+    expect(litLines('After')).toEqual(['line 2', 'line 3']);
+    shown.jump('note', 1);
+    expect(noted('After')).toHaveLength(2);
+    expect(litLines('After')).toEqual(['line 5, changed', 'line 6']);
+    shown.jump('note', -1);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 3));
+    // The keyboard is on the note on the cursor's lines: its card says so.
+    const card = parent!.querySelector<HTMLElement>('.lo-diffthread__note[data-note]')!;
+    expect(card.hasAttribute('data-focused')).toBe(true);
+  });
+
+  test('a ball’s tooltip says what a press does, and each card’s collapse closes its note', () => {
+    const shown = open();
+    shown.setMarks([
+      worded(overview('new', 4, 6), 'lines 4–6'),
+      worded(overview('new', 5, 6, 'two', 'The second.'), 'lines 5–6'),
+    ]);
+    expect(ball().dataset.tip).toBe('Show 2 overview notes');
+    shown.openNote(at('a', 'new', 6));
+    expect(noted('After')).toHaveLength(2);
+    expect(ball().dataset.tip).toBe('Close 2 overview notes');
+    expect(ball().getAttribute('aria-expanded')).toBe('true');
+    // After the line's threads, each a card of its own, named by its own lines.
+    const cards = parent!.querySelectorAll<HTMLElement>('.lo-diffthread__note');
+    expect([...cards].map((card) => card.dataset.label)).toEqual([
+      'Overview note, lines 4–6',
+      'Overview note, lines 5–6',
+    ]);
+    cards[0]!.querySelector<HTMLElement>('.test-note__close')!.click();
+    expect(noted('After')).toEqual([expect.stringContaining('The second.')]);
+  });
+
+  test('a note running past its file’s last line opens under that line, where its ball is', () => {
+    const shown = open();
+    const last = aNew.length;
+    shown.setMarks([overview('new', last - 1, last + 5)]);
+    expect(shown.openNote(at('a', 'new', last))).toBe(true);
+    const note = parent!.querySelector('.cm-content[aria-label="After"] .lo-diffthread__note')!;
+    expect(note.closest('.cm-content > *')!.previousElementSibling?.textContent).toBe(aNew.at(-1));
+  });
+
+  test('threads going beside lines close the notes open under their lines', () => {
+    const shown = open();
+    shown.setMarks([overview('new', 4, 6)]);
+    shown.openNote(at('a', 'new', 6));
+    expect(noted('After')).toHaveLength(1);
+    shown.setThreadsMode('beside');
+    expect(noted('After')).toEqual([]);
+    expect(parent!.querySelector('.lo-diffthread__note')).toBeNull();
+    expect(shown.hasOpenNote()).toBe(false);
   });
 });
 
@@ -4672,7 +4864,7 @@ describe('peeks', () => {
     const peek = parent!.querySelector<HTMLElement>('.lo-diffpeek')!;
     const block = (): Element | null => peek.closest('.lo-diffthread');
     expect(block()?.firstElementChild).toBe(peek);
-    for (const other of ['[data-thread-id="one"]', '.lo-ovnote', '.lo-diffcomposer']) {
+    for (const other of ['[data-thread-id="one"]', '.lo-diffthread__note', '.lo-diffcomposer']) {
       expect(block()?.querySelector(other)).not.toBeNull();
     }
     shown.setLayout('inline');

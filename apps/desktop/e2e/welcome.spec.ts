@@ -124,7 +124,7 @@ test('a first launch shows the welcome over Recent, and its six steps are walked
     // Down again to how threads show in code, whose cards each have a line under their name. Beside
     // lines, as Lo starts, is chosen; each is pressed in turn, and Beside lines is written.
     await page.keyboard.press('j');
-    const threads = step(page).getByRole('radiogroup', { name: 'Threads in code' });
+    const threads = step(page).getByRole('radiogroup', { name: 'Threads and overview notes' });
     await expect(threads.getByRole('radio', { checked: true })).toBeFocused();
     await expect(threads.getByRole('radio', { checked: true })).toHaveAccessibleName(
       /^Beside lines/,

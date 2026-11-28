@@ -434,9 +434,12 @@ each other ("moved from `api/user.ts:40`"), and only edits inside the block are 
 ### Overview markers
 
 Lines the overview explains carry a marker beside them, in a lane of their own last before the new
-code; the old side has none, since an overview explains new lines. Opening it shows the explanation
-in place, with its code, emphasis and lists drawn as the overview draws them, cut at 600 characters,
-and a link to that point in the overview.
+code; the old side has none, since an overview explains new lines. Its note opens as a thread does,
+by the same setting: over the code, in the threads' popover, beside lines, or as a card under its
+last line between them. The pointer resting on the marker's ball previews it, and a click, `⏎` on
+its lines or `] o` opens it. It shows the explanation with its code, emphasis and lists drawn as the
+overview draws them, cut at 600 characters, and "Show in overview" (`g o`), which goes to that point
+in the overview.
 
 ## 7. Revisions and viewed files
 
@@ -791,10 +794,10 @@ trust.
 - **In the diff.** A thread is its mark beside the code, and opens over the code in a popover under
   its last line: the pointer resting on the mark previews it, and a click, `⏎` on its line or `]t`
   pins it. A reply's, an edit's and a new comment's box open in the popover too, so no line moves
-  for a thread or a box. Settings › Pull requests › Threads in code, or the View menu, puts threads
-  between lines instead, as on GitHub: each under its line, and a file's under its header,
-  unresolved ones open and resolved ones collapsed, `za` opening or collapsing one. A file's header
-  and its row in the file tree count its threads.
+  for a thread or a box. Settings › Pull requests › Threads and overview notes, or the View menu,
+  puts threads between lines instead, as on GitHub: each under its line, and a file's under its
+  header, unresolved ones open and resolved ones collapsed, `za` opening or collapsing one. A file's
+  header and its row in the file tree count its threads.
 - **Marks beside the code.** Each side has a thread lane between its line numbers and its code. A
   thread's mark there is a bubble beside its last line, amber while it's unresolved or holds your
   pending comments, grey once it's resolved or out of date, with a bracket up the lane to its first

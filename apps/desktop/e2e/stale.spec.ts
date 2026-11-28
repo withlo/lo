@@ -472,14 +472,16 @@ test('marks the lines it explains in the diff at r2, opens what it says of them,
     const ball = await ballOf();
     if (!ball) throw new Error('src/format.ts’s line 3 has no ball.');
     await page.mouse.click(ball.x, ball.y);
-    const note = diff.locator('.lo-ovnote');
+    // Beside lines, in the threads' popover, pinned.
+    const note = diff.locator('.lo-threadpop [data-note-key]:visible');
     await expect(note).toHaveCount(1);
-    await expect(note.locator('.lo-ovnote__label')).toHaveText('Overview · How it works');
-    await expect(note.locator('.lo-ovnote__text')).toHaveText(
+    await expect(note.getByRole('group')).toHaveAccessibleName('Overview note, lines 1–3');
+    await expect(note.locator('[data-pop-head]')).toContainText('OverviewLines 1–3How it works');
+    await expect(note.locator('[data-note-text]')).toHaveText(
       'The formatter takes its Line from the new path, and passes wrap on from where it lives now:',
     );
     // As the overview draws its words: its code as code.
-    await expect(note.locator('.lo-ovnote__text p code')).toHaveText(['Line', 'wrap']);
+    await expect(note.locator('[data-note-text] p code')).toHaveText(['Line', 'wrap']);
     await expect(note.getByRole('button', { name: 'Show in overview' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(note).toHaveCount(0);

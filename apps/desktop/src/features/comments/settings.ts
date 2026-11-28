@@ -19,9 +19,9 @@ export const vim = defineSetting('editor.vim', z.boolean(), false, 'true or fals
 });
 
 /**
- * How a review thread shows in code: `beside` its lines, as Lo starts, a mark in the gutter that
- * opens over the code, so no line moves; or `between` them, the whole thread under its line, as
- * GitHub draws it.
+ * How a review thread, or an overview's note, shows in code: `beside` its lines, as Lo starts, a
+ * mark in the gutter that opens over the code, so no line moves; or `between` them, the whole
+ * thread under its line, as GitHub draws it, and the note under its last line.
  */
 export const threads = defineSetting(
   'comments.threads',
@@ -30,9 +30,9 @@ export const threads = defineSetting(
   'beside or between',
   {
     group: 'pullRequests',
-    label: 'Threads in code',
-    named: 'how threads show in code',
-    description: 'A mark that opens over the code, or the whole thread under its line.',
+    label: 'Threads and overview notes',
+    named: 'how threads and overview notes show in code',
+    description: 'Opens a thread or an overview note over the code, or under its line.',
     options: { beside: 'Beside lines', between: 'Between lines' },
   },
 );
