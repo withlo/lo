@@ -747,7 +747,9 @@ class View implements DiffView {
     this.dom.addEventListener('click', this.#runControl);
     this.dom.addEventListener('click', this.#openMore);
     // Beside lines, a thread's mark previews its popover as the pointer rests on it, and pins it.
+    // Across a lane's cell, the mark it's on is the stem nearest it, which a move can change.
     this.dom.addEventListener('pointerover', this.#hoverMark, { passive: true });
+    this.dom.addEventListener('pointermove', this.#hoverMark, { passive: true });
     this.dom.addEventListener('pointerleave', this.#hoverMark, { passive: true });
     this.dom.addEventListener('click', this.#clickMark);
     // The range the pointer is on lights at once, and focus going into a popover's card or a box,

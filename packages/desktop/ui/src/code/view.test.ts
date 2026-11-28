@@ -3138,6 +3138,54 @@ describe('threads’ lane', () => {
     ]);
   });
 
+  test('the pointer on a stem lights its range alone, the nearest stem across the lane', () => {
+    const shown = open();
+    shown.setThreads(
+      [
+        ranged('outer', at('a', 'new', 7), { side: 'new', line: 3 }),
+        ranged('inner', at('a', 'new', 8), { side: 'new', line: 4 }),
+      ],
+      plain().render,
+    );
+    // New line 5's cell: the stems' middles 3 and 7 px from the lane's edge, here at 0.
+    const editor = parent!.querySelector('.cm-content[aria-label="After"]')!.closest('.cm-editor')!;
+    // Drawn again as its stems' colours change: found again each time.
+    const point = (clientX: number) =>
+      editor
+        .querySelectorAll('.lo-threadlane .lo-lanemark')[2]!
+        .firstElementChild!.dispatchEvent(
+          new MouseEvent('pointermove', { bubbles: true, clientX }),
+        );
+    point(4);
+    expect(litLines('After')).toEqual(['line 3', 'line 4', 'line 5, changed', 'line 6', 'line 7']);
+    expect(lane('After')[2]).toBe('s0 edge-edge amber lit, s1 edge-edge amber');
+    point(6);
+    expect(litLines('After')).toEqual(['line 4', 'line 5, changed', 'line 6', 'line 7', 'line 8']);
+    expect(lane('After')[2]).toBe('s0 edge-edge amber, s1 edge-edge amber lit');
+    parent!
+      .querySelector('.lo-diffview')!
+      .dispatchEvent(new MouseEvent('pointerleave', { bubbles: false }));
+    expect(litLines('After')).toEqual([]);
+    expect(lane('After')[2]).toBe('s0 edge-edge amber, s1 edge-edge amber');
+  });
+
+  test('a range is lit where a key landed on it, while the cursor stays on its lines', () => {
+    const shown = open();
+    shown.setThreads([ranged('one', at('a', 'new', 8), { side: 'new', line: 6 })], plain().render);
+    shown.reveal(onLine('a', 'new', 2));
+    shown.focus();
+    expect(litLines('After')).toEqual([]);
+    vimIn('After').keys(']', 't');
+    expect(litLines('After')).toEqual(['line 6', 'line 7', 'line 8']);
+    expect(lane('After')[0]).toBe('s0 mid-edge amber lit, tick s0 amber lit');
+    // To document lines 8 and 6, lines 7 and 5, by count: jsdom has no layout for `k` to go by.
+    vimIn('After').keys('8', 'G');
+    expect(litLines('After')).toEqual(['line 6', 'line 7', 'line 8']);
+    vimIn('After').keys('6', 'G');
+    expect(litLines('After')).toEqual([]);
+    expect(lane('After')[0]).toBe('s0 mid-edge amber, tick s0 amber');
+  });
+
   test('a range from removed lines to added ones draws in each side’s lane, its bubble on the end’s', () => {
     const shown = open();
     shown.setThreads(

@@ -446,7 +446,9 @@ class Excerpt implements ExcerptView {
     );
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
     this.dom.addEventListener('click', this.#clicked);
+    // Across a lane's cell, the mark it's on is the stem nearest it, which a move can change.
     this.dom.addEventListener('pointerover', this.#hoverMark, { passive: true });
+    this.dom.addEventListener('pointermove', this.#hoverMark, { passive: true });
     this.dom.addEventListener('pointerleave', this.#hoverMark, { passive: true });
     this.dom.addEventListener('pointermove', this.#pointRange, { passive: true });
     this.dom.addEventListener('pointerleave', this.#pointRange, { passive: true });
@@ -1396,6 +1398,7 @@ class Excerpt implements ExcerptView {
     this.#beside.destroy();
     this.dom.removeEventListener('click', this.#clicked);
     this.dom.removeEventListener('pointerover', this.#hoverMark);
+    this.dom.removeEventListener('pointermove', this.#hoverMark);
     this.dom.removeEventListener('pointerleave', this.#hoverMark);
     this.dom.removeEventListener('pointermove', this.#pointRange);
     this.dom.removeEventListener('pointerleave', this.#pointRange);
