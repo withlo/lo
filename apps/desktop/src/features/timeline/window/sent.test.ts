@@ -217,7 +217,7 @@ describe('sentRows', () => {
     expect([...shown.shown]).toEqual(['box-1']);
   });
 
-  test('an edit made elsewhere after GitHub answered it shows, by its answer’s time, the first of a session too', () => {
+  test('an edit made elsewhere after GitHub answered it shows, by its answer’s time, the first since Lo started too', () => {
     eitherClock(() => {
       // GitHub answered a second after it was sent; main didn't know its clock when it was sent.
       const answered = sent({

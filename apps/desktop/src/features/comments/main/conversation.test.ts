@@ -304,7 +304,7 @@ describe('when a comment was sent, by GitHub’s clock', () => {
     },
   );
 
-  test('the first comment of a session names its copy, though Lo doesn’t know GitHub’s clock yet', async () => {
+  test('the first comment since Lo started names its copy, though Lo doesn’t know GitHub’s clock yet', async () => {
     const fake = poller(['IC_2']);
     const { made } = writer(fake);
     made.save('t1', ON_PULL, 'Ship it.');
