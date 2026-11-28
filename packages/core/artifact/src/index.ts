@@ -47,6 +47,7 @@ export {
   MIN_STEPS,
   MIN_TABS,
 } from './limits.ts';
+export { definitionBlocks } from './definitions.ts';
 export { FIGURE_TYPES, readCode, readFigure, readPath, readTerm, termKey } from './targets.ts';
 export {
   parseStore,

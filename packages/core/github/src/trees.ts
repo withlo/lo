@@ -46,6 +46,14 @@ export function treePath(repo: RepoRef, rev: string): string {
   return `/repos/${repo.owner}/${repo.name}/git/trees/${encodeURIComponent(rev)}?recursive=1`;
 }
 
+/**
+ * The REST path of the top of the tree of `rev`, a commit or a tree, in `repo`: the entries
+ * directly in it, without what's in its folders.
+ */
+export function rootTreePath(repo: RepoRef, rev: string): string {
+  return `/repos/${repo.owner}/${repo.name}/git/trees/${encodeURIComponent(rev)}`;
+}
+
 /** GitHub's answer for a tree, read. */
 export function readRepoTree(json: unknown): RepoTree {
   const tree = new Fields(json, 'tree');
@@ -79,4 +87,12 @@ function unexpected(message: string): GithubError {
 /** The whole tree of `rev`, a commit or a tree, in `repo`, as far as GitHub lists it. */
 export function repoTree(client: GithubClient, repo: RepoRef, rev: string): Promise<RepoTree> {
   return client.get(treePath(repo, rev), readRepoTree);
+}
+
+/**
+ * The top of the tree of `rev`, a commit or a tree, in `repo`: the entries directly in it, as a
+ * commit that holds one file at its top needs, whatever its folders hold.
+ */
+export function rootTree(client: GithubClient, repo: RepoRef, rev: string): Promise<RepoTree> {
+  return client.get(rootTreePath(repo, rev), readRepoTree);
 }

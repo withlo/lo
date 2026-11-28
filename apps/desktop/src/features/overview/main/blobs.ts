@@ -1,7 +1,8 @@
 // Overviews' files in the database, by their git IDs: `artifact.md` and the figures an overview
 // shows, as GitHub sent them. Each is checked against its ID as it's kept and again as it's read,
 // so what's shown is always the file the commit names, and past a cap on their sizes, those used
-// least recently go. Nothing here calls Electron.
+// least recently go, except those a closed or merged pull request's kept overview holds
+// (`SavedRefs`), which only clearing the cache forgets. Nothing here calls Electron.
 
 import { createHash } from 'node:crypto';
 
@@ -80,7 +81,8 @@ export class Blobs {
 
   /**
    * Keeps `bytes` as the file `id` names, if they are, and says whether they are. Past the cap,
-   * the files used least recently go, though never the one just kept.
+   * the files used least recently go, though never the one just kept, nor one a closed pull
+   * request's kept overview holds.
    */
   put(id: string, bytes: Uint8Array): boolean {
     if (!isBlob(id, bytes)) return false;
@@ -110,12 +112,21 @@ export class Blobs {
     );
   }
 
-  /** Forgets the files used least recently until the rest fit under the cap, keeping `kept`. */
+  /**
+   * Forgets the files used least recently until the rest fit under the cap, keeping `kept` and
+   * those of closed pull requests' kept overviews, which may leave them over it.
+   */
   #trim(kept: string): void {
     let total = this.size();
     if (total <= this.#cap) return;
     const oldest = this.#database.prepare(
-      'SELECT id, size FROM overview_blobs WHERE id != ? ORDER BY used_at, id LIMIT 64',
+      `SELECT id, size FROM overview_blobs
+       WHERE id != ? AND id NOT IN (
+         SELECT files.id FROM overview_ref_files AS files
+         JOIN overview_refs AS refs
+           ON refs.repository = files.repository AND refs.number = files.number
+         WHERE refs.closed = 1)
+       ORDER BY used_at, id LIMIT 64`,
     );
     const remove = this.#database.prepare('DELETE FROM overview_blobs WHERE id = ?');
     while (total > this.#cap) {

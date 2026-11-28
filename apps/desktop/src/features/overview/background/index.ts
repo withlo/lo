@@ -1,12 +1,15 @@
-// The overview's jobs: reading `artifact.md`, and checking the overview against what main read of
-// its commit and code. Pure work on what the window sends: nothing here reads the repository, the
+// The overview's jobs: reading `artifact.md`, checking the overview against what main read of its
+// commit and code, and reading the repository's definitions, each drawn as the overview draws its
+// glossary's. Pure work on what the window sends: nothing here reads the repository, the
 // disk or the network. The readers the check runs with answer only from what main read, and fail
 // what it didn't, which leaves that figure or code unread.
 
 import {
   checkArtifact,
+  definitionBlocks,
   LIMITS,
   parseArtifact,
+  parseStore,
   SIZE_ONLY,
   type CheckedArtifact,
   type CodeReader,
@@ -15,7 +18,15 @@ import {
 } from '@lo/artifact';
 
 import { defineRunner } from '../../../background/runners.ts';
-import { codeFiles, contract, treeEntries, type CheckInput, type Parsed } from '../jobs.ts';
+import {
+  codeFiles,
+  contract,
+  treeEntries,
+  type CheckInput,
+  type Drawn,
+  type Parsed,
+  type StoreRead,
+} from '../jobs.ts';
 
 export default defineRunner(contract, {
   parse: {
@@ -32,7 +43,38 @@ export default defineRunner(contract, {
     limits: { deadline: 60_000 },
     warm: true,
   },
+  store: {
+    run: ({ bytes }) => readStore(bytes),
+    // Bounded on any input: 2 MiB of JSON, and its definitions, read once each.
+    limits: { deadline: 30_000 },
+  },
 });
+
+/**
+ * `terms.json` read as the repository's definitions, each drawn as the overview's tree draws a
+ * glossary item's.
+ */
+export function readStore(bytes: Uint8Array): StoreRead {
+  const read = parseStore(bytes);
+  if (!read.ok) return read;
+  const { store } = read;
+  return {
+    ok: true,
+    format: store.format,
+    terms: [...store.terms.values()].map((term) => ({
+      ...drawn(term),
+      changes: term.changes.map(drawn),
+      suggestions: term.suggestions.map(drawn),
+    })),
+    names: [...store.names],
+  };
+}
+
+/** A definition of the store's, with the blocks it's drawn as. */
+function drawn<T extends { definition: string }>(each: T): T & Drawn {
+  // The store holds only what a definition may, so every one draws.
+  return { ...each, blocks: definitionBlocks(each.definition) ?? [] };
+}
 
 /**
  * `artifact.md` read, with the files main reads for its checks: past the limit on figures, which

@@ -253,8 +253,9 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
       shown: APP_PULL.head,
       newer: null,
     });
-    // Its head isn't in a fork, as GitHub says.
-    expect(tab.info().head).toEqual({ fork: null });
+    // Its head isn't in a fork, as GitHub says, and it's open.
+    expect(tab.info().head).toEqual({ fork: null, forked: false });
+    expect(tab.info().state).toBe('open');
     // What it fetched with is kept with the tab, as is what the strip shows.
     expect(kept).toContainEqual({ login: 'rozed-bot' });
     expect(kept).toContainEqual({ repository: 'rozed-dev/e2e' });

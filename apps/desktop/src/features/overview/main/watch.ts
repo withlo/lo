@@ -1,12 +1,16 @@
 // A pull request's tab's overview in main: the ref `refs/lo/pr/<n>`, read in the pull request's
-// repository, then in its fork, through GitHub's REST API as the tab's account, with each answer's
-// ETag, so a read that finds nothing changed costs nothing. It's read as the tab is shown and as Lo
-// comes back on screen (once in 30 s at most), and again every 30 s while the tab is on screen and
-// Lo is, in front or behind another window (every 5 minutes while Lo is off screen), never sooner
-// than GitHub's `x-poll-interval` asks; a public pull request opened without an account is read
-// once. A commit Lo hasn't seen is read whole before it's offered, and a newer one never takes the
-// place of the one on screen until it's loaded. What was read is kept, so the overview shows at
-// once the next time, offline too.
+// repository, then in its fork, then, for a pull request from a fork, the copy the repository keeps
+// of the fork's (`refs/lo/kept/pr/<n>`), through GitHub's REST API as the tab's account, with each
+// answer's ETag, so a read that finds nothing changed costs nothing. It's read as the tab is shown
+// and as Lo comes back on screen (once in 30 s at most), and again every 30 s while the tab is on
+// screen and Lo is, in front or behind another window (every 5 minutes while Lo is off screen),
+// never sooner than GitHub's `x-poll-interval` asks; a public pull request opened without an
+// account is read once. A commit Lo hasn't seen is read whole before it's offered, and a newer one
+// never takes the place of the one on screen until it's loaded. What was read is kept, so the
+// overview shows at once the next time, offline too; and once none of them holds one, what was
+// kept stays on screen, a saved copy, as it does the next time. A closed or merged pull request's
+// is never forgotten to make room. A stack's overview, `refs/lo/stack/<id>`, is read the same way,
+// beside its layer's.
 //
 // The tab opens on its overview when it has one to show, deciding within a bound, so what that
 // waits for goes first: as the tab is shown, the ref is read at once, in the pull request's own
@@ -21,10 +25,13 @@
 
 import { ARTIFACT, namedFigures } from '@lo/artifact';
 import {
+  keptOverviewRef,
+  keptStackOverviewRef,
   overviewRef,
   RepoRef,
   saidBy,
-  watchOverviewRef,
+  stackOverviewRef,
+  watchRef,
   type GithubClient,
   type OverviewRef,
   type ReadPriority,
@@ -49,7 +56,7 @@ import type { Blobs } from './blobs.ts';
 import { codeAccess, CodeReading } from './code.ts';
 import { fetchBlob, isGone, readByline, readOverview, sizeOnly, type Github } from './fetch.ts';
 import { problemOf, retryWait } from './problems.ts';
-import type { SavedRefs } from './saved.ts';
+import type { PullKey, SavedRefs } from './saved.ts';
 import { SinceReads } from './since.ts';
 import { BlockTexts } from './texts.ts';
 
@@ -76,14 +83,28 @@ export interface OverviewReads {
   readonly saved: SavedRefs;
 }
 
+/**
+ * What a tab's overview is of: its pull request, or, `id`, the stack it's a layer of, whose
+ * overview is on `refs/lo/stack/<id>` and read the same way, beside the pull request's.
+ */
+export type OverviewSubject = { kind: 'pull' } | { kind: 'stack'; id: number };
+
 export interface OverviewTabOptions {
   readonly id: string;
+  /** What the overview is of: the pull request unless said. */
+  readonly subject?: OverviewSubject | undefined;
   readonly reads: OverviewReads;
   /** Sends the overview to the window, each time it changes. */
   readonly publish: (state: OverviewState) => void;
   readonly log: (line: string) => void;
   /** The time now, in milliseconds since the Unix epoch. */
   readonly now?: (() => number) | undefined;
+  /**
+   * Called after each read of the ref that went through while there's an overview to show, for
+   * what's read with it, after it, such as the repository's definitions: in a turn as `priority`
+   * says, and `shown` when the tab was just shown, or Retry pressed.
+   */
+  readonly onRead?: ((priority: ReadPriorityNow, shown: boolean) => void) | undefined;
 }
 
 /**
@@ -96,7 +117,7 @@ interface Heard {
   readonly pollInterval: number | undefined;
 }
 
-/** What the ref holds, in the repository or its fork. */
+/** What the ref holds, in the repository, its fork or the repository's copy of the fork's. */
 type Found =
   | { kind: 'none' }
   | { kind: 'other' }
@@ -104,6 +125,7 @@ type Found =
 
 export class OverviewTab {
   readonly id: string;
+  readonly subject: OverviewSubject;
   readonly #options: OverviewTabOptions;
   readonly #now: () => number;
   /** The pull request, once the tab knows its repository. */
@@ -111,6 +133,10 @@ export class OverviewTab {
   #acting: Acting | undefined;
   /** The fork the head is in, `null` for none, once the tab knows. */
   #fork: RepoRef | null | undefined;
+  /** Whether the head is in a fork, one GitHub no longer has included, once the tab knows. */
+  #forked = false;
+  /** Whether the pull request is closed or merged, once the tab knows. */
+  #ended: boolean | undefined;
   #onScreen = false;
   #foreground = false;
   #found: OverviewState['found'] = 'unknown';
@@ -163,6 +189,7 @@ export class OverviewTab {
   constructor(options: OverviewTabOptions) {
     this.#options = options;
     this.id = options.id;
+    this.subject = options.subject ?? { kind: 'pull' };
     this.#now = options.now ?? Date.now;
     this.blocks = new BlockTexts({ log: options.log });
     this.since = new SinceReads({ log: options.log });
@@ -183,6 +210,7 @@ export class OverviewTab {
     if (!pull || !pull.repository.equals(repository) || pull.number !== info.number) {
       this.#pull = { repository, number: info.number };
       this.#heard.clear();
+      this.#ended = undefined;
       this.#takeSaved();
       moved = pull !== undefined;
     }
@@ -194,11 +222,14 @@ export class OverviewTab {
     const fork = info.head?.fork;
     const forkNow =
       info.head === undefined ? undefined : fork ? new RepoRef(fork.owner, fork.name) : null;
-    if (!sameFork(this.#fork, forkNow)) {
+    const forked = info.head?.forked ?? false;
+    if (!sameFork(this.#fork, forkNow) || forked !== this.#forked) {
       moved ||= this.#fork !== undefined;
       this.#fork = forkNow;
+      this.#forked = forked;
       if (forkNow !== undefined) this.#headKnown();
     }
+    this.#follow(info.state);
     const shown = onScreen && !this.#onScreen;
     if (shown) this.#awaited = true;
     this.#onScreen = onScreen;
@@ -254,10 +285,10 @@ export class OverviewTab {
 
   /** The overview as the window gets it. */
   state(): OverviewState {
-    const number = this.#pull?.number;
+    const pull = this.#pull;
     return {
       id: this.id,
-      ref: number === undefined ? '' : overviewRef(number),
+      ref: pull === undefined ? '' : this.#ref(pull),
       watching: this.#acting?.kind === 'account',
       found: this.#found,
       overview: this.#shown ?? null,
@@ -266,6 +297,11 @@ export class OverviewTab {
       problem: this.#problem ?? null,
       code: this.#code,
     };
+  }
+
+  /** Whether `commit` is the overview on screen, or the newer one. */
+  holds(commit: string): boolean {
+    return this.#shown?.id === commit || this.#newer?.id === commit;
   }
 
   /**
@@ -365,13 +401,31 @@ export class OverviewTab {
     return this.#codeRead.run(key, read);
   }
 
+  /**
+   * Follows whether the pull request is closed or merged, `state`, which keeps what's kept of its
+   * overview from being forgotten to make room, until it's open again.
+   */
+  #follow(state: PullTabInfo['state']): void {
+    const pull = this.#pull;
+    // A stack isn't closed: what's kept of its overview can go to make room.
+    if (state === undefined || !pull || this.subject.kind === 'stack') return;
+    const ended = state === 'merged' || state === 'closed';
+    if (ended === this.#ended) return;
+    this.#ended = ended;
+    try {
+      this.#options.reads.saved.close(this.#key(pull), ended);
+    } catch (error) {
+      this.#options.log(`keeping the overview of a closed pull request: ${describe(error)}`);
+    }
+  }
+
   /** What was kept of the pull request's overview, on screen at once if nothing is yet. */
   #takeSaved(): void {
     const pull = this.#pull;
     if (!pull || this.#shown) return;
     let kept: OverviewCommit | undefined;
     try {
-      kept = this.#options.reads.saved.get(keyOf(pull));
+      kept = this.#options.reads.saved.get(this.#key(pull));
     } catch (error) {
       this.#options.log(`reading what was kept of the overview: ${describe(error)}`);
     }
@@ -414,8 +468,11 @@ export class OverviewTab {
     const awaited = this.#awaited;
     this.#awaited = false;
     const priority = (): ReadPriority => (awaited && this.#onScreen ? 'foreground' : 'background');
-    this.#reading = this.#readNow(priority).finally(() => {
+    this.#reading = this.#readNow(priority).then((through) => {
       this.#reading = undefined;
+      // What's read with the overview needs one to show, and GitHub within reach.
+      const shows = this.#shown !== undefined || this.#newer !== undefined;
+      if (through && shows && !this.#closed) this.#options.onRead?.(priority, awaited);
       if (this.#again) {
         this.#again = false;
         this.#read();
@@ -426,10 +483,11 @@ export class OverviewTab {
     });
   }
 
-  async #readNow(priority: ReadPriorityNow): Promise<void> {
+  /** Reads the ref, and what it holds, and says whether that went through. */
+  async #readNow(priority: ReadPriorityNow): Promise<boolean> {
     const pull = this.#pull;
     const acting = this.#acting;
-    if (!pull || !acting) return;
+    if (!pull || !acting) return false;
     // Each read waits on the one before, so they go in one turn in the account's queue.
     const inTurn = (work: (github: Github) => Promise<boolean>) =>
       this.#options.reads.github(acting, (client) => work((request) => request(client)), priority);
@@ -439,23 +497,25 @@ export class OverviewTab {
         // The fork is for the tab's head to say, which the tab reads in the same queue: it's
         // waited for between turns, never in one.
         await this.#headKnowable();
-        if (this.#closed) return;
+        if (this.#closed) return false;
         await inTurn((github) => this.#readRef(github, acting, pull, false));
       }
-      if (this.#closed) return;
+      if (this.#closed) return false;
       this.#failures = 0;
       this.#problem = undefined;
       this.#readAt = this.#now();
       this.#floor = this.#asking;
       if (acting.kind === 'anonymous') this.#readOnce = true;
+      return true;
     } catch (error) {
-      if (this.#closed) return;
+      if (this.#closed) return false;
       this.#failures += 1;
       const { owner } = pull.repository;
       const { problem, wait } = problemOf(error, acting, this.#failures, this.#now(), owner);
       this.#problem = problem;
-      this.#options.log(`reading ${overviewRef(pull.number)}: ${describe(error)}`);
+      this.#options.log(`reading ${this.#ref(pull)}: ${describe(error)}`);
       this.#retryIn(wait);
+      return false;
     }
   }
 
@@ -486,7 +546,7 @@ export class OverviewTab {
     base: boolean,
   ): Promise<Found | undefined> {
     if (base) {
-      const there = await this.#ask(github, 'base', pull.repository, pull.number);
+      const there = await this.#ask(github, 'base', pull.repository, this.#ref(pull));
       if (there.kind === 'commit') {
         return { kind: 'commit', sha: there.sha, source: 'base', repository: pull.repository };
       }
@@ -494,33 +554,39 @@ export class OverviewTab {
     }
     const fork = this.#fork;
     if (fork === undefined) return undefined;
-    if (!fork || fork.equals(pull.repository)) return { kind: 'none' };
-    let there: OverviewRef;
-    try {
-      there = await this.#ask(github, 'fork', fork, pull.number);
-    } catch (error) {
-      // A fork GitHub no longer has, or the account can't see, holds no overview it can read.
-      if (isGone(error)) return { kind: 'none' };
-      throw error;
+    if (fork && !fork.equals(pull.repository)) {
+      let there: OverviewRef;
+      try {
+        there = await this.#ask(github, 'fork', fork, this.#ref(pull));
+      } catch (error) {
+        // A fork GitHub no longer has, or the account can't see, holds no overview it can read.
+        if (!isGone(error)) throw error;
+        there = { kind: 'none' };
+      }
+      if (there.kind === 'commit') {
+        return { kind: 'commit', sha: there.sha, source: 'fork', repository: fork };
+      }
+      if (there.kind === 'other') return { kind: 'other' };
     }
-    if (there.kind === 'commit') {
-      return { kind: 'commit', sha: there.sha, source: 'fork', repository: fork };
+    // Only a fork's pull request has a copy, kept by the overview workflow, a gone fork's too.
+    if (!this.#forked) return { kind: 'none' };
+    const kept = await this.#ask(github, 'kept', pull.repository, this.#keptRef(pull));
+    if (kept.kind === 'commit') {
+      return { kind: 'commit', sha: kept.sha, source: 'kept', repository: pull.repository };
     }
-    return there.kind === 'other' ? { kind: 'other' } : { kind: 'none' };
+    return kept.kind === 'other' ? { kind: 'other' } : { kind: 'none' };
   }
 
-  /** The ref in `repository`, asked with the ETag of the last answer from there. */
+  /** `ref` in `repository`, asked with the ETag of the last answer from there. */
   async #ask(
     github: Github,
     source: OverviewCommit['source'],
     repository: RepoRef,
-    number: number,
+    ref: string,
   ): Promise<OverviewRef> {
     const key = `${source} ${repository.key}`;
     const heard = this.#heard.get(key);
-    const answer = await github((client) =>
-      watchOverviewRef(client, repository, number, heard?.etag),
-    );
+    const answer = await github((client) => watchRef(client, repository, ref, heard?.etag));
     if (answer.notModified) {
       if (!heard) throw new Error('GitHub said nothing changed, with nothing asked before.');
       // A `304` doesn't say again how long to wait: the answer it stands for did.
@@ -549,20 +615,22 @@ export class OverviewTab {
     if (found.kind !== 'commit') {
       this.#found = found.kind === 'none' ? 'none' : 'notCommit';
       this.#newer = undefined;
-      saved.forget(keyOf(pull));
+      this.#keepCopy(pull);
       return;
     }
     this.#found = 'commit';
-    const shown = this.#shown;
-    if (shown?.id === found.sha && shown.source === found.source) {
+    const shown = this.#moved(this.#shown, found, pull);
+    if (shown) {
+      this.#shown = shown;
       this.#saved = false;
       this.#newer = undefined;
       // One shown before its byline came, which failed to: read it again.
       if (shown.byline === null) await this.#readByline(shown, github, pull);
       return;
     }
-    const newer = this.#newer;
-    if (newer?.id === found.sha && newer.source === found.source) {
+    const newer = this.#moved(this.#newer, found, pull);
+    if (newer) {
+      this.#newer = newer;
       if (newer.byline === null) await this.#readByline(newer, github, pull);
       return;
     }
@@ -575,7 +643,7 @@ export class OverviewTab {
       found.source,
     );
     if (this.#closed) return;
-    saved.set(keyOf(pull), listed);
+    saved.set(this.#key(pull), listed, this.#ended);
     if (this.#shown) {
       // A newer commit is offered once read, with its byline when that comes.
       this.#newer = listed;
@@ -588,6 +656,45 @@ export class OverviewTab {
     this.#publish();
     await this.#readFirstFigures(listed, github, acting);
     if (!this.#closed) await this.#readByline(listed, github, pull);
+  }
+
+  /**
+   * `commit`, the overview on screen or the newer one, if it's the commit `found` names: as it is,
+   * or, found elsewhere now, as the fork's overview found in the repository's copy once the fork
+   * is gone, from there, kept so, with nothing offered in its place, since it's the same overview.
+   */
+  #moved(
+    commit: OverviewCommit | undefined,
+    found: Extract<Found, { kind: 'commit' }>,
+    pull: { repository: RepoRef; number: number },
+  ): OverviewCommit | undefined {
+    if (commit?.id !== found.sha) return undefined;
+    const there = new RepoRef(commit.repository.owner, commit.repository.name);
+    if (commit.source === found.source && there.equals(found.repository)) return commit;
+    const moved: OverviewCommit = {
+      ...commit,
+      source: found.source,
+      repository: { owner: found.repository.owner, name: found.repository.name },
+    };
+    this.#options.reads.saved.set(this.#key(pull), moved, this.#ended);
+    return moved;
+  }
+
+  /**
+   * None of the places the overview is read from holds one: what's on screen stays, a saved copy,
+   * and so does what was kept of it, unless its text is no longer kept, which leaves nothing to
+   * show again.
+   */
+  #keepCopy(pull: { repository: RepoRef; number: number }): void {
+    const { saved, blobs } = this.#options.reads;
+    const shown = this.#shown;
+    const text = shown?.read ? entryAt(shown.entries, ARTIFACT) : undefined;
+    if (shown && (!shown.read || (text !== undefined && blobs.has(text.id)))) return;
+    if (shown) {
+      this.#shown = undefined;
+      this.#saved = false;
+    }
+    saved.forget(this.#key(pull));
   }
 
   /**
@@ -640,7 +747,7 @@ export class OverviewTab {
     if (this.#shown === commit) this.#shown = read;
     else if (this.#newer === commit) this.#newer = read;
     else return;
-    this.#options.reads.saved.set(keyOf(pull), read);
+    this.#options.reads.saved.set(this.#key(pull), read, this.#ended);
   }
 
   /**
@@ -700,6 +807,26 @@ export class OverviewTab {
     );
   }
 
+  /** The ref the overview is on: the pull request's, or its stack's. */
+  #ref(pull: { number: number }): string {
+    return this.subject.kind === 'pull'
+      ? overviewRef(pull.number)
+      : stackOverviewRef(this.subject.id);
+  }
+
+  /** The ref the repository keeps its copy of a fork's on. */
+  #keptRef(pull: { number: number }): string {
+    return this.subject.kind === 'pull'
+      ? keptOverviewRef(pull.number)
+      : keptStackOverviewRef(this.subject.id);
+  }
+
+  /** What's kept of the overview is keyed by: its repository, and its pull request or stack. */
+  #key(pull: { repository: RepoRef; number: number }): PullKey {
+    const number = this.subject.kind === 'pull' ? pull.number : this.subject.id;
+    return { repository: pull.repository.toString(), number };
+  }
+
   #stopTimer(): void {
     clearTimeout(this.#timer);
     this.#timer = undefined;
@@ -713,14 +840,6 @@ export class OverviewTab {
     this.#said = said;
     this.#options.publish(state);
   }
-}
-
-/** A pull request, as what's kept of its overview is keyed. */
-function keyOf(pull: { repository: RepoRef; number: number }): {
-  repository: string;
-  number: number;
-} {
-  return { repository: pull.repository.toString(), number: pull.number };
 }
 
 function sameFork(a: RepoRef | null | undefined, b: RepoRef | null | undefined): boolean {

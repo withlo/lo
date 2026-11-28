@@ -5,12 +5,13 @@
  * both are held to these rules, so whatever an overview may mark, they may hold.
  */
 
-import { ANY_REFERENCE, inlineTokens } from '@lo/markdown';
+import { ANY_REFERENCE, inlineTokens, type Inline } from '@lo/markdown';
 import type { Token } from 'markdown-it';
 
 import { UNSAFE } from './findings.ts';
 import { LIMITS } from './limits.ts';
 import { CODE, readCode, readTerm, TERM } from './targets.ts';
+import type { Overview, OverviewBlock } from './tree.ts';
 
 /**
  * Whether `text`, a term or an alias, is plain: no control or invisible character, line breaks and
@@ -98,4 +99,58 @@ export function notDefinitionText(text: string): { what: string; why?: string } 
   if (UNSAFE.test(text)) return { what: 'a control or invisible character' };
   const tokens = definitionTokens(text);
   return tokens === undefined ? { what: 'formatting nested too deep' } : notDefinition(tokens);
+}
+
+/**
+ * `text`, a definition as the repository's definitions hold it, as an overview's tree holds a
+ * glossary item's: one paragraph of its text, inline code and links to code and terms, read alone
+ * as the store reads it, so it shows as it reads there. None for an empty definition. Undefined
+ * when it holds what a definition can't, which the store refuses.
+ */
+export function definitionBlocks(text: string): OverviewBlock[] | undefined {
+  if (notDefinitionText(text) !== undefined) return undefined;
+  const tokens = definitionTokens(text);
+  if (tokens === undefined) return undefined;
+  const paragraph: Inline<Overview>[] = [];
+  // The inlines each link open holds, innermost last: a link's label can't hold another link.
+  const open: Inline<Overview>[][] = [];
+  let into = paragraph;
+  for (const token of tokens) {
+    switch (token.type) {
+      case 'text':
+      case 'text_special':
+      case 'softbreak': {
+        // A definition is on one line, and a break in it reads as a space, as in an overview.
+        const value = token.type === 'softbreak' ? ' ' : token.content;
+        const last = into.at(-1);
+        if (last?.kind === 'text') last.value += value;
+        else if (value !== '') into.push({ kind: 'text', value });
+        break;
+      }
+      case 'code_inline':
+        into.push({ kind: 'inlineCode', value: token.content });
+        break;
+      case 'link_open': {
+        const href = String(token.attrGet('href'));
+        const read = href.startsWith(CODE)
+          ? readCode(href.slice(CODE.length), 'any')
+          : href.startsWith(TERM)
+            ? readTerm(href.slice(TERM.length))
+            : undefined;
+        if (!read?.ok) return undefined;
+        const children: Inline<Overview>[] = [];
+        into.push({ kind: 'link', target: read.value, children });
+        open.push(into);
+        into = children;
+        break;
+      }
+      case 'link_close':
+        into = open.pop() ?? paragraph;
+        break;
+      default:
+        // `notDefinition` lets nothing else through.
+        return undefined;
+    }
+  }
+  return paragraph.length === 0 ? [] : [{ kind: 'paragraph', children: paragraph }];
 }
