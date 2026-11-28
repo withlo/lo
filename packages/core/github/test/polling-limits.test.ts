@@ -555,6 +555,89 @@ test('coming back to the foreground while offline tries at once, a read waited o
   expect(runs).toBe(1);
 });
 
+/**
+ * #1 open, polled at 0 s, then out of reach from 10 s: the poll at 20 s fails, and Lo's own next
+ * try is at 40 s.
+ */
+async function outOfReach(name: string): Promise<Polling> {
+  const t = await Polling.start(name, recorded());
+  void t.poller.setOpen(pr(1));
+  await t.run();
+  await t.runUntil(10);
+  t.http.offline = true;
+  await t.runUntil(20);
+  expect(t.status().offline?.retryAt).toBe(wall(40));
+  t.requests();
+  return t;
+}
+
+test('switching tabs while offline tries each at once, and doesn’t put Lo’s own next try off', async () => {
+  const t = await outOfReach('offline_switch');
+  for (const [second, number] of [
+    [22, 2],
+    [24, 1],
+    [26, 2],
+    [28, 1],
+  ] as const) {
+    await t.runUntil(second);
+    void t.poller.setOpen(pr(number));
+    await t.run();
+  }
+  expect(t.requests()).toEqual(
+    log(
+      [22, 'GET /pulls/2'],
+      [24, 'GET /pulls/1 (since)'],
+      [26, 'GET /pulls/2'],
+      [28, 'GET /pulls/1 (since)'],
+    ),
+  );
+  expect(t.status().offline?.retryAt).toBe(wall(40));
+  await t.runUntil(39);
+  expect(t.requests()).toEqual([]);
+  await t.runUntil(40);
+  expect(t.requests()).toEqual(log([40, 'GET /pulls/1 (since)']));
+});
+
+test('coming back on screen while offline tries at once, and doesn’t put Lo’s own next try off', async () => {
+  const t = await outOfReach('offline_back');
+  for (const second of [22, 24, 26, 28]) {
+    await t.runUntil(second);
+    t.poller.setPresence('away');
+    t.poller.setPresence('front');
+    await t.run();
+  }
+  expect(t.requests()).toEqual(
+    log(
+      [22, 'GET /pulls/1 (since)'],
+      [24, 'GET /pulls/1 (since)'],
+      [26, 'GET /pulls/1 (since)'],
+      [28, 'GET /pulls/1 (since)'],
+    ),
+  );
+  expect(t.status().offline?.retryAt).toBe(wall(40));
+  await t.runUntil(39);
+  expect(t.requests()).toEqual([]);
+  await t.runUntil(40);
+  expect(t.requests()).toEqual(log([40, 'GET /pulls/1 (since)']));
+});
+
+test('coming back on screen once Lo’s own next try is due is that try, and nothing more goes', async () => {
+  const t = await outOfReach('offline_back_due');
+  // Away, the open pull request is next polled 5 minutes after it last answered, past the backoff.
+  t.poller.setPresence('away');
+  await t.runUntil(100);
+  expect(t.requests()).toEqual([]);
+  t.poller.setPresence('front');
+  await t.run();
+  // It's the try that was due: it counts, the next waits twice as long, and none follows at once.
+  expect(t.requests()).toEqual(log([100, 'GET /pulls/1 (since)']));
+  expect(t.status().offline?.retryAt).toBe(wall(140));
+  await t.runUntil(139);
+  expect(t.requests()).toEqual([]);
+  await t.runUntil(140);
+  expect(t.requests()).toEqual(log([140, 'GET /pulls/1 (since)']));
+});
+
 const BAD_CREDENTIALS =
   '{"message":"Bad credentials","documentation_url":"https://docs.github.com/rest","status":"401"}';
 
