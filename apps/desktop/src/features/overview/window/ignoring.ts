@@ -2,7 +2,8 @@
 // goes by, in the pull request's repo; whether each switch is on for it; and turning one, with focus
 // handed on from the term it was on, where that term goes: a use of it in the text turns to plain
 // words, so its block takes focus, and its row leaves the list for the Ignored group, or comes
-// back, so focus follows it to the list, else goes to a row beside it.
+// back, so focus follows it to the list, else goes to a row beside it. "Stop ignoring" on a row in
+// the group hands focus on the same way.
 
 import { handOffFocus } from '@lo/ui';
 import type { TermTarget } from '@lo/ui/commands';
@@ -12,7 +13,7 @@ import { activeTab } from '../../tab/window/shared.ts';
 import { namesOf, type TermNames } from './definitions.ts';
 import { drawnIn } from './follow.ts';
 import { definitionsNow } from './hooks.ts';
-import { ignoring, isIgnored, turnIgnored, type IgnoredWhere } from './ignored.ts';
+import { ignoring, isIgnored, stopIgnoring, turnIgnored, type IgnoredWhere } from './ignored.ts';
 import { repoOf } from './sections.ts';
 
 /** A term a switch acts on: the names it goes by, and the repo it's read in. */
@@ -65,6 +66,17 @@ export function ignoreTerm(target: TermTarget, where: IgnoredWhere): void {
   }
   turnIgnored(found.repo, found.names, where);
   if (handing?.row) handOnFrom(handing);
+}
+
+/**
+ * "Stop ignoring", pressed on the row of the term `key` names, in the Ignored group of the overview
+ * of a pull request in `repo`: both its switches turn off, and focus on the row's term follows it
+ * back to the list, as a switch's does.
+ */
+export function stopIgnoringTerm(repo: string, names: TermNames, key: string): void {
+  const focused = termAt(document.activeElement);
+  stopIgnoring(repo, names);
+  if (focused?.row && focused.key === key) handOnFrom(focused);
 }
 
 /** The article of the overview on screen, if it's drawn and has focus somewhere in it. */

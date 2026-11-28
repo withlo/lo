@@ -142,11 +142,13 @@ sections are: every repo's under `"*"`, and a repo's own, under its name, in its
   An ignored term is plain text in every overview: no underline, no card, and no stop for `Tab`. Its
   row in an overview's Glossary section moves to the Ignored group at the section's end.
 - A term's menu writes the lists, as a section's does: "Ignore in this repo" and "Ignore in every
-  repo". "Stop ignoring" on a row of the Ignored group takes the term out of every list.
+  repo". The toast that says so has "Undo", which takes out only what the switch put in, whatever
+  changed since. "Stop ignoring" on a row of the Ignored group takes the term out of every list.
 - Settings adds a term to every repo's list, and removes one from any list. A repo's "Reset" takes
   its own list out.
-- An entry Lo can't read is reported and ignored, and stays in the file. Lo writes the value whole,
-  so a comment inside it goes.
+- An entry may be as long as a term may be: 1,024 characters. An entry Lo can't read, as a longer
+  one, is reported and ignored, and stays in the file. Lo writes the value whole, so a comment
+  inside it goes.
 
 ## Trusted repos and pull requests
 

@@ -4,6 +4,7 @@
 // sections of an overview start collapsed, and which glossary terms the reader ignores, each kept
 // per repo; and how Lo reads and writes such lists.
 
+import { LIMITS } from '@lo/artifact';
 import { z } from 'zod';
 
 import { defineSetting } from '../settings/contract.ts';
@@ -75,8 +76,23 @@ export interface ScopedRepo {
  */
 const REPO = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\/(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/;
 
-/** The most an entry may run to: a heading's words, as the outline keeps them, or a term. */
-export const ENTRY_MAX = 200;
+/**
+ * The most an entry of each list may run to, in characters, by its setting's key: a heading's
+ * words, as the outline keeps them; and a term, which may be as many bytes of UTF-8 as a block's
+ * argument (`LIMITS.argument`), and so no more characters than that.
+ */
+const ENTRY_MAX: Readonly<Record<string, number>> = {
+  'overview.collapsed': 200,
+  'overview.ignored': LIMITS.argument,
+};
+
+/** The most any list's entry may run to, which a list's writing reads entries by. */
+const LONGEST = Math.max(...Object.values(ENTRY_MAX));
+
+/** The most an entry of the list `key` names may run to, in characters. */
+export function entryMax(key: string): number {
+  return ENTRY_MAX[key] ?? LONGEST;
+}
 
 /** The most of the entries Lo ignores that it names one by one. */
 const NAMED = 5;
@@ -91,15 +107,17 @@ export function sameRepo(one: string, other: string): boolean {
   return one.toLowerCase() === other.toLowerCase();
 }
 
-/** An entry Lo reads: text, with something in it, of {@link ENTRY_MAX} characters at most. */
-function readable(entry: unknown): entry is string {
-  return typeof entry === 'string' && entry.trim() !== '' && entry.length <= ENTRY_MAX;
+/** An entry Lo reads: text, with something in it, of `max` characters at most. */
+function readable(entry: unknown, max = LONGEST): entry is string {
+  return typeof entry === 'string' && entry.trim() !== '' && entry.length <= max;
 }
 
-/** Why Lo can't read `entry`, in words. */
-function whyNot(entry: unknown): string {
+/** Why Lo can't read `entry`, an entry of `max` characters at most, in words. */
+function whyNot(entry: unknown, max: number): string {
   if (typeof entry !== 'string') return 'isn’t text';
-  return entry.trim() === '' ? 'is empty' : `is longer than ${ENTRY_MAX} characters`;
+  return entry.trim() === ''
+    ? 'is empty'
+    : `is longer than ${max.toLocaleString('en-US')} characters`;
 }
 
 /**
@@ -111,6 +129,7 @@ export function readScoped(
   value: ScopedValue,
   key: string,
 ): { scoped: Scoped; problems: string[] } {
+  const max = entryMax(key);
   const ignored: string[] = [];
   let every: string[] = [];
   const repos: ScopedRepo[] = [];
@@ -127,9 +146,11 @@ export function readScoped(
     }
     const entries: string[] = [];
     for (const [at, entry] of list.entries()) {
-      if (readable(entry)) entries.push(entry);
+      if (readable(entry, max)) entries.push(entry);
       else
-        ignored.push(`${key}’s entry ${at + 1} under ${named} ${whyNot(entry)}, so Lo ignores it.`);
+        ignored.push(
+          `${key}’s entry ${at + 1} under ${named} ${whyNot(entry, max)}, so Lo ignores it.`,
+        );
     }
     if (scope === EVERY) every = entries;
     else if (!repos.some((each) => sameRepo(each.repo, scope)))
@@ -278,6 +299,75 @@ export function resetRepo(value: ScopedValue, repo: string): ScopedValue {
   if (key === undefined) return value;
   const next = { ...value };
   delete next[key];
+  return next;
+}
+
+/**
+ * What a switch turned on put in the lists, for its Undo to take out again, and only that: the lists
+ * that gained the entry, by their keys in the file, which didn't hold it by any of its names before;
+ * those of them the change made, as it made them; and a repo's own list it took away, as it was,
+ * where the change left it the same as every repo's.
+ */
+export interface Added {
+  readonly gained: readonly string[];
+  readonly made: ReadonlyMap<string, readonly Json[]>;
+  readonly dropped?: { readonly scope: string; readonly list: readonly Json[] } | undefined;
+}
+
+/** Whether `list`, as the file holds it, holds any of `keys` (`entryKey`). */
+function holdsAny(list: readonly Json[] | undefined, keys: ReadonlySet<string>): boolean {
+  return list?.some((each) => readable(each) && keys.has(entryKey(each))) ?? false;
+}
+
+/**
+ * What turning `entry` on did to the lists, from `before` to `after`: see {@link Added}. `also` are
+ * its other names, as the switch was given them.
+ */
+export function addedBy(
+  before: ScopedValue,
+  after: ScopedValue,
+  entry: string,
+  also: readonly string[] = [],
+): Added {
+  const keys = new Set([entry, ...also].map(entryKey));
+  const gained: string[] = [];
+  const made = new Map<string, readonly Json[]>();
+  for (const scope of Object.keys(after)) {
+    const list = listOf(after, scope);
+    if (!list || !holdsAny(list, keys) || holdsAny(listOf(before, scope), keys)) continue;
+    gained.push(scope);
+    if (!listOf(before, scope)) made.set(scope, list);
+  }
+  const gone = Object.keys(before).find(
+    (scope) => scope !== EVERY && listOf(before, scope) && !listOf(after, scope),
+  );
+  const list = gone === undefined ? undefined : listOf(before, gone);
+  return { gained, made, dropped: gone !== undefined && list ? { scope: gone, list } : undefined };
+}
+
+/**
+ * `now` with what turning `entry` on put in the lists (`added`) taken out again, as its Undo does,
+ * however the lists changed since: the entry goes from the lists that gained it, a list the change
+ * made goes while it's as the change made it, and a repo's own list the change took away comes back
+ * while the repo has none. Lists that held it already keep it.
+ */
+export function undoAdded(
+  now: ScopedValue,
+  added: Added,
+  entry: string,
+  also: readonly string[] = [],
+): ScopedValue {
+  const next = { ...now };
+  for (const scope of added.gained) {
+    const key = scope === EVERY ? (listOf(next, EVERY) ? EVERY : undefined) : keyOf(next, scope);
+    const list = key === undefined ? undefined : listOf(next, key);
+    if (key === undefined || !list) continue;
+    const made = added.made.get(scope);
+    if (made && sameEntries(list, made)) delete next[key];
+    else next[key] = changed(list, entry, false, also);
+  }
+  const { dropped } = added;
+  if (dropped && keyOf(next, dropped.scope) === undefined) next[dropped.scope] = [...dropped.list];
   return next;
 }
 

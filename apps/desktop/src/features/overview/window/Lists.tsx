@@ -22,8 +22,8 @@ import { settingRow, type ControlProps } from '../../settings/window/shared.ts';
 import {
   addToEvery,
   collapsed,
-  ENTRY_MAX,
   entryKey,
+  entryMax,
   everywhere,
   holds,
   ignored,
@@ -134,7 +134,7 @@ function adderOf(setting: Setting<ScopedValue>, words: FieldWords) {
             aria-label={words.label}
             aria-describedby={noteId}
             placeholder={words.placeholder}
-            maxLength={ENTRY_MAX}
+            maxLength={entryMax(setting.key)}
             invalid={refused}
             value={text}
             onChange={(event) => {

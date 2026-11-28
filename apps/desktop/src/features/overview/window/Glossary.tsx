@@ -14,7 +14,7 @@ import { usePull, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
 import { namesOf, type Definitions, type ShownTerm, type TermByline } from './definitions.ts';
 import { useNow } from './hooks.ts';
-import { stopIgnoring } from './ignored.ts';
+import { stopIgnoringTerm } from './ignoring.ts';
 import {
   definitionsLine,
   OWN_DEFINITIONS,
@@ -77,7 +77,7 @@ function shownWith(
     menu: termMenu,
     stopIgnoring(key) {
       const term = definitions.of(key);
-      if (term) stopIgnoring(repo, namesOf(term));
+      if (term) stopIgnoringTerm(repo, namesOf(term), key);
     },
   };
 }

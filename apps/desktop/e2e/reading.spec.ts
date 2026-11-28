@@ -1271,10 +1271,13 @@ test('ignores a term from its menu, in this repo or every repo: plain text at on
     await expect.poll(saved).toEqual({ 'overview.ignored': { 'rozed-dev/e2e': ['Bucket'] } });
     await expect(rowIn(listed, 'Credit').locator('.lo-term-row__term')).toBeFocused();
     await fold.click();
+    // Pressed with focus on its row's term, focus follows the term back to the list.
+    await rowIn(group, 'Bucket').locator('.lo-term-row__term').focus();
     await rowIn(group, 'Bucket').hover();
     await rowIn(group, 'Bucket').getByRole('button', { name: 'Stop ignoring' }).click();
     await expect.poll(saved).toEqual({ 'overview.ignored': { '*': [] } });
     await expect(fold).toHaveCount(0);
+    await expect(rowIn(listed, 'Bucket').locator('.lo-term-row__term')).toBeFocused();
   });
 
   await test.step('Ignore in every repo, from a row’s menu, ticks both switches', async () => {

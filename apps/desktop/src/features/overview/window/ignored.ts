@@ -10,12 +10,14 @@ import { announce } from '../../../window/commands/notices.tsx';
 import { shownAtOnce } from '../../settings/window/shared.ts';
 import { withoutBidi } from '../../tab/window/shared.ts';
 import {
+  addedBy,
   entryKey,
   ignored,
   listIn,
   readScoped,
   setEverywhere,
   setInRepo,
+  undoAdded,
   type Scoped,
   type ScopedValue,
 } from '../settings.ts';
@@ -98,20 +100,26 @@ function ignoredLine(names: TermNames, where: IgnoredWhere, repo: string): strin
 /**
  * Turns "Ignore in this repo" (`repo`) or "Ignore in every repo" (`every`) for the term `names`
  * names, read in `repo`: on, it's plain text at once, and once it's saved, a toast says so, with
- * Undo, which puts the setting back as it was, or, changed since, takes the term out of what this
- * put it in. Off, it's a term again, with nothing said.
+ * Undo. Undo puts the setting back as it was, or, changed since, takes out only what this put in
+ * (`undoAdded`): the term goes from the lists that gained it, a repo's own list this made goes while
+ * it's as this made it, and lists that held the term already keep it. Off, it's a term again, with
+ * nothing said.
  */
 export function turnIgnored(repo: string, names: TermNames, where: IgnoredWhere): void {
   const before = ignoring.shownNow();
   const on = !isIgnored(before, where, repo, names);
   const after = written(before, where, repo, names, on);
+  const added = addedBy(before, after, names.name, names.also);
   void ignoring.change(after).then((saved) => {
-    if (!saved || !on) return;
+    // Said only of what took: the switch is on now.
+    if (!saved || !on || !isIgnored(after, where, repo, names)) return;
     announce(ignoredLine(names, where, repo), '', {
       label: 'Undo',
       onClick: () => {
         const now = ignoring.shownNow();
-        void ignoring.change(same(now, after) ? before : written(now, where, repo, names, false));
+        void ignoring.change(
+          same(now, after) ? before : undoAdded(now, added, names.name, names.also),
+        );
       },
     });
   });
