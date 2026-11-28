@@ -628,12 +628,13 @@ the keyboard.
 The skill teaches a coding agent to write an artifact. It lives in Lo's repo and installs into
 Claude Code and Codex. It tells the agent to:
 
-1. **Work in a clone of its own,** which borrows the objects of the clone it starts in, and fetch
-   into refs of its own there, never into the clone someone else works in.
+1. **Work in a clone of its own,** which borrows the objects of the clone it starts in and commits
+   with its name and email address, and fetch into refs of its own there, never into the clone
+   someone else works in.
 2. **Read the PR:** its diff, description and commits, and, when the agent that wrote the PR started
    it, the handoff file that agent wrote and a copy of its session's transcript.
-3. **Read the instructions** for this repo and this user, if there are any, and the repo's
-   definitions at `refs/lo/terms`.
+3. **Read the instructions** for this repo, from its default branch so no PR changes its own, and
+   for this user, if there are any, and the repo's definitions at `refs/lo/terms`.
 4. **Start from the existing artifact** when the PR already has one, since the new one replaces it
    for everyone.
 5. **Write `artifact.md` and its figures,** then read them again against the skill's writing rules.

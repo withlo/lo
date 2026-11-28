@@ -63,7 +63,12 @@ interface Shell {
  * Runs `line`, one of SKILL.md's commands, in `cwd` with `sh`, each `<name>` in it replaced by
  * `values[name]` and the checker run from this package's build, with git as the tests run it.
  */
-function run(line: string, values: Readonly<Record<string, string>>, cwd: string): Shell {
+function run(
+  line: string,
+  values: Readonly<Record<string, string>>,
+  cwd: string,
+  env: Readonly<Record<string, string>> = testGitEnvironment(),
+): Shell {
   let written = line.replace(NPX, `'${process.execPath}' '${CHECKER}'`);
   written = written.replace(/<([a-z-]+)>/g, (whole, name: string) => {
     const value = values[name];
@@ -71,11 +76,7 @@ function run(line: string, values: Readonly<Record<string, string>>, cwd: string
     expect(value).not.toContain("'");
     return value;
   });
-  const ran = spawnSync('sh', ['-c', written], {
-    cwd,
-    env: testGitEnvironment(),
-    encoding: 'utf8',
-  });
+  const ran = spawnSync('sh', ['-c', written], { cwd, env, encoding: 'utf8' });
   if (ran.error) throw ran.error;
   return { status: ran.status, stdout: ran.stdout, stderr: ran.stderr };
 }
@@ -120,15 +121,22 @@ describe('SKILL.md', () => {
 
   test('runs git in a clone of its own, fetching into refs of its own, and never forces a push', () => {
     const gits = commands.flatMap((line) =>
-      line.split(/ *(?:&&|\||;) */).filter((part) => /^git\b/.test(part)),
+      line
+        .split(/ *(?:&&|\||;) */)
+        .map((part) => part.replace(/^xargs -0 -r /, ''))
+        .filter((part) => /^git\b/.test(part)),
     );
-    // Only finding the repository it started in, and making its own clone, name no clone.
+    // Only reading the repository it started in, and making its own clone, name no clone.
     const own = "git -C '<work>/clone' ";
     expect(gits.filter((line) => !line.startsWith(own))).toEqual([
       'git rev-parse --path-format=absolute --git-common-dir',
+      'git rev-parse --is-shallow-repository',
       'git config --get extensions.partialClone',
-      "git clone --shared --no-checkout --quiet '<local>' '<work>/clone'",
+      "git config --get-regexp '^remote\\..*\\.promisor$'",
+      "git clone --shared --no-checkout --no-tags --quiet '<local>' '<work>/clone'",
       "git init --quiet '<work>/clone'",
+      'git config -z --get user.name',
+      'git config -z --get user.email',
       'git remote -v',
     ]);
     expect(commands.filter((line) => line.includes('FETCH_HEAD'))).toEqual([]);
@@ -137,16 +145,26 @@ describe('SKILL.md', () => {
     const fetches = gits.filter((line) => line.startsWith(`${own}fetch `));
     expect(fetches.length).toBeGreaterThan(5);
     const fetch =
-      /^git -C '<work>\/clone' fetch --quiet '<(?:url|fork-url)>' '\+([^':]+):((?:refs\/lo|refs\/writer)\/[^']+)'$/;
+      /^git -C '<work>\/clone' fetch --quiet --no-tags '<(?:url|fork-url)>' '\+([^':]+):((?:refs\/lo|refs\/writer)\/[^']+)'$/;
     expect(fetches.filter((line) => !fetch.test(line))).toEqual([]);
+    // No block fetches into one ref twice: a fork's copy, fetched only when the base repository has
+    // none, has a block of its own.
+    const blocks = [...text.matchAll(/^ *```sh\n([\s\S]*?)^ *```$/gm)].map((match) => match[1]!);
+    const twice = blocks.filter((block) => {
+      const into = [...block.matchAll(/ fetch .*:([^':]+)'$/gm)].map((match) => match[1]);
+      return new Set(into).size < into.length;
+    });
+    expect(twice).toEqual([]);
 
     // Every push is of one commit to one of Lo's refs, never forced.
     const pushes = gits.filter((line) => line.includes(' push '));
     expect(pushes.length).toBe(4);
     const push =
-      /^git -C '<work>\/clone' push '<(?:url|fork-url)>' '<(id|stack-id)>:refs\/lo\/(pr\/<n>|stack\/<stack>)'$/;
+      /^git -C '<work>\/clone' push --no-follow-tags '<(?:url|fork-url)>' '<(id|stack-id)>:refs\/lo\/(pr\/<n>|stack\/<stack>)'$/;
     expect(pushes.filter((line) => !push.test(line))).toEqual([]);
-    expect(text).toContain("git -C '<work>/clone' push '<url>' '<id>:refs/lo/pr/<n>'\n");
+    expect(text).toContain(
+      "git -C '<work>/clone' push --no-follow-tags '<url>' '<id>:refs/lo/pr/<n>'\n",
+    );
   });
 
   test('runs this package’s checker from a folder of its own, and its commands work as it says', () => {
@@ -219,25 +237,47 @@ describe('SKILL.md', () => {
   });
 });
 
+/** Git as the person runs it: their identity from the clone's config, and tags pushed along. */
+function asThePerson(): Record<string, string> {
+  const env = testGitEnvironment();
+  for (const name of Object.keys(env)) {
+    if (/^(GIT_(AUTHOR|COMMITTER)_|EMAIL$)/.test(name)) delete env[name];
+  }
+  const count = Number(env.GIT_CONFIG_COUNT ?? '0');
+  env[`GIT_CONFIG_KEY_${count}`] = 'push.followTags';
+  env[`GIT_CONFIG_VALUE_${count}`] = 'true';
+  env.GIT_CONFIG_COUNT = String(count + 1);
+  return env;
+}
+
 describe('its git commands, run as written', () => {
-  /** A repository on "GitHub": a base branch, a pull request's head, and its definitions. */
+  /**
+   * A repository on "GitHub": its default branch, a lower layer's branch, a pull request's head on
+   * it, the pull request's overview and the repository's definitions.
+   */
   let remote: string;
-  /** The clone the writer starts in, on the base branch. */
+  /** The clone the writer starts in, with an identity of its own and a tag the remote lacks. */
   let local: string;
-  let base: string;
+  let main: string;
   let head: string;
+  /** The overview the pull request has, which a writer starts from. */
+  let theirs: string;
 
   beforeAll(() => {
     const seed = join(root.dir, 'seed');
     mkdirSync(seed);
-    base = repositoryOf(seed, {
+    main = repositoryOf(seed, {
       'src/a.ts': 'one\n',
-      '.lo/overview.md': '## Required\n\nThe base branch’s.\n',
+      '.lo/overview.md': '## Required\n\nThe default branch’s.\n',
     });
+    writeFileSync(join(seed, '.lo/overview.md'), '## Required\n\nThe lower layer’s.\n');
+    git(seed, 'commit', '-q', '-am', 'Lower');
+    const lower = git(seed, 'rev-parse', 'HEAD');
     writeFileSync(join(seed, 'src/a.ts'), 'one\ntwo\n');
     writeFileSync(join(seed, '.lo/overview.md'), '## Required\n\nThe pull request’s.\n');
     git(seed, 'commit', '-q', '-am', 'Change');
     head = git(seed, 'rev-parse', 'HEAD');
+
     const store = {
       format: 1,
       terms: {
@@ -252,17 +292,42 @@ describe('its git commands, run as written', () => {
         },
       },
     };
-    writeFileSync(join(seed, 'terms.json'), JSON.stringify(store));
-    const blob = git(seed, 'hash-object', '-w', 'terms.json');
-    const tree = gitBytes(seed, ['mktree'], `100644 blob ${blob}\tterms.json\n`);
-    const terms = git(seed, 'commit-tree', '-m', 'Definitions', tree.toString('utf8').trim());
+    const tree = (name: string, content: string): string => {
+      writeFileSync(join(seed, name), content);
+      const blob = git(seed, 'hash-object', '-w', name);
+      return gitBytes(seed, ['mktree'], `100644 blob ${blob}\t${name}\n`).toString('utf8').trim();
+    };
+    const terms = git(
+      seed,
+      'commit-tree',
+      '-m',
+      'Definitions',
+      tree('terms.json', JSON.stringify(store)),
+    );
+    // An overview whose parent is the default branch's commit, which the writer's clone has tagged.
+    theirs = git(
+      seed,
+      'commit-tree',
+      '-p',
+      main,
+      '-m',
+      'Overview',
+      tree('artifact.md', overview(lower)),
+    );
+
     remote = join(root.dir, 'remote.git');
     git(root.dir, 'init', '-q', '--bare', '--object-format=sha1', remote);
-    git(seed, 'push', '-q', remote, `${base}:refs/heads/main`);
-    git(seed, 'push', '-q', remote, `${head}:refs/pull/4797/head`);
-    git(seed, 'push', '-q', remote, `${terms}:refs/lo/terms`);
+    git(seed, 'push', '-q', remote, `${main}:refs/heads/main`, `${lower}:refs/heads/lower`);
+    git(remote, 'symbolic-ref', 'HEAD', 'refs/heads/main');
+    git(seed, 'push', '-q', remote, `${head}:refs/pull/4797/head`, `${terms}:refs/lo/terms`);
+    git(seed, 'push', '-q', remote, `${theirs}:refs/lo/pr/4797`);
+    git(remote, 'config', 'uploadpack.allowFilter', 'true');
+
     local = join(root.dir, 'local');
     git(root.dir, 'clone', '-q', remote, local);
+    git(local, 'config', 'user.name', "Ann O'Hara");
+    git(local, 'config', 'user.email', 'ann@lo.invalid');
+    git(local, 'tag', '-a', '-m', 'Kept here', 'kept', main);
   });
 
   test('read the pull request, its instructions and the definitions, and push its overview', () => {
@@ -271,33 +336,49 @@ describe('its git commands, run as written', () => {
       work,
       url: remote,
       n: '4797',
-      base: 'main',
+      base: 'lower',
       commit: head,
+      stack: '4790',
     };
+    const env = asThePerson();
     const refsBefore = git(local, 'for-each-ref');
     const ok = (line: string, cwd = work): string => {
-      const ran = run(line, values, cwd);
+      const ran = run(line, values, cwd, env);
       if (ran.status !== 0) throw new Error(`${line} exited ${ran.status}: ${ran.stderr}`);
       return ran.stdout.trim();
+    };
+    const fails = (line: string, cwd = work): Shell => {
+      const ran = run(line, values, cwd, env);
+      expect(ran.status).not.toBe(0);
+      return ran;
     };
 
     ok(command("mkdir '<work>/overview' '<work>/tools'"));
     values.local = ok(command('--git-common-dir'), local);
-    expect(run(command('extensions.partialClone'), values, local)).toMatchObject({
-      status: 1,
-      stdout: '',
-    });
+    expect(ok(command('--is-shallow-repository'), local)).toBe('false');
+    expect(fails(command('extensions.partialClone'), local).stdout).toBe('');
+    expect(fails(command('promisor'), local).stdout).toBe('');
     ok(command('clone --shared'));
-    // It borrows the objects of the clone it started in.
+    // It borrows the objects of the clone it started in, and none of its tags.
     expect(readFileSync(join(work, 'clone/.git/objects/info/alternates'), 'utf8').trim()).toBe(
       join(values.local, 'objects'),
     );
+    expect(git(join(work, 'clone'), 'tag', '--list')).toBe('');
+    // Were a tag there, no push would send it.
+    git(join(work, 'clone'), 'tag', '-a', '-m', 'Made here', 'made', main);
+
+    // It commits as the clone it started in does.
+    ok(command('--get user.name'), local);
+    ok(command('--get user.email'), local);
+    ok(command('user.useConfigOnly'));
+    expect(ok(command('var GIT_AUTHOR_IDENT'))).toMatch(/^Ann O'Hara <ann@lo\.invalid> \d+ /);
 
     ok(command('refs/pull/<n>/head:refs/writer/head'));
     expect(ok(command("rev-parse 'refs/writer/head'"))).toBe(head);
     ok(command('refs/heads/<base>:refs/writer/base'));
-    // The base branch's instructions, never the pull request's.
-    expect(ok(command('refs/writer/base:.lo/overview.md'))).toContain('The base branch’s.');
+    // The default branch's instructions, never the pull request's or the layer's below it.
+    ok(command('+HEAD:refs/writer/default'));
+    expect(ok(command('refs/writer/default:.lo/overview.md'))).toContain('The default branch’s.');
 
     ok(command('+refs/lo/terms:refs/lo/terms'));
     ok(command("'refs/lo/terms:terms.json'"));
@@ -306,13 +387,14 @@ describe('its git commands, run as written', () => {
       'Bucket\tbuckets\tThe tokens a tenant has to spend.\n',
     );
 
-    // There's no overview yet, in the base repository or a fork.
-    const none = run(
-      command("fetch --quiet '<url>' '+refs/lo/pr/<n>:refs/lo/pr/<n>'"),
-      values,
-      work,
+    // The pull request's overview, to start from.
+    ok(command("fetch --quiet --no-tags '<url>' '+refs/lo/pr/<n>:refs/lo/pr/<n>'"));
+    expect(ok(command("ls-tree -r --name-only 'refs/lo/pr/<n>'"))).toBe('artifact.md');
+    ok(command("'refs/lo/pr/<n>:artifact.md' > '<work>/overview/artifact.md'"));
+    // The stack has no overview yet.
+    const none = fails(
+      command("fetch --quiet --no-tags '<url>' '+refs/lo/stack/<stack>:refs/lo/stack/<stack>'"),
     );
-    expect(none.status).not.toBe(0);
     expect(none.stderr).toContain("couldn't find remote ref");
 
     writeFileSync(
@@ -322,16 +404,22 @@ describe('its git commands, run as written', () => {
     ok(command(`check '<work>/overview'`));
     const committed = ok(command(`commit '<work>/overview'`));
     values.id = /Committed the overview as ([0-9a-f]{40})/.exec(committed)?.[1] ?? '';
-    ok(command("push '<url>' '<id>:refs/lo/pr/<n>'"));
+    ok(command("push --no-follow-tags '<url>' '<id>:refs/lo/pr/<n>'"));
     expect(ok(command("ls-remote '<url>' 'refs/lo/pr/<n>'"))).toBe(`${values.id}\trefs/lo/pr/4797`);
 
-    // The remote gained the overview's ref and nothing else; the clone it started in is as it was.
+    // The remote's overview moved on from theirs, by the person, and it gained no other ref: no tag,
+    // though the overview's history reaches the tags of both clones.
+    expect(git(remote, 'log', '-1', '--format=%P %an <%ae>', 'refs/lo/pr/4797')).toBe(
+      `${theirs} Ann O'Hara <ann@lo.invalid>`,
+    );
     expect(git(remote, 'for-each-ref', '--format=%(refname)').split('\n')).toEqual([
+      'refs/heads/lower',
       'refs/heads/main',
       'refs/lo/pr/4797',
       'refs/lo/terms',
       'refs/pull/4797/head',
     ]);
+    // The clone it started in is as it was.
     expect(git(local, 'for-each-ref')).toBe(refsBefore);
     expect(existsSync(join(local, '.git/FETCH_HEAD'))).toBe(false);
 
@@ -347,5 +435,43 @@ describe('its git commands, run as written', () => {
     expect(run(command('git init'), values, work).status).toBe(0);
     expect(run(command('refs/pull/<n>/head:refs/writer/head'), values, work).status).toBe(0);
     expect(run(command("rev-parse 'refs/writer/head'"), values, work).stdout.trim()).toBe(head);
+  });
+
+  test('tell a shallow or partial clone, which it makes no clone from', () => {
+    const shallow = join(root.dir, 'shallow');
+    git(root.dir, 'clone', '-q', '--depth', '1', `file://${remote}`, shallow);
+    expect(run(command('--is-shallow-repository'), {}, shallow).stdout.trim()).toBe('true');
+
+    const partial = join(root.dir, 'partial');
+    git(root.dir, 'clone', '-q', '--filter=blob:none', `file://${remote}`, partial);
+    const promisor = run(command('promisor'), {}, partial);
+    expect(promisor.status).toBe(0);
+    expect(promisor.stdout).not.toBe('');
+  });
+
+  test('stop when the clone it started in has no email address for its commits', () => {
+    const work = mkdtempSync(join(root.dir, 'work-'));
+    const values = { work };
+    const env = asThePerson();
+    expect(run(command('git init'), values, work, env).status).toBe(0);
+    expect(run(command('--get user.email'), values, work, env)).toMatchObject({ stdout: '' });
+    expect(run(command('user.useConfigOnly'), values, work, env).status).toBe(0);
+    expect(run(command('var GIT_AUTHOR_IDENT'), values, work, env).status).not.toBe(0);
+  });
+
+  test('delete the handoff file, and its folder only when nothing else is in it', () => {
+    const alone = mkdtempSync(join(root.dir, 'handoff-'));
+    writeFileSync(join(alone, 'handoff.md'), 'Brief\n');
+    for (const line of [command("rm -f '<handoff-folder>/handoff.md'"), command('rmdir')]) {
+      expect(run(line, { 'handoff-folder': alone }, root.dir).status).toBe(0);
+    }
+    expect(existsSync(alone)).toBe(false);
+
+    const shared = mkdtempSync(join(root.dir, 'handoff-'));
+    writeFileSync(join(shared, 'handoff.md'), 'Brief\n');
+    writeFileSync(join(shared, 'notes.md'), 'Not the skill’s\n');
+    run(command("rm -f '<handoff-folder>/handoff.md'"), { 'handoff-folder': shared }, root.dir);
+    expect(run(command('rmdir'), { 'handoff-folder': shared }, root.dir).status).not.toBe(0);
+    expect(readFileSync(join(shared, 'notes.md'), 'utf8')).toBe('Not the skill’s\n');
   });
 });
