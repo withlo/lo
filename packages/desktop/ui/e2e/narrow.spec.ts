@@ -1,6 +1,7 @@
 // What narrows in Chromium itself, where it's laid out: jsdom lays nothing out. An out-of-date
 // overview's callout and a code block's flag are one column only where the button doesn't fit beside
-// the text, and a path wraps only after a slash.
+// the text, a path wraps only after a slash, and a new thread's comment on its way has the head row
+// its card will.
 
 import type { ElectronApplication, Page } from '@playwright/test';
 
@@ -163,4 +164,29 @@ test('a path wraps only after a slash, and inside a name only where the name is 
   const long = await lines('#long');
   expect(long.names.map((name) => name.lines)).toEqual([1, expect.any(Number), 1]);
   expect(long.names[1]!.lines).toBeGreaterThan(1);
+});
+
+test('a new thread’s comment on its way has the head row its card will, as tall at every width, so nothing moves as the card lands', async () => {
+  const page = await open();
+  const widths = Array.from({ length: 31 }, (_, step) => 280 + step * 8);
+  const seen = await page.evaluate(async (each) => {
+    const rows = ['#sent', '#landed'].map((frame) => document.querySelector<HTMLElement>(frame)!);
+    const found: { width: number; sent: DOMRect; landed: DOMRect }[] = [];
+    for (const width of each) {
+      for (const frame of rows) frame.style.width = `${width}px`;
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      // Each one's head row, the one row drawn with a border under it.
+      const [sent, landed] = rows.map((frame) =>
+        frame.querySelector('.border-b')!.getBoundingClientRect().toJSON(),
+      );
+      found.push({ width, sent, landed });
+    }
+    return found;
+  }, widths);
+  for (const { width, sent, landed } of seen) {
+    expect(sent.height, `${width} px`).toBe(landed.height);
+    expect(sent.width, `${width} px`).toBe(landed.width);
+  }
+  // Narrow, its words wrap, as the card's do.
+  expect(seen[0]!.sent.height).toBeGreaterThan(seen.at(-1)!.sent.height);
 });

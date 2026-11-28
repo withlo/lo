@@ -54,6 +54,13 @@ function buttons(host: HTMLElement, label: string): HTMLButtonElement[] {
 // A thread's head row, the one row drawn with a border under it.
 const headRow = (host: HTMLElement) => host.querySelector('.border-b');
 
+/** What each button in `row` is named. */
+function names(row: Element | null | undefined): string[] {
+  return [...(row?.querySelectorAll('button') ?? [])].map(
+    (each) => each.getAttribute('aria-label') ?? each.textContent,
+  );
+}
+
 describe('Thread', () => {
   it('shows an unresolved thread open: its state, its comments and the slots for their text', () => {
     const host = render(<Thread {...PROPS} />);
@@ -170,6 +177,25 @@ describe('Thread', () => {
     expect(headRow(sent)?.textContent).toBe('Pending1 comment');
     expect(headRow(thread)?.textContent).toContain('Pending1 comment');
     expect(sent.querySelector('[data-sent]')?.previousElementSibling).toBe(headRow(sent));
+  });
+
+  it('keeps the room of the buttons a sent new thread’s card will have in its head row, out of reach', () => {
+    const body = <p>On its way</p>;
+    // Its words wrap where the card's will, in the room its buttons leave them.
+    for (const [state, pending] of [
+      ['Unresolved', false],
+      ['Pending', true],
+    ] as const) {
+      const sent = render(<SentPost state={state} author="tess-okafor" body={body} />);
+      const thread = render(
+        <Thread {...PROPS} comments={[{ ...MINE, pending, body }]} canResolve menu />,
+      );
+      const room = headRow(sent)?.lastElementChild;
+      expect(names(room)).toEqual(names(headRow(thread)?.lastElementChild));
+      expect(room?.hasAttribute('inert')).toBe(true);
+      expect(room?.getAttribute('aria-hidden')).toBe('true');
+      expect(room?.classList.contains('invisible')).toBe(true);
+    }
   });
 
   it('says the lines a sent new thread is on in its head row, as its card will', () => {

@@ -91,12 +91,27 @@ function Reading(): ReactNode {
 
 /**
  * Why view `view`'s threads couldn't be read, with a way to read them again. Asked, it waits as
- * the first read does until main says the new read is on, which draws the panel anew; a read again
- * that couldn't be asked for says so here again, with why behind Details.
+ * the first read does until main says the new read is on, which draws the panel anew, and says it
+ * waits (`onAsking`), so the panel holds its wait as it holds the first; a read again that
+ * couldn't be asked for says so here again, with why behind Details.
  */
-export function Failed({ view, reason }: { view: string; reason: string | undefined }): ReactNode {
+export function Failed({
+  view,
+  reason,
+  onAsking,
+}: {
+  view: string;
+  reason: string | undefined;
+  onAsking?: ((asking: boolean) => void) | undefined;
+}): ReactNode {
   const [again, setAgain] = useState<'asking' | { details: string } | undefined>(undefined);
-  if (again === 'asking') return <Reading />;
+  const asking = again === 'asking';
+  // Before it's painted, so the wait is never drawn as the panel draws a list.
+  useLayoutEffect(() => {
+    onAsking?.(asking);
+    return () => onAsking?.(false);
+  }, [asking, onAsking]);
+  if (asking) return <Reading />;
   // Inset as the list's rows are, since the list has no inset of its own while it lists nothing.
   return (
     <div className="px-12 py-8">
@@ -128,21 +143,28 @@ export function Failed({ view, reason }: { view: string; reason: string | undefi
  * state with its line and button, or why the read failed, with a way to read again. The empty
  * state takes the wait's place in one Swap.
  */
-function Empty({ view, empty }: { view: string; empty: PanelEmpty }): ReactNode {
+function Empty({ view, empty, onAsking }: EmptyProps): ReactNode {
   return (
     <Swap id={empty.kind === 'none' ? empty.title : empty.kind} className="flex flex-1 flex-col">
-      <EmptyBody view={view} empty={empty} />
+      <EmptyBody view={view} empty={empty} onAsking={onAsking} />
     </Swap>
   );
 }
 
+interface EmptyProps {
+  readonly view: string;
+  readonly empty: PanelEmpty;
+  /** Hears whether a read again is asked for and waited on, as the first read is (`Failed`). */
+  readonly onAsking: (asking: boolean) => void;
+}
+
 /** What's in {@link Empty}'s box. */
-function EmptyBody({ view, empty }: { view: string; empty: PanelEmpty }): ReactNode {
+function EmptyBody({ view, empty, onAsking }: EmptyProps): ReactNode {
   switch (empty.kind) {
     case 'reading':
       return <Reading />;
     case 'failed':
-      return <Failed view={view} reason={empty.reason} />;
+      return <Failed view={view} reason={empty.reason} onAsking={onAsking} />;
     case 'none':
       // The panel's body, whole, with the state in the middle of it.
       return (
@@ -214,8 +236,10 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
     [view],
   );
 
-  // Its rows, coming after the wait for the first read, take the skeleton's place in one Swap.
-  const reading = empty.kind === 'reading';
+  // Its rows, coming after the wait for the first read, or for a read again, take the skeleton's
+  // place in one Swap.
+  const [asking, setAsking] = useState(false);
+  const reading = empty.kind === 'reading' || (empty.kind === 'failed' && asking);
   const waited = useRef(reading);
   useLayoutEffect(() => {
     if (reading) {
@@ -259,8 +283,8 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
       <div className="flex flex-none items-center gap-6 ps-12 pe-8 pb-8">
         <ThreadFilter value={filter} counts={counts} onChange={setFilter} keys={filters} />
       </div>
-      {/* Busy while it waits on the first read, so a screen reader waits for the list, and its
-          skeleton is cut off at the panel's foot: a wait never scrolls. */}
+      {/* Busy while it waits on the first read or a read again, so a screen reader waits for the
+          list, and its skeleton is cut off at the panel's foot: a wait never scrolls. */}
       <div
         className={`min-h-0 flex-1 ${reading ? 'overflow-hidden' : 'overflow-auto'}`}
         aria-busy={reading || undefined}
@@ -270,7 +294,7 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
           current={current}
           focused={on}
           onShow={(key) => showThread(tab, key)}
-          empty={<Empty view={view} empty={empty} />}
+          empty={<Empty view={view} empty={empty} onAsking={setAsking} />}
           listRef={listRef}
           className="outline-none"
           data-lo-scope="threads"

@@ -3,7 +3,9 @@
 // a 368 or 408 px diff beside a panel is, and side by side from two 240 px sides. Narrow, a header
 // gives up its note, then its folder, which it cuts first, and only then cuts its name, each step
 // whole, nothing under `min-w-cut` and nothing drawn over anything else, and its end group is drawn
-// whole, 8 px short of the band's end: inline and side by side, in the flow and pinned.
+// whole, 8 px short of the band's end: inline and side by side, in the flow and pinned. And from
+// 184 px, each step is given up only where it's needed, and a pinned copy gives up what its header
+// does, so nothing comes or goes as it pins.
 
 import { readFileSync } from 'node:fs';
 
@@ -72,6 +74,9 @@ function inOrder(drawn: readonly Drawn[], parts: readonly string[], width: numbe
       expect(head.name.whole && (head.folder?.whole ?? true), where).toBe(true);
     }
     expect(head.name.whole || head.name.width >= CUT, where).toBe(true);
+    // And it gave up nothing it had room for: a folder is cut to `min-w-cut` before it goes, and
+    // what's given up but still heard takes no room.
+    expect(head.needed, where).toBe(true);
   }
 }
 
@@ -103,6 +108,43 @@ test('side by side, from 480 to 600 px, each half of a header gives up on its ow
   await across(page, [...widths(480, 600), 1200], ['start', 'end', 'pinned']);
   const usage = (await read(page)).filter((each) => each.path === 'docs/usage.md');
   expect(usage.map((each) => each.gaveUp)).toEqual(usage.map(() => ''));
+});
+
+test('inline, from 184 to 512 px, each header gives up a step only where it doesn’t fit without it, its folder cut to `min-w-cut` before it goes, in the flow and pinned', async () => {
+  const page = await open('inline', 184);
+  await page.evaluate(() => window.heads.pin());
+  const found = await page.evaluate((each) => window.heads.across(each), widths(184, 512));
+  for (const { width, drawn } of found) {
+    expect(new Set(drawn.map((each) => each.part))).toEqual(new Set(['both', 'pinned']));
+    for (const head of drawn) {
+      const where = `${width} px: ${head.part} header of ${head.path} (${head.gaveUp || 'whole'})`;
+      expect(head.needed, where).toBe(true);
+      if (head.folder) {
+        expect(head.name.whole, where).toBe(true);
+        expect(head.folder.whole || head.folder.width >= CUT, where).toBe(true);
+      }
+    }
+  }
+});
+
+test('side by side, a header’s pinned copy gives up what it does in the flow, so nothing in it moves as it pins', async () => {
+  const page = await open('split', 480);
+  for (const path of [
+    'packages/desktop/ui/src/code/widgets/pin.ts',
+    'packages/desktop/ui/src/code/a-name-long-enough-to-cut.ts',
+  ]) {
+    await page.evaluate((each) => window.heads.pinAt(each), path);
+    const found = await page.evaluate((each) => window.heads.across(each), widths(480, 720));
+    for (const { width, drawn } of found) {
+      const where = `${width} px: ${path}`;
+      const flow = drawn.find((each) => each.path === path && each.part === 'start');
+      const pinned = drawn.find((each) => each.path === path && each.part === 'pinned');
+      expect(flow, where).toBeDefined();
+      expect(pinned?.steps.start, where).toBe(flow?.steps.start);
+      expect(pinned?.folder?.text, where).toBe(flow?.folder?.text);
+    }
+    await page.evaluate(() => window.heads.size(480));
+  }
 });
 
 test('a path given up to its name shows whole in its tooltip', async () => {

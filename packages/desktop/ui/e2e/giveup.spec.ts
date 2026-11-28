@@ -192,3 +192,42 @@ test('the header’s first row says what it gave up in the merge status’s tool
   // And back, as the room grows.
   expect(await at(page, 1440, TOP)).toEqual(['']);
 });
+
+test('narrowed from 640 to 160 px, a diff’s note gives up its control, then its facts after the first one at a time, each only once it doesn’t fit, as what’s given up but still heard takes no room', async () => {
+  const page = await open();
+  const widths = Array.from({ length: 61 }, (_, step) => 640 - step * 8);
+  const seen = await page.evaluate(async (each) => {
+    const frame = document.getElementById('note')!;
+    const row = frame.querySelector<HTMLElement>('.give-up')!;
+    const group = row.querySelector<HTMLElement>('[data-fit]')!;
+    const fits = () => row.scrollWidth <= row.clientWidth && group.scrollWidth <= group.clientWidth;
+    const found: { width: number; steps: string; needed: boolean; shown: number }[] = [];
+    for (const width of each) {
+      frame.style.width = `${width}px`;
+      for (let count = 0; count < 3; count += 1) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+      const steps = row.getAttribute('data-gave-up') ?? '';
+      // Drawn with one step fewer, the row or what it keeps whole runs past its end.
+      const fewer = steps.split(' ').filter(Boolean).slice(0, -1).join(' ');
+      if (fewer === '') row.removeAttribute('data-gave-up');
+      else row.setAttribute('data-gave-up', fewer);
+      const needed = steps === '' || !fits();
+      if (steps !== '') row.setAttribute('data-gave-up', steps);
+      const shown = [...group.children].filter((part) => part.getClientRects()[0]!.width > 1);
+      found.push({ width, steps, needed, shown: shown.length });
+    }
+    return found;
+  }, widths);
+  let before = 0;
+  for (const { width, steps, needed, shown } of seen) {
+    expect(needed, `${width} px: ${steps}`).toBe(true);
+    // A fact at a time, and none back as the row narrows.
+    const facts = steps.split(' ').filter((step) => step.startsWith('drop')).length;
+    expect(shown, `${width} px: ${steps}`).toBe(4 - facts);
+    expect(facts, `${width} px`).toBeGreaterThanOrEqual(before);
+    before = facts;
+  }
+  // Each fact went, down to what it compares.
+  expect(before).toBe(3);
+});

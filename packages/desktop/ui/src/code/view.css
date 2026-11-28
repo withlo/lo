@@ -107,7 +107,9 @@
 /*
  * Side by side, the pinned copy is two columns as wide as the sides, as the header it copies is:
  * its start in the old side's, from where its code starts (`--lo-pin-start`), and its end in the
- * new side's, short of where that side's code starts (`--lo-pin-end`).
+ * new side's, short of where that side's code starts (`--lo-pin-end`). The room after the start is
+ * a margin, as the header's own is outside its start: a path run into a padding isn't past its
+ * box's end, so it would give up less than the header it copies, and change as it pins.
  */
 .lo-diffview > .lo-diffpin.is-split > .lo-diffhead {
   display: grid;
@@ -116,7 +118,8 @@
 }
 .lo-diffpin.is-split > .lo-diffhead > .lo-diffhead__start {
   grid-column: 1;
-  padding-inline: calc(var(--lo-pin-start, 0px) + 8px) 8px;
+  padding-inline-start: calc(var(--lo-pin-start, 0px) + 8px);
+  margin-inline-end: 8px;
 }
 .lo-diffpin.is-split > .lo-diffhead > .lo-filehead__end {
   grid-column: 2;

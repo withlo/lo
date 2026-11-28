@@ -275,6 +275,20 @@ export function SentPost({
             {lines !== undefined && <span className="min-w-0 truncate">{lines}</span>}
             <span className="whitespace-nowrap">1 comment</span>
           </span>
+          {/* The room of the buttons its thread's card will have, so its words wrap where its
+              card's will: Resolve, unless it's in a review, then `⋯` and Collapse. */}
+          <span aria-hidden="true" inert className="invisible flex flex-none items-center gap-2">
+            {state === 'Unresolved' && (
+              // As wide as the card's, which keeps the room of what it says while at work.
+              <Button variant="ghost" size="sm" working="Unresolving…" align="end">
+                Resolve
+              </Button>
+            )}
+            <MoreButton />
+            <Button variant="ghost" size="sm" icon aria-label="Collapse thread">
+              <Chevron up />
+            </Button>
+          </span>
         </div>
       )}
       {post}

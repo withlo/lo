@@ -113,7 +113,10 @@ const ON_LINE: DraftPlaceRow = {
   lines: { start: null, end: { side: 'RIGHT', number: 5 } },
 };
 
-/** The head row of the card the comment of a box at `place` is drawn as while it's sent. */
+/**
+ * What the head row of the card the comment of a box at `place` is drawn as while it's sent says:
+ * its words, before the room its card's buttons will take.
+ */
 async function sentHead(place: DraftPlaceRow): Promise<string | undefined> {
   const box = new Box('v10', place, 'now', 'On its way');
   const parts = {
@@ -129,7 +132,7 @@ async function sentHead(place: DraftPlaceRow): Promise<string | undefined> {
   const frame = frameOf(box)(parts, {} as Composer);
   box.set({ busy: true });
   await vi.waitFor(() => expect(parts.sent.textContent).toContain('1 comment'));
-  const row = parts.sent.querySelector('.border-b')?.textContent;
+  const row = parts.sent.querySelector('.border-b')?.firstElementChild?.textContent;
   frame.destroy();
   return row;
 }
