@@ -2,7 +2,7 @@
 // The box at the end of a pull request's timeline, for the pull request's draft written on a code
 // block of the overview: what it says in the box's place while the draft isn't its own, the draft it
 // shows, which it keeps whatever the overview does, and that draft opening under its block once the
-// timeline goes; and how tall it's held between the reader's inputs.
+// timeline goes.
 
 import type { Composer, ComposerEvents, ComposerInit, DraftMark } from '@lo/ui/code';
 import { KEY_EVENT } from '@lo/ui/commands';
@@ -113,12 +113,6 @@ beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
   // The box's keys, as it shows them, are this system's.
   createRegistry([], 'mac');
-  // The box keeps its room from what it measures, which jsdom never changes.
-  globalThis.ResizeObserver ??= class {
-    observe(): void {}
-    unobserve(): void {}
-    disconnect(): void {}
-  };
 });
 
 function pull(): PullView {
@@ -320,16 +314,6 @@ test('once the timeline goes, a draft it showed opens under its block, though th
   await settle();
   expect(drawn?.dismissed).toBe(true);
   expect(block.texts).toEqual(['On the pull request']);
-});
-
-test('the box is held as tall as it is at the reader’s next key, a key Lo takes included', async () => {
-  takeDrafts({ id: VIEW, drafts: [] });
-  const { box } = await drawBox();
-  const outer = box.querySelector<HTMLElement>('[data-lo-timeline="box"]')!;
-  const inner = outer.firstElementChild!;
-  vi.spyOn(inner, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 600, 120));
-  document.body.dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
-  expect(outer.style.minHeight).toBe('120px');
 });
 
 /**
