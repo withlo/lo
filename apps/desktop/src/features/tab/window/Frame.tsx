@@ -12,6 +12,7 @@ import { Slot } from '../../../window/slots.tsx';
 import { main } from './main.ts';
 import { moreStore, setFolded, setMoreOpen } from './more.ts';
 import { dropTab, movedStore } from './order.ts';
+import { refreshingStore } from './refresh.ts';
 import { cover, kinds, stripEnd, useActiveTab, useTabs } from './shared.ts';
 import { pullsStore } from './store.ts';
 import { stripTab } from './strip.ts';
@@ -34,6 +35,7 @@ function tabAt(target: EventTarget): string | undefined {
 export function TabStrip() {
   const { tabs, active } = useTabs();
   const views = useStore(pullsStore, (state) => state.views);
+  const refreshing = useStore(refreshingStore, (state) => state.ids);
   const moreOpen = useStore(moreStore, (state) => state.open);
   const said = useStore(movedStore, (state) => state.said);
   const menu = useMenuTarget((event) => {
@@ -43,7 +45,7 @@ export function TabStrip() {
   return (
     <div className="contents" {...menu}>
       <TabBar
-        tabs={tabs.map((tab) => stripTab(tab, views))}
+        tabs={tabs.map((tab) => stripTab(tab, views, refreshing.has(tab.id)))}
         selected={active}
         moreOpen={moreOpen}
         onMoreOpenChange={setMoreOpen}

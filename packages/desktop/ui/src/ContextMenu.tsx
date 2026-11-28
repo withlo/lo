@@ -51,6 +51,11 @@ export interface ContextMenuProps {
    */
   finalFocus?: HTMLElement | SVGElement | undefined;
   /**
+   * The control it opened from, as a `⋯` opens its surface's menu (`menuOpener`): it says it's
+   * expanded while the menu is open, which keeps a `shy` one showing once the pointer has left it.
+   */
+  opener?: Element | undefined;
+  /**
    * Highlights the first action as the menu opens, as a menu opened from the keyboard does, so
    * `⏎` acts at once. A pointer opens it with nothing highlighted.
    */
@@ -92,6 +97,7 @@ export function ContextMenu({
   anchor,
   sections,
   finalFocus,
+  opener,
   highlightFirst = false,
   onClosed,
   container,
@@ -117,6 +123,12 @@ export function ContextMenu({
   useLayoutEffect(() => {
     if (shown) chosen.current = undefined;
   }, [shown]);
+  // The control it opened from says so while it's open, and no longer once it starts to leave.
+  useLayoutEffect(() => {
+    if (!shown || !opener) return undefined;
+    opener.setAttribute('aria-expanded', 'true');
+    return () => opener.removeAttribute('aria-expanded');
+  }, [shown, opener]);
   useOnClose(shown, () => {
     // Focus goes back to the element itself. Base UI would give it to the element's first
     // tabbable child when the element is focusable only from a script, such as a block of

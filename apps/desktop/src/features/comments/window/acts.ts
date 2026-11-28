@@ -732,15 +732,16 @@ export async function resolveThread(tab: PullTab, row: ThreadRow): Promise<void>
 }
 
 /**
- * Your comment in `row` that `change` acts on: `comment` when a card's button named it, or your
- * newest. Says why there's none.
+ * Your comment in `row` that `change` acts on: `comment` where its menu or the ring names it, or
+ * your newest. Why there's none otherwise, in the words that refuse it; nothing while the view
+ * acts as nobody.
  */
-function yours(
+function chosenIn(
   view: string,
   row: ThreadRow,
   change: 'edit' | 'delete',
   comment?: string,
-): ThreadComment | undefined {
+): ThreadComment | string | undefined {
   const login = loginOf(view);
   if (login === undefined) return undefined;
   const thread = threadOf(row);
@@ -749,27 +750,51 @@ function yours(
     chosen = newestYours(thread, login, change);
   } else {
     const named = thread.comments.find((each) => each.id === comment);
-    if (!named) {
-      refuse('That comment was deleted elsewhere');
-      return undefined;
-    }
+    if (!named) return actText({ kind: 'gone' }, change, login);
     chosen = changeRefusal(named, login, change) ?? named;
   }
   if (!('refusal' in chosen)) return chosen;
   switch (chosen.refusal) {
     case 'noneOfYours':
-      refuse('None of these comments are yours');
-      return undefined;
+      return 'None of these comments are yours';
     case 'theirs':
-      refused(view, { kind: 'theirs', author: chosen.author ?? null }, change);
-      return undefined;
+      return actText({ kind: 'theirs', author: chosen.author ?? null }, change, login);
     case 'notAllowed':
-      refused(view, { kind: 'notAllowed', reasons: [] }, change);
-      return undefined;
+      return actText({ kind: 'notAllowed', reasons: [] }, change, login);
     default:
       chosen satisfies never;
-      return undefined;
+      return actText({ kind: 'notAllowed', reasons: [] }, change, login);
   }
+}
+
+/** Your comment in `row` that `change` acts on, as `chosenIn` finds it, saying why there's none. */
+function yours(
+  view: string,
+  row: ThreadRow,
+  change: 'edit' | 'delete',
+  comment?: string,
+): ThreadComment | undefined {
+  const chosen = chosenIn(view, row, change, comment);
+  if (typeof chosen !== 'string') return chosen;
+  refuse(chosen);
+  return undefined;
+}
+
+/**
+ * Why `change` can't be made to the comment `target` names, as a right-click on it or its `⋯` does,
+ * for its menu to dim Edit or Delete with: it isn't yours, GitHub doesn't let you, or it's gone.
+ * Nothing where it can, or where `target` names no comment, whose key acts on your newest.
+ */
+export function whyNotOn(
+  view: string,
+  target: ThreadKeyTarget,
+  change: 'edit' | 'delete',
+): string | undefined {
+  if (target.kind !== 'thread' || target.comment === undefined) return undefined;
+  const row = threadFor(view, target);
+  if (typeof row === 'string') return row;
+  const chosen = chosenIn(view, row, change, target.comment);
+  return typeof chosen === 'string' ? chosen : undefined;
 }
 
 /**

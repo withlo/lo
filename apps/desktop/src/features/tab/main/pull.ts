@@ -10,11 +10,16 @@ import {
   causeOf,
   decideAccount,
   GithubError,
+  PENDING_REVIEW,
+  PULL_REQUEST_SIDEBAR,
+  PUSH_HISTORY,
+  REVIEW_THREADS,
   refusalCause,
   saidBy,
   sameLogin,
   PullRef,
   RepoRef,
+  TIMELINE,
   type Poller,
   type PollEvent,
   type PullRequest,
@@ -32,6 +37,7 @@ import type {
   Acting,
   Connection,
   Files,
+  FrontView,
   Header,
   Local,
   LocalState,
@@ -123,6 +129,25 @@ export interface Snapshot {
   files: Files | undefined;
   local: Local;
 }
+
+/** What a refresh of a pull request's tab reads first, and whether it reads its stack's list. */
+export interface PullRefresh {
+  /** The middle views on screen, left to right, whose reads go first. */
+  readonly front?: readonly FrontView[] | undefined;
+  /** Whether its stack's tree is drawn, from its repository's open pull requests. */
+  readonly list?: boolean | undefined;
+}
+
+/**
+ * The reads each middle view draws, as a refresh reads them first while it's on screen: the
+ * timeline its events, what goes beside its description and its pushes; the diff its review
+ * threads and the pending review's. The overview reads nothing of the poller's.
+ */
+const FRONT_READS: Readonly<Record<FrontView, readonly string[]>> = {
+  timeline: [TIMELINE.name, PULL_REQUEST_SIDEBAR.name, PUSH_HISTORY.name],
+  diff: [REVIEW_THREADS.name, PENDING_REVIEW.name],
+  overview: [],
+};
 
 export class PullTab {
   readonly id: string;
@@ -279,6 +304,35 @@ export class PullTab {
         .then(() => this.#setOpen(poller))
         .catch((error: unknown) => this.#options.log(describe(error)));
     }
+  }
+
+  /**
+   * Reads the pull request again now, as the reader asks: its details and checks and every read
+   * its views keep, at once, those of the middle views on screen first, and with `list`, the open
+   * pull requests its stack's tree is drawn from; then puts GitHub's newest head on screen, as the
+   * newer push's banner does. What failed is tried again, as Try again does, and a tab still
+   * opening goes on opening. Settles once that's all in, or can't be read now.
+   */
+  async refresh({ front = [], list = false }: PullRefresh = {}): Promise<void> {
+    if (this.#closed) return;
+    if (this.#problem !== undefined || this.#acting === undefined) {
+      this.retry();
+      await this.#opening;
+      return;
+    }
+    // Opening reads it at once.
+    if (this.#opening) {
+      await this.#opening;
+      return;
+    }
+    const poller = this.#poller;
+    if (this.#acting.kind === 'anonymous' || !poller) {
+      await this.#read();
+    } else {
+      if (this.#active && !poller.open?.equals(this.pull)) await this.#setOpen(poller);
+      await poller.refresh(this.pull, { first: front.flatMap((view) => FRONT_READS[view]), list });
+    }
+    this.reload();
   }
 
   /** Puts GitHub's newest head on screen, and the local copy at it. */

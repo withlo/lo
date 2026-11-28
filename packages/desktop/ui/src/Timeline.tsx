@@ -13,9 +13,9 @@ import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
 import { Glyphs, Icon } from './Icon.tsx';
 import type { IconName } from './icons.ts';
-import { Key } from './Key.tsx';
 import { Label } from './Label.tsx';
 import { LinkButton } from './LinkButton.tsx';
+import { MoreButton } from './MoreButton.tsx';
 import { Skeleton, Spinner } from './Spinner.tsx';
 import { STATE_ICONS } from './StatePill.tsx';
 import { Tag } from './Tag.tsx';
@@ -441,6 +441,21 @@ const cardHead = cva(
   },
 );
 
+/**
+ * A post's card that a right-click opens a menu on, where whoever draws the timeline gives its rows
+ * one: the `⋯` at the end of its head opens the same menu, of what its buttons and keys do, among
+ * them Edit and Delete on a comment of yours. It shows on the row under the pointer, the one the
+ * keyboard is on and the one with focus in it, and keeps its room meanwhile, so the head never moves.
+ */
+interface PostMenu {
+  menu?: boolean | undefined;
+}
+
+/** What makes a row the scope its card's `⋯` shows in (`shy`). */
+function shyScope(shown: boolean): { 'data-shy-scope'?: '' } {
+  return shown ? { 'data-shy-scope': '' } : {};
+}
+
 /** What a card shows in place of a hidden comment's text. Its images load only once it's shown. */
 export interface TimelineHidden {
   /** Why GitHub hid it, in a word: `outdated`, `resolved`, `spam`. */
@@ -469,41 +484,37 @@ function Text({ children }: { children: ReactNode }) {
   return <div className="lo-selectable px-12 py-12 text-fg read-comment">{children}</div>;
 }
 
-export interface TimelineCommentProps extends TimelineRowAttributes {
+export interface TimelineCommentProps extends TimelineRowAttributes, PostMenu {
   author: string;
   image?: string | undefined;
   when: string;
-  /** It's yours: it says so, and offers Edit and Delete where it has them. No one else's does. */
+  /** It's yours: it says so. Edit and Delete are in its menu, as no one else's are. */
   mine?: boolean | undefined;
   /** Written by the pull request's author. */
   byAuthor?: boolean | undefined;
   /** The comment's text, already drawn. It isn't drawn while the comment is hidden. */
   body: ReactNode;
   /**
-   * An edit box, in place of the text, while the comment is being edited. Edit and Delete step
-   * aside while it shows, and the row isn't one of the timeline's options, whose content is read
-   * as their name alone.
+   * An edit box, in place of the text, while the comment is being edited. Its `⋯` steps aside while
+   * it shows, and the row isn't one of the timeline's options, whose content is read as their name
+   * alone.
    */
   editing?: ReactNode;
-  /** The keys of Edit and Delete, as this system shows each (`['i']`, `['d', 'd']`). */
-  keys?:
-    { edit?: readonly string[] | undefined; delete?: readonly string[] | undefined } | undefined;
-  onEdit?: (() => void) | undefined;
-  onDelete?: (() => void) | undefined;
   hidden?: TimelineHidden | undefined;
   focused?: boolean | undefined;
   /**
    * What's being done with it, in its time's place, while GitHub hasn't answered: "Sending…" for
-   * one just sent from the box at the timeline's end, "Saving…" for an edit. Its Edit and Delete
-   * wait meanwhile.
+   * one just sent from the box at the timeline's end, "Saving…" for an edit. Its `⋯` waits
+   * meanwhile.
    */
   sending?: string | undefined;
 }
 
 /**
  * A comment on the pull request, as a card beside its author's avatar. One of yours says so, and
- * has Edit and Delete with their keys, which another person's never has. One being sent or saved
- * says so where its time goes, drawn as it will be once GitHub has it, so nothing moves as it does.
+ * its menu, from its `⋯` or a right-click, has Edit and Delete with their keys, which another
+ * person's never has. One being sent or saved says so where its time goes, drawn as it will be
+ * once GitHub has it, so nothing moves as it does.
  */
 export function TimelineComment({
   author,
@@ -513,26 +524,24 @@ export function TimelineComment({
   byAuthor,
   body,
   editing,
-  keys = {},
-  onEdit,
-  onDelete,
   hidden,
   focused,
+  menu = false,
   sending,
   ...row
 }: TimelineCommentProps) {
-  const acts =
-    mine === true &&
-    onEdit !== undefined &&
-    onDelete !== undefined &&
-    hidden === undefined &&
-    editing === undefined &&
-    sending === undefined;
+  const more = menu && editing === undefined && sending === undefined;
   // An option's content is read as its name alone, so while an edit box shows, the row isn't one:
   // the box is read as the text box it is.
   const role = editing === undefined ? {} : { role: 'none', 'aria-selected': undefined };
   return (
-    <TimelineRow marker={{ login: author, image }} focused={focused} {...row} {...role}>
+    <TimelineRow
+      marker={{ login: author, image }}
+      focused={focused}
+      {...row}
+      {...role}
+      {...shyScope(more)}
+    >
       <div className={card}>
         <div className={cardHead({ edge: 'below' })}>
           <span>
@@ -541,18 +550,6 @@ export function TimelineComment({
           </span>
           {byAuthor && <Tag>Author</Tag>}
           <span className="ms-auto flex flex-wrap items-center justify-end gap-x-8">
-            {acts && (
-              <span className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={onEdit}>
-                  Edit
-                  {keys.edit && <Key keys={keys.edit} decorative />}
-                </Button>
-                <Button variant="ghost" size="sm" onClick={onDelete}>
-                  Delete…
-                  {keys.delete && <Key keys={keys.delete} decorative />}
-                </Button>
-              </span>
-            )}
             {sending === undefined ? (
               <time>{when}</time>
             ) : (
@@ -561,6 +558,7 @@ export function TimelineComment({
                 {sending}
               </span>
             )}
+            {more && <MoreButton shy />}
           </span>
         </div>
         {hidden !== undefined ? (
@@ -585,7 +583,7 @@ const VERDICTS: Readonly<Record<TimelineVerdict, { words: string; marker: Timeli
   dismissed: { words: 'left a review', marker: { glyph: 'comment' } },
 };
 
-export interface TimelineReviewProps extends TimelineRowAttributes {
+export interface TimelineReviewProps extends TimelineRowAttributes, PostMenu {
   author: string;
   image?: string | undefined;
   when: string;
@@ -617,11 +615,12 @@ export function TimelineReview({
   comments,
   onShowInDiff,
   focused,
+  menu = false,
   ...row
 }: TimelineReviewProps) {
   const { words, marker } = VERDICTS[verdict];
   return (
-    <TimelineRow marker={marker} focused={focused} {...row}>
+    <TimelineRow marker={marker} focused={focused} {...row} {...shyScope(menu)}>
       <div className={card}>
         <div
           className={cardHead({
@@ -634,7 +633,10 @@ export function TimelineReview({
             {revision !== undefined && ` · ${revision}`}
           </span>
           {verdict === 'dismissed' && <Tag>Dismissed</Tag>}
-          <time className="ms-auto">{when}</time>
+          <span className="ms-auto flex items-center gap-x-8">
+            <time>{when}</time>
+            {menu && <MoreButton shy />}
+          </span>
         </div>
         {hidden !== undefined ? (
           <HiddenBody hidden={hidden} />
@@ -698,7 +700,7 @@ function Reviewer({ reviewer }: { reviewer: TimelineReviewer }) {
   );
 }
 
-export interface TimelineDescriptionProps extends TimelineRowAttributes {
+export interface TimelineDescriptionProps extends TimelineRowAttributes, PostMenu {
   author: string;
   image?: string | undefined;
   /** How long ago it was opened: "3 d ago". */
@@ -726,10 +728,11 @@ export function TimelineDescription({
   labels = [],
   reviewers = [],
   focused,
+  menu = false,
   ...row
 }: TimelineDescriptionProps) {
   return (
-    <TimelineRow marker={{ login: author, image }} focused={focused} {...row}>
+    <TimelineRow marker={{ login: author, image }} focused={focused} {...row} {...shyScope(menu)}>
       <div className={card}>
         <div className={cardHead({ edge: 'below' })}>
           <span>
@@ -737,6 +740,11 @@ export function TimelineDescription({
           </span>
           <Tag>Author</Tag>
           {draft && <Tag>Draft</Tag>}
+          {menu && (
+            <span className="ms-auto flex">
+              <MoreButton shy />
+            </span>
+          )}
         </div>
         <Text>{body ?? <p className="text-fg-muted">No description</p>}</Text>
         {(labels.length > 0 || reviewers.length > 0) && (
