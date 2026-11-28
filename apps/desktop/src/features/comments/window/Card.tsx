@@ -5,7 +5,7 @@
 // asked of it stands while GitHub's answer was lost. A comment's text
 // is drawn as GitHub renders it, through `Post`.
 
-import { lineRefText } from '@lo/review';
+import { lineRefText, onLines } from '@lo/review';
 import { ago, Button, Callout, Problem, ReplySlot, Thread, type ThreadComment } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
 import { useRef, type MouseEvent, type ReactNode } from 'react';
@@ -133,18 +133,14 @@ export function Card({
   const note = actNote(asked, row, isClosed);
   // In a popover, a note under the card stands inside its edges.
   const under = popover ? 'mx-12 mb-8 mt-8' : 'mt-8 max-w-read-measure';
+  // What it's on: a popover's head says it, and a card's where it's on more than one line.
+  const ref = refOf(row, (head) => revisionLabel(revisions, head));
   return (
     <>
       <ThreadCard
         row={row}
-        popover={
-          popover
-            ? {
-                lines: lineRefText(refOf(row, (head) => revisionLabel(revisions, head))),
-                onClose,
-              }
-            : undefined
-        }
+        lines={popover || onLines(ref) ? lineRefText(ref) : undefined}
+        popover={popover ? { onClose } : undefined}
         asked={asked}
         atWork={!kept}
         open={open}
@@ -296,6 +292,7 @@ export interface CardActions {
 /** A thread's card, from what main sent of it. */
 export function ThreadCard({
   row,
+  lines,
   asked,
   atWork = true,
   open,
@@ -315,11 +312,10 @@ export function ThreadCard({
   now = Date.now(),
 }: {
   row: ThreadRow;
-  /**
-   * Drawn in a popover over the code: what its head says it's on, "Lines 10–35", and its Close,
-   * the popover's, on its first thread.
-   */
-  popover?: { readonly lines: string; readonly onClose?: (() => void) | undefined } | undefined;
+  /** What its head says it's on: "Lines 10–35". */
+  lines?: string | undefined;
+  /** Drawn in a popover over the code, with its Close, the popover's, on its first thread. */
+  popover?: { readonly onClose?: (() => void) | undefined } | undefined;
   /**
    * The change asked of it that GitHub hasn't answered for: the card shows it done already, with
    * its control at work, and goes back to what `row` says if it doesn't go.
@@ -418,7 +414,7 @@ export function ThreadCard({
       // Every card is drawn in a code view, whose right-click on it opens the thread's menu.
       menu
       variant={popover ? 'popover' : 'card'}
-      lines={popover?.lines}
+      lines={lines}
       onClose={popover?.onClose}
       closeKeys={popover?.onClose && keysOf('comments.closeThread')}
       reply={replySlot}

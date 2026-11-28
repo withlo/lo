@@ -253,16 +253,21 @@ where the action's target is.
   goes whole: the PR header gives up its branches, with "wants to merge" and the arrow, and the
   merge status its detail, never cut to a letter. What it gives up that nothing else in the row
   says, as the merge status's detail or the note's facts, is still heard (`data-heard`), as a
-  given-up title is. What's cut only at a step of its own is marked `data-cuts`, and drawn whole
-  until the row gives up `cut`. The PR header's first row gives up "Submit review…"'s key chip, then
-  the merge status's detail, then cuts its title, then gives up the status's words, which leave its
-  ball with the verdict and the reasons as its tooltip, so nothing overlaps it. The diff bar is the
-  revisions note, then Compare revisions and the view's own controls, 16 px apart, one `HintRow`:
-  narrow, it drops the hint's chips, then the hint, then the note's facts after its first `·`, last
-  first, so "base → r2" never cuts and no two groups touch. A diff's file header gives up what
-  follows its name (the counts, where a rename was, the tags), then cuts its folders, then drops
-  them, leaving the name with the whole path as its tooltip, and only then cuts the name at its end;
-  its end, from the threads to the `⋯`, is never cut.
+  given-up title is. A row fits where nothing runs past its box's end, and a part marked `data-fit`
+  that cuts its own words (`truncate`) fits where they all show, to a fraction of a pixel; a group
+  marked `data-fit` is measured by its box alone, as what's heard and what a part cuts lay out past
+  it. Keep the room after such a group as a margin, not a padding: what a part in it draws past its
+  own box shows in the padding with the group not overflowing, so it keeps what it hasn't room for.
+  What's cut only at a step of its own is marked `data-cuts`, and drawn whole until the row gives up
+  `cut`. The PR header's first row gives up "Submit review…"'s key chip, then the merge status's
+  detail, then cuts its title, then gives up the status's words, which leave its ball with the
+  verdict and the reasons as its tooltip, so nothing overlaps it. The diff bar is the revisions
+  note, then Compare revisions and the view's own controls, 16 px apart, one `HintRow`: narrow, it
+  drops the hint's chips, then the hint, then the note's facts after its first `·`, last first, so
+  "base → r2" never cuts and no two groups touch. A diff's file header gives up what follows its
+  name (the counts, where a rename was, the tags), then cuts its folders, then drops them, leaving
+  the name with the whole path as its tooltip, and only then cuts the name at its end; its end, from
+  the threads to the `⋯`, is never cut.
 - **A choice of two to four is one `SegmentedControl`,** never buttons or pills drawn by hand: the
   header's view switch, the Files panel's Tree and Review order, the threads' filter, a comment
   box's Write and Preview, and Settings' choices are all one. Its thumb slides to the segment
@@ -424,12 +429,14 @@ changes in the same frame.
   does).
 - `Skeleton` is the `skeleton` utility on a block. Give each the size of what it stands for, and lay
   them out as the content will be, at its heights, with its rows' insets, markers and frames
-  (`TimelineSkeleton`, `ThreadListSkeleton`, `OverviewSkeleton`). Put them in `Skeletons`, which
-  names the wait to a screen reader and shows nothing for the wait's first 300 ms, then the
-  skeletons in one Swap; a switch to a view showing it holds what that view replaces, as for
-  `Loading`. In a tab's middle, give them to `MiddlePlaceholder` as its `skeleton`, which carries
-  the tab's wait: once GitHub hasn't answered for eight seconds, the mark takes the skeletons' place
-  to say so and offer Cancel, as `Loading` does.
+  (`TimelineSkeleton`, `ThreadListSkeleton`, `OverviewSkeleton`). Lay out enough to fill the view in
+  a window of the usual height, not a screenful's start, and have the view cut them off at its foot:
+  a wait never scrolls. Put them in `Skeletons`, which names the wait to a screen reader and shows
+  nothing for the wait's first 300 ms, then the skeletons in one Swap; a switch to a view showing it
+  holds what that view replaces, as for `Loading`. In a tab's middle, give them to
+  `MiddlePlaceholder` as its `skeleton`, which carries the tab's wait: once GitHub hasn't answered
+  for eight seconds, the mark takes the skeletons' place to say so and offer Cancel, as `Loading`
+  does.
 - A view that shows `Loading` or skeletons sets `aria-busy` on its own box until its content is in,
   so a screen reader waits for the content rather than reading the wait.
 - Pass `busy={false}` to a button that can be busy, not nothing, and its `working` too, so it holds
@@ -910,10 +917,14 @@ each picture it has drawn by its address: the empty disc, then the Swap, once.
   overview lane on a side that shows new lines, then the code. A lane is as wide empty as full.
 - **A range is a bracket with its mark at the foot.** A thread and an overview note draw the same
   way, from the same code (`ui/code/ranges.ts`): the mark on the range's last line, a stem up its
-  lane to a tick on its first, and its lines on `lo-selected` while it's lit, which is under the
-  pointer, open, or where a key landed. A thread's mark is the `message-square` bubble in the thread
-  lane, amber while unresolved or pending, grey once resolved or out of date. An overview note's is
-  the Powder ball in the overview lane. Only the mark, its colour and its lane tell them apart.
+  lane to a tick on its first, and its rows on `lo-selected` while it's lit, which is under the
+  pointer, open, or where a key landed: its lines, and on its side the folds and empty space between
+  them, so it reads as one block. A thread's mark is the `message-square` bubble in the thread lane,
+  amber while unresolved or pending, grey once resolved or out of date. An overview note's is the
+  Powder ball in the overview lane. Only the mark, its colour and its lane tell them apart. At rest
+  a stem and its tick are a hairline of the mark's colour (`lo-warning-line`, `lo-border`,
+  `lo-accent-line`), and lit, the colour at full strength (`lo-warning`, `lo-fg-muted`,
+  `lo-accent`); a stem is square where its rows meet, and round only at its ends.
 - **Ranges that overlap nest.** In a lane each range keeps a stem of its own, in the first free of
   three slots 4 px apart, the earliest start outermost, and a stem skips the row of another's mark.
   Ranges that end on one line share its mark and open together. One range is lit at a time, so no
@@ -953,7 +964,8 @@ each picture it has drawn by its address: the empty disc, then the Swap, once.
   overview markers, takes no room and moves nothing, and it's gone over a header, a thread or a box.
   It's an outline until it's pressed, when it fills: the accent is spent on the press, not the
   hover. On a line that takes no comment it's dimmed from the first frame. A drag from it comments
-  on the lines it crosses, which take the picked ground (`lo-code-line-selected`) as it goes.
+  on the lines it crosses, which take the picked ground (`lo-code-line-selected`) as it goes, with
+  the folds and empty space between them.
 - **What you open is in view when it opens.** A comment box, a thread or a peek that opens scrolls
   its pane the least that shows all of it, at once, with `reveal` (`block: 'nearest'`), and never
   with `scrollIntoView`. One taller than its pane shows from its top. A comment box does this itself
@@ -1013,16 +1025,19 @@ text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" di
 - **Sending.** A comment is its card from the moment it's sent, where that card will be: the box
   draws the text as it will read, formatted from its first frame, with "Sending…" where its time
   will be (`SentPost`; "Saving…" for an edit), as tall as the card and no taller. A new thread's has
-  the head row its thread will have, and a reply is the next comment of its thread's card, each over
-  the row that offers a reply. A comment on the pull request itself is the timeline's last row,
-  drawn as its card, while the box at the end stays as it is, empty; an edit there is the comment's
-  card, saying "Saving…". Each stays until the card from GitHub is drawn, and gives way to it in one
-  frame with nothing moving: the text never leaves the screen. A send that fails turns back into the
-  open box with the text as it was, under a note that says what wasn't sent and why, in the danger
-  tone. The box's own action sends it again: a note never offers a second button for what a button
-  under it does. A screen reader hears each step from the comments' one live region (`tell`): that
-  it's sending, that it was sent, or the note. A note takes focus back into its box only from a
-  reader still there, or with focus nowhere: one who left for the code keeps their place.
+  the head row its thread will have, keeping the room of the buttons that row will hold, so its
+  words wrap, or beside lines give up, where the thread's will; and a reply is the next comment of
+  its thread's card, each over the row that offers a reply. A comment on the pull request itself is
+  the timeline's last row, drawn as its card, while the box at the end stays as it is, empty, and on
+  screen where its foot was as it sent: the frame that draws the row brings it back whole (`reveal`,
+  `nearest`); an edit there is the comment's card, saying "Saving…". Each stays until the card from
+  GitHub is drawn, and gives way to it in one frame with nothing moving: the text never leaves the
+  screen. A send that fails turns back into the open box with the text as it was, under a note that
+  says what wasn't sent and why, in the danger tone. The box's own action sends it again: a note
+  never offers a second button for what a button under it does. A screen reader hears each step from
+  the comments' one live region (`tell`): that it's sending, that it was sent, or the note. A note
+  takes focus back into its box only from a reader still there, or with focus nowhere: one who left
+  for the code keeps their place.
 - **An edit's box is the comment.** From an edit opening to its card showing what was saved, the
   comment's text shows once, in the box: the thread's card draws without that comment and offers no
   reply meanwhile.

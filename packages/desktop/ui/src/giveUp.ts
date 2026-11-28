@@ -131,7 +131,34 @@ function boxChildren(holder: Element): Element[] {
 function fits(element: HTMLElement): boolean {
   if (element.scrollWidth > element.clientWidth) return false;
   for (const each of element.querySelectorAll<HTMLElement>('[data-fit]')) {
-    if (each.scrollWidth > each.clientWidth) return false;
+    if (cutShort(each)) return false;
   }
   return true;
+}
+
+/**
+ * Whether `element` is narrower than what it holds. One that cuts its own text short at its end
+ * (`text-overflow: ellipsis`, as a name does) is cut by as little as a fraction of a pixel, which
+ * its widths in whole pixels miss, so its text is measured as it's laid out. Anything else marked
+ * `data-fit`, such as a group of parts, is measured by its widths alone: what's in it may be
+ * drawn out of sight (`data-heard`) or cut by a part of its own, and still lay out text.
+ */
+function cutShort(element: HTMLElement): boolean {
+  if (element.scrollWidth > element.clientWidth) return true;
+  const style = getComputedStyle(element);
+  if (style.textOverflow !== 'ellipsis') return false;
+  const range = element.ownerDocument.createRange();
+  range.selectNodeContents(element);
+  // A test's page lays nothing out.
+  if (typeof range.getBoundingClientRect !== 'function') return false;
+  const { width } = element.getBoundingClientRect();
+  if (element.offsetWidth === 0) return false;
+  const edges =
+    Number.parseFloat(style.paddingLeft) +
+    Number.parseFloat(style.paddingRight) +
+    Number.parseFloat(style.borderLeftWidth) +
+    Number.parseFloat(style.borderRightWidth);
+  // Both are measured on screen, as a popover opening scales them: its edges are scaled the same.
+  const room = width - edges * (width / element.offsetWidth);
+  return range.getBoundingClientRect().width - room > 0.01;
 }

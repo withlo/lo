@@ -1,8 +1,9 @@
 // Draws the overview's notes in the elements a pull request's diff makes for them, each a React root
 // of its own, which the view keeps up to date and takes down: beside lines, the notes that end on a
 // line in the view's popover over the code, the first with the popover's Close; between lines, a
-// note's card under its last line, whose collapse closes it. A note's words are drawn as the
-// overview draws them, in the slot its `Note` leaves, once the note itself is drawn.
+// note's card under its last line, whose collapse closes it, saying its lines where it's on more
+// than one. A note's words are drawn as the overview draws them, in the slot its `Note` leaves,
+// once the note itself is drawn.
 
 import { Note, ThreadPopover } from '@lo/ui';
 import type { NotesView, NoteView, RenderNotes } from '@lo/ui/code';
@@ -50,7 +51,8 @@ function sameWords(a: NoteView, b: NoteView): boolean {
 /**
  * What draws the overview's notes in a pull request's diff: in the popover, the notes that end on
  * a line, each with its lines and section in its head, the first with Close; or as a card under
- * the line. Each has "Show in overview", which runs `diff.showInOverview` on it.
+ * the line, with its section, and its lines where it's on more than one. Each has "Show in
+ * overview", which runs `diff.showInOverview` on it.
  */
 export const renderNotes: RenderNotes = (host, given, how, close) => {
   const root = createRoot(host);
@@ -69,7 +71,11 @@ export const renderNotes: RenderNotes = (host, given, how, close) => {
           variant: how,
           label: `Overview note, ${noteLines(note.at.from, note.at.to, true)}`,
           section: note.label,
-          lines: popover ? noteLines(note.at.from, note.at.to) : undefined,
+          // A popover's head says its lines, and a card's where it's on more than one.
+          lines:
+            popover || note.at.from !== note.at.to
+              ? noteLines(note.at.from, note.at.to)
+              : undefined,
           focused,
           show: { command: 'diff.showInOverview', target },
           onClose: !popover || index === 0 ? close : undefined,

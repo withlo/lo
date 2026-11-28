@@ -1,13 +1,15 @@
 // The page the give-up spec drives: a pull request's header, whose second row gives up its branches,
 // and a merge status in a row that gives up its detail, in a frame the spec narrows and widens
-// without drawing either again; and a pull request's header whose first row holds the merge status
-// and "Submit review…", in a frame of its own.
+// without drawing either again; a pull request's header whose first row holds the merge status
+// and "Submit review…", in a frame of its own; and a note over a diff, as the comparison's is,
+// whose facts after the first go one at a time, still heard, in a third.
 
 import { useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { Button } from '../../src/Button.tsx';
 import { useGiveUp } from '../../src/giveUp.ts';
+import { HintRow } from '../../src/HintRow.tsx';
 import { Key } from '../../src/Key.tsx';
 import { MergeStatus } from '../../src/MergeStatus.tsx';
 import { PRHeader } from '../../src/PRHeader.tsx';
@@ -28,6 +30,54 @@ function StatusRow() {
         onClick={() => {}}
       />
     </div>
+  );
+}
+
+/**
+ * The note's facts, as a comparison over a rebase that conflicted says them: the last two longer
+ * than the first two together, so what's given up but still heard is wider than what's drawn.
+ */
+const FACTS = [
+  'base → r5',
+  'whole pull request',
+  '3 files conflicted in the rebase',
+  'includes the base branch’s changes',
+];
+const NOTE_STEPS = ['hint', 'drop1', 'drop2', 'drop3'];
+
+/**
+ * A note over a diff, as the comparison's is: what it compares whole, then each fact after it, the
+ * last first, whole or out of sight and still heard, then a control that goes before any of them.
+ */
+function NoteRow() {
+  const [first, ...rest] = FACTS;
+  return (
+    <HintRow
+      className="h-diffnote-h items-center gap-16 border-b border-border-subtle px-16 text-fg-muted text-small"
+      more={NOTE_STEPS}
+    >
+      <div role="note" className="flex min-w-0 flex-1 items-center">
+        <span data-fit className="flex min-w-0 overflow-hidden">
+          <span className="flex-none">{first}</span>
+          {rest.map((fact, index) => (
+            <span
+              data-gives={`drop${rest.length - index}`}
+              data-heard
+              key={fact}
+              className="flex-none whitespace-pre"
+            >
+              {` · ${fact}`}
+            </span>
+          ))}
+        </span>
+      </div>
+      <span data-gives="hint" className="flex flex-none">
+        <Button variant="ghost" size="sm">
+          Compare revisions
+          <Key keys={['⌘', 'R']} decorative />
+        </Button>
+      </span>
+    </HintRow>
   );
 }
 
@@ -76,6 +126,9 @@ function Scene() {
             </>
           }
         />
+      </div>
+      <div id="note" style={{ width: '1440px' }}>
+        <NoteRow />
       </div>
     </>
   );

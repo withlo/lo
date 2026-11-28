@@ -17,7 +17,10 @@ const textOf = (each: readonly string[]): string => `${each.join('\n')}\n`;
 
 const unviewed = 'unviewed' as const;
 
-/** The files, as the narrow views showed them cut: each with lines enough to scroll past. */
+/**
+ * The files, as the narrow views showed them cut: each with lines enough to scroll past, one with a
+ * folder far longer than its name.
+ */
 const FILES: DiffFile[] = [
   {
     id: 'usage',
@@ -31,6 +34,13 @@ const FILES: DiffFile[] = [
       viewed: unviewed,
       threads: { total: 1, unresolved: 1 },
     },
+  },
+  {
+    id: 'deep',
+    path: 'packages/desktop/ui/src/code/widgets/pin.ts',
+    change: 'modified',
+    lines: { old: lines(12, 'old'), new: lines(12, 'new') },
+    header: { additions: 2, deletions: 2, change: 'modified', viewed: unviewed },
   },
   {
     id: 'wrap',
@@ -103,6 +113,16 @@ interface Drawn {
   readonly startFits: boolean | undefined;
   /** Whether each thing the start draws ends before the next begins: nothing drawn over another. */
   readonly apart: boolean | undefined;
+  /**
+   * The steps each row that fits itself gave up, the band or each half: `start` and `end`'s, or the
+   * band's alone.
+   */
+  readonly steps: { readonly start: string; readonly end: string };
+  /**
+   * Whether the last step each row gave up was needed: drawn without it, the row or a group in it
+   * runs past its end. None given up is needed.
+   */
+  readonly needed: boolean;
 }
 
 function shownOf(element: Element | null): element is HTMLElement {
@@ -115,6 +135,25 @@ function shownOf(element: Element | null): element is HTMLElement {
 function apart(parts: readonly Element[]): boolean {
   const boxes = parts.filter(shownOf).map((each) => each.getBoundingClientRect());
   return boxes.every((each, index) => index === 0 || each.left >= boxes[index - 1]!.right - 0.5);
+}
+
+/** Whether `row` draws all it has, by its widths and those of each group in it that's whole. */
+function fitsNow(row: HTMLElement): boolean {
+  return [row, ...row.querySelectorAll<HTMLElement>('[data-fit]')].every(
+    (each) => each.scrollWidth <= each.clientWidth,
+  );
+}
+
+/** Whether the last step `row` gave up was needed: without it, `row` doesn't fit. */
+function lastNeeded(row: HTMLElement): boolean {
+  const steps = (row.getAttribute('data-gave-up') ?? '').split(' ').filter(Boolean);
+  if (steps.length === 0) return true;
+  const fewer = steps.slice(0, -1).join(' ');
+  if (fewer === '') row.removeAttribute('data-gave-up');
+  else row.setAttribute('data-gave-up', fewer);
+  const fits = fitsNow(row);
+  row.setAttribute('data-gave-up', steps.join(' '));
+  return !fits;
 }
 
 function read(head: HTMLElement, part: string): Drawn {
@@ -130,6 +169,12 @@ function read(head: HTMLElement, part: string): Drawn {
     .map((each) => each?.getAttribute('data-gave-up') ?? '')
     .filter(Boolean)
     .join(' | ');
+  // The band fits itself, or side by side the pinned copy's halves each fit themselves.
+  const rows = [head, start, end].filter(
+    (each): each is HTMLElement => each !== null && each.hasAttribute('data-gave-up'),
+  );
+  const stepsOf = (each: HTMLElement | null) =>
+    each?.getAttribute('data-gave-up') ?? head.getAttribute('data-gave-up') ?? '';
   return {
     path: head.dataset.path ?? '',
     part,
@@ -165,6 +210,8 @@ function read(head: HTMLElement, part: string): Drawn {
               each.classList.contains('lo-path') ? [...each.children] : [each],
             ),
           ),
+    steps: { start: stepsOf(start), end: stepsOf(end) },
+    needed: rows.every(lastNeeded),
   };
 }
 
@@ -192,6 +239,14 @@ const heads = {
   pin(): void {
     const box = document.querySelector<HTMLElement>('.lo-diffview')!;
     box.scrollTop += 120;
+  },
+  /** Scrolls file `path`'s own header a little past the top, so its copy is pinned there. */
+  pinAt(path: string): void {
+    const box = document.querySelector<HTMLElement>('.lo-diffview')!;
+    const head = document.querySelector<HTMLElement>(
+      `.lo-diffview .cm-editor:not([hidden]) .lo-diffhead[data-path="${path}"]`,
+    )!;
+    box.scrollTop += head.getBoundingClientRect().top - box.getBoundingClientRect().top + 40;
   },
   /** The layout drawn. */
   layout(): DiffLayout | undefined {

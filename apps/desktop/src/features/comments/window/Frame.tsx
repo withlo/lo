@@ -18,6 +18,7 @@ import {
   type CommentBoxFoot,
   type CommentBoxNote,
 } from '@lo/ui';
+import { onLines } from '@lo/review';
 import type { BoxFrame, Composer, Mode } from '@lo/ui/code';
 import { useEffect, useSyncExternalStore, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
@@ -43,6 +44,7 @@ import {
 import { boxKeys } from './boxkeys.ts';
 import { Preview as Rendering } from './Preview.tsx';
 import { Dropzone, UploadRows, useUploads } from './Attached.tsx';
+import { threadsMode } from './mode.ts';
 import { holdText, takeAddresses, UPLOADING } from './uploads.ts';
 import { wroteText } from './store.ts';
 import { held } from './threads.ts';
@@ -254,7 +256,15 @@ function Sent({ box }: { box: Box }): ReactNode {
   }, [box.view, sent]);
   if (!sendingNow(state)) return null;
   const login = acting?.kind === 'account' ? acting.login : undefined;
-  const { kind } = state.place;
+  const { place } = state;
+  const { kind } = place;
+  // A new thread's head row says what it's on as its card's will: in a popover always, and on a
+  // card between lines where it's on more than one line. In the box's words, which it showed.
+  const beside = threadsMode() === 'beside';
+  const lines =
+    place.kind === 'thread' && (beside || onLines({ lines: place.lines }))
+      ? (state.where?.head ?? whereText(place))
+      : undefined;
   const body = pull ? (
     <Rendering
       view={box.view}
@@ -276,6 +286,9 @@ function Sent({ box }: { box: Box }): ReactNode {
       // the thread's comments, each over the row that offers a reply: nothing moves as the thread
       // takes the card's place.
       state={kind === 'thread' ? (box.lastHow === 'review' ? 'Pending' : 'Unresolved') : undefined}
+      lines={lines}
+      // Beside lines, its thread's head is a popover's, on one line.
+      popover={beside}
       reply={kind === 'thread' || kind === 'reply'}
       author={login}
       byAuthor={login !== undefined && login.toLowerCase() === opener?.toLowerCase()}
