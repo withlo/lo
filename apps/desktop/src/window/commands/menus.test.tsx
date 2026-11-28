@@ -8,6 +8,7 @@ import {
   type NoticeTarget,
   type Target,
 } from '@lo/ui/commands';
+import { MoreButton } from '@lo/ui';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -463,6 +464,33 @@ describe('from the keyboard', () => {
     // ⏎ runs it, on the focused scope's target, as the key of the first action would.
     press('Enter');
     await vi.waitFor(() => expect(ran).toEqual([{ id: 'tree.show', target: file }]));
+  });
+
+  it('opens from a `⋯` a key pressed as it does from the keyboard, and from one the pointer pressed with nothing highlighted', async () => {
+    const page = mount(
+      <>
+        <Clickable id="row" target={file}>
+          <MoreButton />
+        </Clickable>
+        <Menus />
+      </>,
+    );
+    const more = page.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
+    // ⏎ or Space on it clicks it, counting no clicks.
+    more.focus();
+    act(() => {
+      more.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 }));
+    });
+    expect(currentMenu()?.keyboard).toBe(true);
+    await vi.waitFor(() => expect(items()[0]?.hasAttribute('data-highlighted')).toBe(true));
+    press('Escape');
+    await vi.waitFor(() => expect(popup()).toBeNull());
+    act(() => {
+      more.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }));
+    });
+    expect(currentMenu()?.keyboard).toBe(false);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(items().some((item) => item.hasAttribute('data-highlighted'))).toBe(false);
   });
 
   it('returns focus to the element it was opened from', async () => {

@@ -63,8 +63,9 @@ export interface ContextMenuProps {
    */
   opener?: Element | undefined;
   /**
-   * Highlights the first action as the menu opens, as a menu opened from the keyboard does, so
-   * `⏎` acts at once. A pointer opens it with nothing highlighted.
+   * Highlights the first action that can be done now as the menu opens, as a menu opened from the
+   * keyboard does, so `⏎` acts at once: the first action, where none can. A pointer opens it with
+   * nothing highlighted.
    */
   highlightFirst?: boolean | undefined;
   /**
@@ -154,9 +155,14 @@ export function ContextMenu({
   useLayoutEffect(() => {
     if (!shown || !highlightFirst) return undefined;
     const frame = requestAnimationFrame(() => {
-      queueMicrotask(() =>
-        popup.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus(),
-      );
+      queueMicrotask(() => {
+        const actions = [
+          ...(popup.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? []),
+        ];
+        (
+          actions.find((action) => action.getAttribute('aria-disabled') !== 'true') ?? actions[0]
+        )?.focus();
+      });
     });
     return () => cancelAnimationFrame(frame);
   }, [shown, highlightFirst]);

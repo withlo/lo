@@ -28,6 +28,7 @@ import {
   TimelineEnd,
   TimelineReview,
   TimelineSkeleton,
+  useReadyPicture,
   type ProblemAction,
   type TimelineHidden,
 } from '@lo/ui';
@@ -492,6 +493,9 @@ function Rows({
   const now = useNow(shown);
   useTabState(shownHidden, tab.id);
   const login = useLogin(tab.id);
+  // The marker by the box at its end, which a comment it sends is drawn with from its first frame.
+  const marker = login === undefined ? undefined : avatarImage({ login, type: 'User' }, MARKER);
+  useReadyPicture(marker);
   const edits = useEditsOnPull(tab.id);
   useHolding(tab.id, shown, root, rows);
   useKeptRow(tab.id, rows, landed, list);
@@ -567,7 +571,7 @@ function Rows({
         aria-label="Timeline"
         end={
           login !== undefined && (
-            <TimelineEnd marker={{ login, image: avatarImage({ login, type: 'User' }, MARKER) }}>
+            <TimelineEnd marker={{ login, image: marker }}>
               <PullCommentBox tab={tab} leave={leave} keys={keysOf('timeline.comment')} />
             </TimelineEnd>
           )

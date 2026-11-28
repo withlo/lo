@@ -411,8 +411,85 @@ describe('Thread', () => {
       const host = render(
         <Thread {...PROPS} comments={[{ ...MINE, byAuthor: true }]} menu deleting="c3" />,
       );
-      const head = host.querySelector('[data-fit]')?.parentElement?.parentElement;
+      // The comment's head, by its author's name, which it keeps whole.
+      const head = host.querySelector('.font-semibold[data-fit]')?.parentElement?.parentElement;
       expect(head?.getAttribute('data-gave-up')).toBe('tag labels');
+    } finally {
+      delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+      delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    }
+  });
+
+  it('keeps an open card’s head on one line: narrow, it gives up its count, then Resolve’s words for its icon, before its lines are cut', () => {
+    // Its lines take 120 px. Each step given up gives them more room: none, the key chips, which
+    // show only on the card the keyboard is on, the count, then Resolve's words, which is enough.
+    const room = [40, 40, 90, 130];
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.hasAttribute('data-fit') ? room[given(this)] : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.hasAttribute('data-fit') ? 120 : 0;
+      },
+    });
+    try {
+      const host = render(<Thread {...PROPS} lines="Lines 10–35" canResolve menu />);
+      const head = headRow(host)!;
+      expect(head.getAttribute('data-gave-up')).toBe('keys detail labels');
+      expect(head.firstElementChild?.textContent).toBe('UnresolvedLines 10–352 comments');
+      // As its icon, it keeps its name, and its words are what goes.
+      const resolve = head.querySelector('button[data-squares="labels"]');
+      expect(resolve?.getAttribute('aria-label')).toBe('Resolve');
+      expect(resolve?.querySelector('[data-gives="labels"]')?.textContent).toBe('Resolve');
+      expect(resolve?.querySelector('[data-takes="labels"] svg')).not.toBeNull();
+    } finally {
+      delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+      delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    }
+  });
+
+  it('keeps a one-line thread’s card head, with no lines to say, on one line: as soon as its tags and count don’t fit, it gives them up as one with lines does', () => {
+    // Its tags and count take 120 px, held whole as the lines are: given up step by step, they have
+    // more room, until Resolve's words go too, which is enough.
+    const room = [40, 40, 90, 130];
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.hasAttribute('data-fit') ? room[given(this)] : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.hasAttribute('data-fit') ? 120 : 0;
+      },
+    });
+    try {
+      const heads = [
+        render(<Thread {...PROPS} canResolve menu />),
+        render(
+          <Thread
+            {...PROPS}
+            comments={[MIRA, { ...RAVI, pending: true }]}
+            outdated
+            canResolve
+            menu
+          />,
+        ),
+        // A new thread's comment on its way, whose head is the one its card will have.
+        render(<SentPost state="Unresolved" author="tess-okafor" body={<p>On its way</p>} />),
+      ].map((host) => headRow(host)!);
+      expect(heads.map((head) => head.firstElementChild?.textContent)).toEqual([
+        'Unresolved2 comments',
+        'UnresolvedOut of date2 comments, 1 pending',
+        'Unresolved1 comment',
+      ]);
+      for (const head of heads)
+        expect(head.getAttribute('data-gave-up')).toBe('keys detail labels');
     } finally {
       delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
       delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;

@@ -3,7 +3,7 @@ import type { HTMLAttributes, MouseEvent, ReactNode, Ref } from 'react';
 import { Button } from './Button.tsx';
 import { Callout } from './Callout.tsx';
 import { Icon } from './Icon.tsx';
-import { openMenuUnder } from './MoreButton.tsx';
+import { openMenuUnder, pressedByKey } from './MoreButton.tsx';
 
 /** What Dismiss is named, and its tooltip. */
 export const DISMISS = 'Dismiss';
@@ -37,7 +37,7 @@ export function DismissButton({ onDismiss, choices = false, ...rest }: DismissBu
       aria-haspopup={choices ? 'menu' : undefined}
       hint={DISMISS}
       onClick={(event: MouseEvent<HTMLButtonElement>) => {
-        if (choices) openMenuUnder(event.currentTarget);
+        if (choices) openMenuUnder(event.currentTarget, pressedByKey(event));
         else onDismiss?.();
       }}
       {...rest}

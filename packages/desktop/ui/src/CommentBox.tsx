@@ -19,7 +19,7 @@ import type { IconName } from './icons.ts';
 import { onVim, vimOn } from './vim.ts';
 import { Key } from './Key.tsx';
 import { Meter } from './Meter.tsx';
-import { openMenuUnder } from './MoreButton.tsx';
+import { openMenuUnder, pressedByKey } from './MoreButton.tsx';
 import { useDetails } from './Problem.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
 import { Spinner } from './Spinner.tsx';
@@ -630,7 +630,7 @@ function LinesButton({ where, lines }: { where: ReactNode; lines: CommentBoxLine
           type="button"
           aria-haspopup="menu"
           className="-ms-6 inline-flex h-control-h-sm min-w-0 items-center gap-4 rounded-sm px-6 text-small-medium text-fg move-tint hover:bg-hover focus-visible:shadow-ring"
-          onClick={(event) => openMenuUnder(event.currentTarget)}
+          onClick={(event) => openMenuUnder(event.currentTarget, pressedByKey(event))}
         >
           <span className="min-w-0 truncate">{where}</span>
           <Icon name="chevron-down" size={12} />

@@ -1,7 +1,7 @@
 // What narrows in Chromium itself, where it's laid out: jsdom lays nothing out. An out-of-date
 // overview's callout and a code block's flag are one column only where the button doesn't fit beside
-// the text, a path wraps only after a slash, and a new thread's comment on its way has the head row
-// its card will.
+// the text, a path wraps only after a slash, a new thread's comment on its way has the one-line head
+// row its card will, lines or none, and a card's head never draws its words under its buttons.
 
 import type { ElectronApplication, Page } from '@playwright/test';
 
@@ -195,15 +195,102 @@ interface Head {
   readonly gaveUp: string;
 }
 
-test('a new thread’s comment on its way has the head row its card will, as tall at every width, so nothing moves as the card lands', async () => {
+test('a new thread’s comment on its way has the one-line head row its card will, giving up what it does at every width, so nothing moves as the card lands', async () => {
   const page = await open();
   const widths = Array.from({ length: 16 }, (_, step) => 280 + step * 16);
   const seen = await heads(page, '#sent', '#landed', widths);
   for (const { width, sent, landed } of seen) {
     expect(sent, `${width} px`).toEqual(landed);
   }
-  // Narrow, its words wrap, as the card's do.
-  expect(seen[0]!.sent.height).toBeGreaterThan(seen.at(-1)!.sent.height);
+  // Narrow, it gives up its count, then Resolve's words, and stays one line; wide, nothing.
+  expect(seen[0]!.sent.gaveUp).toBe('keys detail labels');
+  expect(seen.at(-1)!.sent.gaveUp).toBe('');
+  expect(new Set(seen.map(({ sent }) => sent.height)).size).toBe(1);
+});
+
+/**
+ * Each of `frames`' thread head rows, each frame made each of `widths` wide in turn: what it gave
+ * up, whether what its words hold lies within their box, and whether any of it is drawn, and so
+ * hit, under its buttons.
+ */
+function spills(page: Page, frames: readonly string[], widths: readonly number[]) {
+  return page.evaluate(
+    async ({ selectors, each }) => {
+      const rows = selectors.map((frame) => document.querySelector<HTMLElement>(frame)!);
+      const found: {
+        width: number;
+        frame: string;
+        gaveUp: string;
+        inside: boolean;
+        under: boolean;
+      }[] = [];
+      for (const width of each) {
+        for (const frame of rows) frame.style.width = `${width}px`;
+        await new Promise<void>((resolve) => {
+          const sized = new ResizeObserver(() => {
+            sized.disconnect();
+            resolve();
+          });
+          sized.observe(rows[0]!);
+        });
+        for (const [index, frame] of rows.entries()) {
+          const head = frame.querySelector<HTMLElement>('.border-b')!;
+          // On screen, where what's drawn there can be hit.
+          head.scrollIntoView({ block: 'center' });
+          const words = head.firstElementChild!;
+          const buttons = head.lastElementChild!.getBoundingClientRect();
+          const box = words.getBoundingClientRect();
+          const inside = [...words.children].every(
+            (part) => part.getBoundingClientRect().right <= box.right + 0.5,
+          );
+          let under = false;
+          for (let x = buttons.left + 1; x < buttons.right; x += 4) {
+            const hit = document.elementsFromPoint(x, buttons.top + buttons.height / 2);
+            if (!hit.some((element) => head.contains(element))) throw new Error('Not on screen');
+            if (hit.some((element) => words.contains(element))) under = true;
+          }
+          found.push({
+            width,
+            frame: selectors[index]!,
+            gaveUp: head.getAttribute('data-gave-up') ?? '',
+            inside,
+            under,
+          });
+        }
+      }
+      return found;
+    },
+    { selectors: frames, each: widths },
+  );
+}
+
+test('a card’s head with no lines to say gives up its count, then Resolve’s words, as soon as its words don’t fit, as its comment on its way does, and never draws them under its buttons', async () => {
+  const page = await open();
+  const widths = Array.from({ length: 21 }, (_, step) => 200 + step * 16);
+  const seen = await heads(page, '#sentone', '#landedone', widths);
+  for (const { width, sent, landed } of seen) {
+    expect(sent, `${width} px`).toEqual(landed);
+  }
+  expect(seen[0]!.sent.gaveUp).toBe('keys detail labels');
+  expect(seen.at(-1)!.sent.gaveUp).toBe('');
+  expect(new Set(seen.map(({ sent }) => sent.height)).size).toBe(1);
+  for (const { width, frame, gaveUp, inside, under } of await spills(
+    page,
+    ['#sentone', '#landedone'],
+    widths,
+  )) {
+    // Until it has nothing left to give up, what it says is whole in its room.
+    if (gaveUp !== 'keys detail labels') expect(inside, `${frame} at ${width} px`).toBe(true);
+    expect(under, `${frame} at ${width} px`).toBe(false);
+  }
+});
+
+test('a card’s head with more to say than it has room for, once it has given up all it can, cuts its words at their end rather than drawing them under its buttons', async () => {
+  const page = await open();
+  const widths = Array.from({ length: 14 }, (_, step) => 200 + step * 16);
+  const seen = await spills(page, ['#crowded'], widths);
+  expect(seen[0]!.gaveUp).toBe('keys detail labels');
+  for (const { width, under } of seen) expect(under, `${width} px`).toBe(false);
 });
 
 test('beside the lines, a new thread’s comment on its way has the one-line head its popover will, giving up what it does at every width', async () => {

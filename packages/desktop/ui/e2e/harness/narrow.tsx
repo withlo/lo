@@ -1,7 +1,7 @@
 // The page the narrow spec drives: an out-of-date overview's callout, and a code block whose lines
 // changed since, each in an overview's frame the spec narrows and widens, a long path in a box of
-// its own, and a new thread's comment on its way beside the card that will take its place, between
-// lines and beside them in a popover.
+// its own, a new thread's comment on its way beside the card that will take its place, between
+// lines, on one line and beside them in a popover, and a card whose head has more than it can say.
 
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -71,6 +71,44 @@ function Scene() {
           ]}
           resolved={false}
           open
+          lines={LINES}
+          canResolve
+          menu
+        />
+      </div>
+      {/* A thread on one line, whose card's head says no lines: its comment on its way, and it. */}
+      <div id="sentone" style={{ width: '480px' }}>
+        <SentPost state="Unresolved" author="tess-okafor" body={<p>{SAID}</p>} />
+      </div>
+      <div id="landedone" style={{ width: '480px' }}>
+        <Thread
+          comments={[
+            { id: 'c1', author: 'tess-okafor', when: 'just now', mine: true, body: <p>{SAID}</p> },
+          ]}
+          resolved={false}
+          open
+          canResolve
+          menu
+        />
+      </div>
+      {/* A thread whose head has more to say than any narrow card has room for. */}
+      <div id="crowded" style={{ width: '480px' }}>
+        <Thread
+          comments={[
+            { id: 'c1', author: 'tess-okafor', when: '2 d ago', body: <p>{SAID}</p> },
+            {
+              id: 'c2',
+              author: 'ravi-k',
+              when: 'just now',
+              mine: true,
+              pending: true,
+              body: <p>Yes.</p>,
+            },
+          ]}
+          resolved={false}
+          open
+          outdated
+          tags={[{ label: 'Draft' }]}
           lines={LINES}
           canResolve
           menu

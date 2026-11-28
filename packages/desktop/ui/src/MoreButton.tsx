@@ -24,17 +24,29 @@ export interface MoreButtonProps {
 /** The words a `⋯` button is named with, and its tooltip. */
 export const MORE_ACTIONS = 'More actions';
 
-/** The control whose `openMenuUnder` is asking for a menu now, while its right-click is heard. */
-let asking: Element | undefined;
+/**
+ * The control whose `openMenuUnder` is asking for a menu now, while its right-click is heard, and
+ * whether a key pressed it.
+ */
+let asking: { readonly control: Element; readonly keyed: boolean } | undefined;
+
+/**
+ * Whether `event`, a control's click, came from a key, as `⏎` and Space press a button: a pointer's
+ * counts its clicks, and a key's counts none.
+ */
+export function pressedByKey(event: { readonly detail: number }): boolean {
+  return event.detail === 0;
+}
 
 /**
  * Opens the menu of `control`'s surface under it, as a right-click there does: the surface hears
  * a `contextmenu` at the control's corner and opens its own menu, so the button and the right-click
- * can never list different things.
+ * can never list different things. `keyed`, a key pressed the control (`pressedByKey`), so the menu
+ * opens as one the keyboard opens does (`menuOpenedByKey`).
  */
-export function openMenuUnder(control: Element): void {
+export function openMenuUnder(control: Element, keyed = false): void {
   const { left, bottom } = control.getBoundingClientRect();
-  asking = control;
+  asking = { control, keyed };
   try {
     control.dispatchEvent(
       new MouseEvent('contextmenu', {
@@ -55,7 +67,16 @@ export function openMenuUnder(control: Element): void {
  * it's open (`ContextMenu`'s `opener`). Nothing, for a menu a right-click or a key opens.
  */
 export function menuOpener(): Element | undefined {
-  return asking;
+  return asking?.control;
+}
+
+/**
+ * Whether a key pressed the control a menu opening now opens from (`menuOpener`), as `⏎` on a `⋯`
+ * does: the menu highlights its first action that can be done, as one the keyboard opens does. A
+ * pointer's press, a right-click and a menu's own key say nothing here.
+ */
+export function menuOpenedByKey(): boolean {
+  return asking?.keyed === true;
 }
 
 /**
@@ -76,7 +97,9 @@ export function MoreButton({
       aria-haspopup="menu"
       hint={label}
       {...(focusable ? {} : UNFOCUSABLE)}
-      onClick={(event: MouseEvent<HTMLButtonElement>) => openMenuUnder(event.currentTarget)}
+      onClick={(event: MouseEvent<HTMLButtonElement>) =>
+        openMenuUnder(event.currentTarget, pressedByKey(event))
+      }
     >
       <Icon name="ellipsis" size={16} />
     </Button>

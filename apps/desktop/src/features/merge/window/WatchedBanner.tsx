@@ -13,7 +13,7 @@ import type { Watched } from '../contract.ts';
 import { newerLabel, seeNewer, turnOffAutoMerge, turningOff } from './merging.ts';
 import { dismissWatched, labelsOf } from './shipping.ts';
 import { watchedWords } from './shipWords.ts';
-import { merging, pullKey, shipping } from './store.ts';
+import { merging, pullKey, shipping, statuses } from './store.ts';
 
 /** What the auto-merge watch last said of `tab`'s pull request, if anything. */
 function watchedOf(tab: PullTab): Watched | undefined {
@@ -21,9 +21,11 @@ function watchedOf(tab: PullTab): Watched | undefined {
 }
 
 export function WatchedBanner({ tab }: { tab: PullTab }) {
-  // Read for their changes: what the watch said, who pushed what, and auto-merge being turned off.
+  // Read for their changes: what the watch said, who pushed what, and auto-merge being turned off,
+  // which lasts until the tab's status says it's off.
   useStore(shipping, (state) => state.watched);
   useStore(merging);
+  useStore(statuses, (state) => state.views.get(tab.id));
   const revisions = useRevisions(tab.id);
   const watched = watchedOf(tab);
   if (!watched) return null;

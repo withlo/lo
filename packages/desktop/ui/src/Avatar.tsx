@@ -1,5 +1,5 @@
 import { cva } from 'class-variance-authority';
-import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { swapIn } from './Collapse.tsx';
 
@@ -133,27 +133,96 @@ export function redrawPictures(change: (address: string) => string | undefined):
   for (const watcher of watchers) watcher();
 }
 
+/** How a picture is laid in its disc. */
+const PICTURE = 'size-full object-cover';
+
+/**
+ * The pictures kept ready, by address: how many ask for it, and an image of it, loading or loaded,
+ * for the next avatar that draws it to take.
+ */
+const ready = new Map<string, { asks: number; image: HTMLImageElement }>();
+
+/**
+ * An image of the picture at `address`, out of the page, loading: decoded as the frame that first
+ * draws it is, so that frame has it.
+ */
+function readyImage(address: string): HTMLImageElement {
+  const image = new Image();
+  image.alt = '';
+  image.decoding = 'sync';
+  image.draggable = false;
+  image.className = PICTURE;
+  image.addEventListener('load', () => drawnBefore.add(address), { once: true });
+  image.src = address;
+  return image;
+}
+
+/**
+ * Keeps the picture at `address` ready for the next avatar that draws it, until the function it
+ * returns is called as often as this was.
+ */
+function keepReady(address: string): () => void {
+  const kept = ready.get(address) ?? { asks: 0, image: readyImage(address) };
+  kept.asks += 1;
+  ready.set(address, kept);
+  return () => {
+    kept.asks -= 1;
+    if (kept.asks === 0 && ready.get(address) === kept) ready.delete(address);
+  };
+}
+
+/**
+ * The image of the picture at `address` kept ready, once it has loaded, for an avatar drawing it
+ * now, which takes it, and another is made ready in its place.
+ */
+function takeReady(address: string): HTMLImageElement | undefined {
+  const kept = ready.get(address);
+  if (!kept?.image.complete || kept.image.naturalWidth === 0) return undefined;
+  const { image } = kept;
+  kept.image = readyImage(address);
+  return image;
+}
+
+/**
+ * Keeps the picture at `address` ready while the caller is drawn, for an avatar about to appear,
+ * as the one on a comment the moment it's sent: it takes the image kept ready, loaded, and draws
+ * the picture from its first frame. A new avatar's own image, even of a picture on screen, can load
+ * a frame after it's drawn, which shows an empty disc meanwhile.
+ */
+export function useReadyPicture(address: string | undefined): void {
+  useEffect(() => (address === undefined ? undefined : keepReady(address)), [address]);
+}
+
 /**
  * The picture, in an empty disc until it has loaded, which it then fades in over (Swap), or the
  * initials if it can't be loaded. The image is laid out from the start, unseen, so it loads at
  * once. One the window already holds shows from the first frame, and one it has drawn before
- * comes back without the move.
+ * comes back without the move. One kept ready (`useReadyPicture`), loaded, is taken and shown from
+ * the first frame.
  */
 function Picture({ login, size, image }: { login: string; size: AvatarSize; image: string }) {
-  const [state, setState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  // Taken as it's first drawn, once: drawn twice in development, the second finds none loaded.
+  const [taken] = useState(() => takeReady(image));
+  const [state, setState] = useState<'loading' | 'loaded' | 'failed'>(taken ? 'loaded' : 'loading');
+  const disc = useRef<HTMLSpanElement>(null);
   const picture = useRef<HTMLImageElement>(null);
   // Whether the window hadn't drawn the picture before this avatar was, and so it fades in as it
   // loads: read as it's first drawn, so every avatar new with it fades in, not only the first.
   const fresh = useRef(false);
   // Whether it loaded after it was drawn, and so fades in.
   const arrived = useRef(false);
+  // The image taken goes in its disc before the frame is painted.
   useLayoutEffect(() => {
+    if (taken) disc.current?.append(taken);
+  }, [taken]);
+  useLayoutEffect(() => {
+    if (taken) return;
     fresh.current = !drawnBefore.has(image);
     const drawn = picture.current;
     if (!drawn?.complete || drawn.naturalWidth === 0) return;
     drawnBefore.add(image);
     setState('loaded');
-  }, [image]);
+  }, [image, taken]);
   // Once the picture's classes are drawn without what hid it, so the move stays on it.
   useLayoutEffect(() => {
     const drawn = picture.current;
@@ -168,6 +237,9 @@ function Picture({ login, size, image }: { login: string; size: AvatarSize; imag
       </span>
     );
   }
+  if (taken) {
+    return <span ref={disc} className={avatar({ size, hue: 'none' })} aria-hidden="true" />;
+  }
   return (
     <span className={avatar({ size, hue: 'none' })} aria-hidden="true">
       <img
@@ -176,7 +248,7 @@ function Picture({ login, size, image }: { login: string; size: AvatarSize; imag
         alt=""
         decoding="async"
         draggable={false}
-        className={`size-full object-cover ${state === 'loaded' ? '' : 'opacity-0'}`}
+        className={`${PICTURE} ${state === 'loaded' ? '' : 'opacity-0'}`}
         onLoad={() => {
           if (state !== 'loading') return;
           arrived.current = fresh.current;

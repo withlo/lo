@@ -128,3 +128,73 @@ for (const [what, quiet] of [
     }
   });
 }
+
+/** A box `width` wide and `height` tall, `top` from the window's top. */
+function rect(top: number, height: number, width: number): DOMRect {
+  return DOMRect.fromRect({ x: 100, y: top, width, height });
+}
+
+/**
+ * Where the tip on `ball` shows from the window's top, asked for on `side`, clear of what `clear`
+ * finds, and takes it away.
+ */
+function tipTop(side: 'top' | undefined, clear?: string): string | undefined {
+  stop();
+  stop = tips(root, () => ({ label: 'First line', side, clear }));
+  move(ball, 'mouseover');
+  vi.advanceTimersByTime(TIP_DELAY);
+  const at = document.querySelector<HTMLElement>('.lo-tip')?.style.top;
+  ball.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: root }));
+  return at;
+}
+
+test('a tip asked for over its control shows over it where it fits, else under it, as one with no side shows under it', () => {
+  let control = rect(300, 20, 20);
+  const measured = vi
+    .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    .mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('lo-tip') ? rect(0, 24, 80) : control;
+    });
+  try {
+    expect(window.innerHeight).toBeGreaterThan(400);
+    // 6 px from the control, either way.
+    expect(tipTop('top')).toBe('270px');
+    expect(tipTop(undefined)).toBe('326px');
+    // With no room over it, under it.
+    control = rect(10, 20, 20);
+    expect(tipTop('top')).toBe('36px');
+  } finally {
+    measured.mockRestore();
+  }
+});
+
+test('a tip kept clear of a box shows on its other side where its own would cover it, and stays on its own where both would', () => {
+  const control = rect(300, 20, 20);
+  let box = rect(250, 40, 200);
+  const measured = vi
+    .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    .mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('lo-tip')) return rect(0, 24, 80);
+      return this.classList.contains('box') ? box : control;
+    });
+  const drawn = document.createElement('div');
+  drawn.className = 'box';
+  document.body.append(drawn);
+  try {
+    // The box over the control: under it.
+    expect(tipTop('top', '.box')).toBe('326px');
+    // Under it: over it, as asked, and one asked for under it goes over it.
+    box = rect(330, 100, 200);
+    expect(tipTop('top', '.box')).toBe('270px');
+    expect(tipTop(undefined, '.box')).toBe('270px');
+    // On both sides: where it was asked for.
+    box = rect(200, 200, 200);
+    expect(tipTop('top', '.box')).toBe('270px');
+    // Nothing it keeps clear of drawn: as asked.
+    drawn.remove();
+    expect(tipTop(undefined, '.box')).toBe('326px');
+  } finally {
+    drawn.remove();
+    measured.mockRestore();
+  }
+});
