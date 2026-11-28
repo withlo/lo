@@ -1,5 +1,5 @@
 import { cva } from 'class-variance-authority';
-import { useRef, type ReactNode } from 'react';
+import { createContext, useContext, useRef, type ReactNode } from 'react';
 
 import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
@@ -167,21 +167,19 @@ function Chevron({ up }: { up: boolean }) {
 }
 
 /**
- * An open card's head row: its state, its count and its controls. A sent comment's card draws the
- * same row as the thread it starts will have (`SentPost`'s `state`), so its text stays where it is
- * as the thread takes its place.
- */
-const HEAD_ROW =
-  'flex min-h-32 items-center gap-8 border-b border-border-subtle py-4 ps-12 pe-6 text-fg-muted text-small';
-
-/** Where an open card's head row holds its tags and its count: they wrap in the room left them. */
-const HEAD_WORDS = 'flex min-w-0 flex-1 flex-wrap items-center gap-x-8 gap-y-4';
-
-/**
  * What a popover's head gives up, in order, as it narrows, so it stays one line: the key chips,
  * Resolve's words for its icon, and then the count.
  */
 const POP_STEPS = ['keys', 'labels', 'detail'];
+
+/**
+ * What a card's head gives up, in order, as it narrows, so it stays one line: the key chips, the
+ * count, and then Resolve's words for its icon. Only then are its lines cut short.
+ */
+const CARD_STEPS = ['keys', 'detail', 'labels'];
+
+/** Whether the head a control is in has given up its words for its icon (`labels`). */
+const Iconic = createContext(false);
 
 /** The words of the control that closes a thread's popover, and its tooltip. */
 export const CLOSE_THREAD = 'Close thread';
@@ -279,32 +277,22 @@ export function SentPost({
   );
   return (
     <>
-      {state !== undefined &&
-        (popover ? (
-          <PopoverHead>
-            <span className="flex min-w-0 flex-1 items-center gap-8">
-              <Tag tone="warning">{state}</Tag>
-              {lines !== undefined && (
-                <span data-fit className="min-w-cut truncate">
-                  {lines}
-                </span>
-              )}
-              <span data-gives="detail" className="lo-num flex-none">
-                1 comment
+      {state !== undefined && (
+        <ThreadHead popover={popover}>
+          <span className="flex min-w-0 flex-1 items-center gap-8">
+            <Tag tone="warning">{state}</Tag>
+            {lines !== undefined && (
+              <span data-fit className="min-w-cut truncate">
+                {lines}
               </span>
+            )}
+            <span data-gives="detail" className="lo-num flex-none">
+              1 comment
             </span>
-            {room}
-          </PopoverHead>
-        ) : (
-          <div className={HEAD_ROW}>
-            <span className={HEAD_WORDS}>
-              <Tag tone="warning">{state}</Tag>
-              {lines !== undefined && <span className="min-w-0 truncate">{lines}</span>}
-              <span className="whitespace-nowrap">1 comment</span>
-            </span>
-            {room}
-          </div>
-        ))}
+          </span>
+          {room}
+        </ThreadHead>
+      )}
       {post}
       {reply && <ReplyRow />}
     </>
@@ -314,25 +302,12 @@ export function SentPost({
 /**
  * The room a new thread's head will give its buttons, out of sight and reach, for its comment on
  * its way: Resolve, unless it's in a review, then `⋯`, then Collapse on a card, or Close's room in a
- * popover. In a popover, Resolve gives up its words for its icon as the head narrows, as the
- * thread's does.
+ * popover. Resolve gives up its words for its icon as the head narrows, as the thread's does.
  */
 function ControlsRoom({ resolve, popover }: { resolve: boolean; popover: boolean }) {
   return (
     <span aria-hidden="true" inert className="invisible flex flex-none items-center gap-2">
-      {resolve && (
-        // As wide as the thread's, which keeps the room of what it says while at work.
-        <Button
-          variant="ghost"
-          size="sm"
-          data-squares={popover ? 'labels' : undefined}
-          aria-label={popover ? 'Resolve' : undefined}
-          working={popover ? <span data-gives="labels">Unresolving…</span> : 'Unresolving…'}
-          align="end"
-        >
-          {popover ? <Face icon="check">Resolve</Face> : 'Resolve'}
-        </Button>
-      )}
+      {resolve && <ResolveButton resolved={false} />}
       <MoreButton />
       {popover ? (
         <span className="w-control-h-sm flex-none" />
@@ -425,20 +400,68 @@ function Head({ children }: { children: ReactNode }) {
 }
 
 /**
- * A thread's head in a popover: one line, which stays over its comments as they scroll, and gives
- * up what `POP_STEPS` names as it narrows.
+ * A thread's head: one line, which gives up what `POP_STEPS` names as it narrows in a popover, where
+ * it stays over its comments as they scroll, and what `CARD_STEPS` names on a card.
  */
-function PopoverHead({ children }: { children: ReactNode }) {
+function ThreadHead({ popover, children }: { popover: boolean; children: ReactNode }) {
   const head = useRef<HTMLDivElement | null>(null);
-  useGiveUp(head, POP_STEPS);
+  const steps = popover ? POP_STEPS : CARD_STEPS;
+  const iconic = steps.indexOf('labels') < useGiveUp(head, steps);
   return (
     <div
       ref={head}
-      data-pop-head=""
-      className="give-up sticky top-0 z-1 flex h-32 items-center gap-8 border-b border-border-subtle bg-bg-overlay ps-12 pe-6 whitespace-nowrap text-fg-muted text-small"
+      data-pop-head={popover ? '' : undefined}
+      className={`give-up flex h-32 items-center gap-8 border-b border-border-subtle ps-12 pe-6 whitespace-nowrap text-fg-muted text-small ${popover ? 'sticky top-0 z-1 bg-bg-overlay' : ''}`}
     >
-      {children}
+      <Iconic value={iconic}>{children}</Iconic>
     </div>
+  );
+}
+
+interface ResolveButtonProps {
+  resolved: boolean;
+  /** Asked already: it shows what was asked for, at work, until GitHub answers. */
+  resolving?: boolean | undefined;
+  /** A delete is at work in the thread, which it says, dimmed: one change to a thread at a time. */
+  deleting?: boolean | undefined;
+  /** Its key, as this system shows it. */
+  keys?: readonly string[] | undefined;
+  onResolve?: (() => void) | undefined;
+}
+
+/**
+ * Resolve, or Unresolve on a resolved thread, in a thread's head, which gives up its words for its
+ * icon as the head narrows. Its tooltip names it, with its key, where it has one to give or has
+ * given up its words; while a delete is at work, it says so.
+ */
+function ResolveButton({
+  resolved,
+  resolving = false,
+  deleting = false,
+  keys,
+  onResolve,
+}: ResolveButtonProps) {
+  const iconic = useContext(Iconic);
+  const word = resolved ? 'Unresolve' : 'Resolve';
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      data-squares="labels"
+      // Its words can go: its name stays.
+      aria-label={word}
+      // Asked already, it shows what was asked for: the word is the one being done.
+      busy={resolving}
+      working={<span data-gives="labels">{resolved ? 'Resolving…' : 'Unresolving…'}</span>}
+      align="end"
+      disabled={deleting}
+      hint={deleting ? 'Deleting…' : keys !== undefined || iconic ? word : null}
+      hintKeys={keys}
+      onClick={onResolve}
+    >
+      <Face icon={resolved ? 'undo-2' : 'check'}>{word}</Face>
+      {keys && <Key keys={keys} when="focus" decorative />}
+    </Button>
   );
 }
 
@@ -552,48 +575,13 @@ export function Thread({
   const tone: TagTone = state === 'resolved' ? 'ok' : 'warning';
   const showReply = reply === undefined && canReply;
   const resolve = canResolve && !pendingAll && (
-    <Button
-      variant="ghost"
-      size="sm"
-      // In a popover's head it gives up its words for its icon as the head narrows.
-      data-squares={popover ? 'labels' : undefined}
-      aria-label={popover ? (resolved ? 'Unresolve' : 'Resolve') : undefined}
-      // Asked already, it shows what was asked for: the word is the one being done.
-      busy={resolving}
-      working={
-        popover ? (
-          <span data-gives="labels">{resolved ? 'Resolving…' : 'Unresolving…'}</span>
-        ) : resolved ? (
-          'Resolving…'
-        ) : (
-          'Unresolving…'
-        )
-      }
-      align="end"
-      // One change to a thread at a time: while a delete is at work, it says so.
-      disabled={deleting !== undefined}
-      // Its name, with its key: in a card, where its words always show, only with a key to give.
-      hint={
-        deleting !== undefined
-          ? 'Deleting…'
-          : popover || keys.resolve !== undefined
-            ? resolved
-              ? 'Unresolve'
-              : 'Resolve'
-            : null
-      }
-      hintKeys={keys.resolve}
-      onClick={onResolve}
-    >
-      {popover ? (
-        <Face icon={resolved ? 'undo-2' : 'check'}>{resolved ? 'Unresolve' : 'Resolve'}</Face>
-      ) : resolved ? (
-        'Unresolve'
-      ) : (
-        'Resolve'
-      )}
-      {keys.resolve && <Key keys={keys.resolve} when="focus" decorative />}
-    </Button>
+    <ResolveButton
+      resolved={resolved}
+      resolving={resolving}
+      deleting={deleting !== undefined}
+      keys={keys.resolve}
+      onResolve={onResolve}
+    />
   );
   const tagged = (
     <>
@@ -619,23 +607,24 @@ export function Thread({
         popover ? `text-fg ${className}` : `${card({ view: 'open', ground })} ${className}`
       }
     >
-      {popover ? (
-        <PopoverHead>
-          <span className="flex min-w-0 flex-1 items-center gap-8">
-            {tagged}
-            {lines !== undefined && (
-              <span data-fit className="min-w-cut truncate">
-                {lines}
-              </span>
-            )}
-            <span data-gives="detail" className="lo-num flex-none">
-              {counted(comments, pendingAll)}
+      <ThreadHead popover={popover}>
+        <span className="flex min-w-0 flex-1 items-center gap-8">
+          {tagged}
+          {lines !== undefined && (
+            <span data-fit className="min-w-cut truncate">
+              {lines}
             </span>
+          )}
+          {/* A thread only in your review says so once, in its tag: here it's counted as any is. */}
+          <span data-gives="detail" className="lo-num flex-none">
+            {counted(comments, pendingAll)}
           </span>
-          <span className="flex flex-none items-center gap-2">
-            {resolve}
-            {menu && <MoreButton />}
-            {onClose === undefined ? (
+        </span>
+        <span className="flex flex-none items-center gap-2">
+          {resolve}
+          {menu && <MoreButton />}
+          {popover ? (
+            onClose === undefined ? (
               // After the first, Close's room, so Resolve and `⋯` line up with the first's.
               <span aria-hidden="true" className="w-control-h-sm flex-none" />
             ) : (
@@ -657,21 +646,8 @@ export function Thread({
                   <Icon name="x" size={14} />
                 </Button>
               </span>
-            )}
-          </span>
-        </PopoverHead>
-      ) : (
-        <div className={HEAD_ROW}>
-          {/* The tags and the count wrap in the room the buttons leave, which they never give up. */}
-          <span className={HEAD_WORDS}>
-            {tagged}
-            {lines !== undefined && <span className="min-w-0 truncate">{lines}</span>}
-            {/* A thread only in your review says so once, in its tag: here it's counted as any is. */}
-            <span className="whitespace-nowrap">{counted(comments, pendingAll)}</span>
-          </span>
-          <span className="flex flex-none items-center gap-2">
-            {resolve}
-            {menu && <MoreButton />}
+            )
+          ) : (
             <Button
               variant="ghost"
               size="sm"
@@ -684,9 +660,9 @@ export function Thread({
             >
               <Chevron up />
             </Button>
-          </span>
-        </div>
-      )}
+          )}
+        </span>
+      </ThreadHead>
       {comments.map((comment, index) =>
         editing?.has(comment.id) ? (
           <EditSlot key={comment.id} comment={comment.id} first={index === 0} />

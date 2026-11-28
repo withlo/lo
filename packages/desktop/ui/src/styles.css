@@ -1533,13 +1533,15 @@
 }
 
 /* A `SettingsListItem` whose buttons are words that need the room (`stacks`): under 420 px of its
-   list's box, they go under its name, from its start. */
+   list's box, they go under its name, drawn out by a button's padding so the first one's words
+   start where the name does, its focus ring still whole in the box. */
 @utility settings-item-stacks {
   @container (width < 420px) {
     flex-wrap: wrap;
     row-gap: var(--lo-sp-4);
     & > :last-child {
       flex-basis: 100%;
+      margin-inline-start: calc(var(--lo-sp-8) * -1);
     }
   }
 }

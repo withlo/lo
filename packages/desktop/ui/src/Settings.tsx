@@ -321,8 +321,9 @@ export interface SettingsListItemProps {
   /** Any attributes its list finds it by, such as `data-key`. */
   data?: Readonly<Record<`data-${string}`, string>>;
   /**
-   * Under 420 px of its list's own box (`@container`), its controls go under its name, from its
-   * start: for a list whose items' buttons are words that need the room, as `ScopedList`'s are.
+   * Under 420 px of its list's own box (`@container`), its controls go under its name, the first
+   * one's words starting where the name does: for a list whose items' buttons are words that need
+   * the room, as `ScopedList`'s are.
    */
   stacks?: boolean | undefined;
 }

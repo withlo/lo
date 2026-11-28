@@ -347,7 +347,8 @@ interface EndDrag extends Pick {
 
 /**
  * What an end of an open box's bracket says under the pointer, by the end: which it is, and the
- * keys that move it, by the commands they run. On one line, those that add a line either way.
+ * keys that move it, by the commands they run. On one line, those that add a line either way. It
+ * shows over its line, never under it, where the box, or the popover the box is in, is.
  */
 const HANDLE_TIPS = {
   first: { label: 'First line', commands: ['comments.lineAbove', 'comments.dropFirst'] },
@@ -4550,7 +4551,7 @@ class View implements DiffView {
     if (handle === 'first' || handle === 'last' || handle === 'both') {
       if (this.#handlesQuiet) return undefined;
       const { label, commands } = HANDLE_TIPS[handle];
-      return { label, keys: commands.flatMap((id) => controlOf(id)?.keys ?? []) };
+      return { label, keys: commands.flatMap((id) => controlOf(id)?.keys ?? []), side: 'top' };
     }
     const id = control.dataset.command;
     // A mark, or a name cut short, which says what it is, and no key.

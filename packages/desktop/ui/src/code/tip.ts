@@ -10,6 +10,11 @@ export interface Tip {
   readonly label: string;
   /** Its key, as the system shows each key of it. */
   readonly keys?: readonly string[] | undefined;
+  /**
+   * Which side of the control it shows on where there's room: under it, as most do, or over it,
+   * for a control with what it's about under it, as an end of a comment box's bracket has the box.
+   */
+  readonly side?: 'top' | 'bottom' | undefined;
 }
 
 /** How long the pointer rests on a control before its tip comes, in milliseconds, as `Tooltip`'s. */
@@ -26,12 +31,12 @@ const EDGE = 8;
 export const TIPPED = '[data-command], [data-tip], [data-handle]';
 
 /**
- * Shows a tip under each control in `root` the pointer rests on, as `tipOf` says it, and takes it
- * away as the pointer leaves, a button goes down, a key is pressed or anything scrolls. A tip a
- * scroll took away comes back once the pointer rests again: a move over the control arms it, and so
- * does the end of the scroll, for the control then under the pointer. A control a button went down
- * on, or the pointer was on as a key was pressed, stays quiet until the pointer leaves it. Returns a
- * function that stops.
+ * Shows a tip under each control in `root` the pointer rests on, as `tipOf` says it, or over it
+ * where it says so (`side`), and takes it away as the pointer leaves, a button goes down, a key is
+ * pressed or anything scrolls. A tip a scroll took away comes back once the pointer rests again: a
+ * move over the control arms it, and so does the end of the scroll, for the control then under the
+ * pointer. A control a button went down on, or the pointer was on as a key was pressed, stays quiet
+ * until the pointer leaves it. Returns a function that stops.
  */
 export function tips(
   root: HTMLElement,
@@ -69,7 +74,10 @@ export function tips(
     (root.closest('.lo-app') ?? document.body).append(popup);
     const at = control.getBoundingClientRect();
     const size = popup.getBoundingClientRect();
-    const below = at.bottom + GAP + size.height <= window.innerHeight - EDGE;
+    // On its side where it fits there, else on the other.
+    const fitsBelow = at.bottom + GAP + size.height <= window.innerHeight - EDGE;
+    const fitsAbove = at.top - GAP - size.height >= EDGE;
+    const below = tip.side === 'top' ? !fitsAbove : fitsBelow;
     const left = at.left + at.width / 2 - size.width / 2;
     popup.style.left = `${Math.max(EDGE, Math.min(left, window.innerWidth - EDGE - size.width))}px`;
     popup.style.top = `${below ? at.bottom + GAP : at.top - GAP - size.height}px`;

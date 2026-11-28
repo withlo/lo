@@ -284,7 +284,10 @@ function shyScope(shown: boolean): { 'data-shy-scope'?: '' } {
   return shown ? { 'data-shy-scope': '' } : {};
 }
 
-/** An event's line: what happened, then when, and the row's `⋯` where it has a menu. */
+/**
+ * An event's line: what happened, then when, and the row's `⋯` where it has a menu, set in from the
+ * row's end by a card head's own inset, so its time and `⋯` are in the cards' columns.
+ */
 function Line({
   children,
   when,
@@ -298,7 +301,7 @@ function Line({
     <div className="flex min-h-32 flex-wrap items-center gap-x-6 gap-y-4 text-fg-muted text-ui">
       {children}
       {(when !== undefined || menu) && (
-        <span className="ms-auto flex flex-none items-center gap-x-8">
+        <span className="ms-auto flex flex-none items-center gap-x-8 pe-12">
           {when !== undefined && <time className="text-small">{when}</time>}
           {menu && <MoreButton shy />}
         </span>
@@ -844,7 +847,8 @@ export function TimelineOlder({
           </>
         )}
         {menu && (
-          <span className="ms-auto flex flex-none">
+          // In the cards' column, as an event's is.
+          <span className="ms-auto flex flex-none pe-12">
             <MoreButton shy />
           </span>
         )}

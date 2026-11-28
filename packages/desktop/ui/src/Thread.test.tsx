@@ -419,6 +419,38 @@ describe('Thread', () => {
     }
   });
 
+  it('keeps an open card’s head on one line: narrow, it gives up its count, then Resolve’s words for its icon, before its lines are cut', () => {
+    // Its lines take 120 px. Each step given up gives them more room: none, the key chips, which
+    // show only on the card the keyboard is on, the count, then Resolve's words, which is enough.
+    const room = [40, 40, 90, 130];
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.hasAttribute('data-fit') ? room[given(this)] : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.hasAttribute('data-fit') ? 120 : 0;
+      },
+    });
+    try {
+      const host = render(<Thread {...PROPS} lines="Lines 10–35" canResolve menu />);
+      const head = headRow(host)!;
+      expect(head.getAttribute('data-gave-up')).toBe('keys detail labels');
+      expect(head.firstElementChild?.textContent).toBe('UnresolvedLines 10–352 comments');
+      // As its icon, it keeps its name, and its words are what goes.
+      const resolve = head.querySelector('button[data-squares="labels"]');
+      expect(resolve?.getAttribute('aria-label')).toBe('Resolve');
+      expect(resolve?.querySelector('[data-gives="labels"]')?.textContent).toBe('Resolve');
+      expect(resolve?.querySelector('[data-takes="labels"] svg')).not.toBeNull();
+    } finally {
+      delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+      delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    }
+  });
+
   it('draws nothing for a thread with no comments', () => {
     expect(render(<Thread {...PROPS} comments={[]} />).innerHTML).toBe('');
   });

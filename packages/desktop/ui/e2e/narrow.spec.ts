@@ -1,7 +1,7 @@
 // What narrows in Chromium itself, where it's laid out: jsdom lays nothing out. An out-of-date
 // overview's callout and a code block's flag are one column only where the button doesn't fit beside
-// the text, a path wraps only after a slash, and a new thread's comment on its way has the head row
-// its card will.
+// the text, a path wraps only after a slash, and a new thread's comment on its way has the one-line
+// head row its card will.
 
 import type { ElectronApplication, Page } from '@playwright/test';
 
@@ -205,15 +205,17 @@ interface Head {
   readonly gaveUp: string;
 }
 
-test('a new thread’s comment on its way has the head row its card will, as tall at every width, so nothing moves as the card lands', async () => {
+test('a new thread’s comment on its way has the one-line head row its card will, giving up what it does at every width, so nothing moves as the card lands', async () => {
   const page = await open();
   const widths = Array.from({ length: 16 }, (_, step) => 280 + step * 16);
   const seen = await heads(page, '#sent', '#landed', widths);
   for (const { width, sent, landed } of seen) {
     expect(sent, `${width} px`).toEqual(landed);
   }
-  // Narrow, its words wrap, as the card's do.
-  expect(seen[0]!.sent.height).toBeGreaterThan(seen.at(-1)!.sent.height);
+  // Narrow, it gives up its count, then Resolve's words, and stays one line; wide, nothing.
+  expect(seen[0]!.sent.gaveUp).toBe('keys detail labels');
+  expect(seen.at(-1)!.sent.gaveUp).toBe('');
+  expect(new Set(seen.map(({ sent }) => sent.height)).size).toBe(1);
 });
 
 test('beside the lines, a new thread’s comment on its way has the one-line head its popover will, giving up what it does at every width', async () => {

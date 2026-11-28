@@ -267,7 +267,9 @@ where the action's target is.
   "base → r2" never cuts and no two groups touch. A diff's file header gives up what follows its
   name (the counts, where a rename was, the tags), then cuts its folders, then drops them, leaving
   the name with the whole path as its tooltip, and only then cuts the name at its end; its end, from
-  the threads to the `⋯`, is never cut.
+  the threads to the `⋯`, is never cut. A thread's head is one line on its card and in a popover:
+  the card's gives up its count, then Resolve's words for its icon, and the popover's Resolve's
+  words, then its count, before either cuts its lines.
 - **A choice of two to four is one `SegmentedControl`,** never buttons or pills drawn by hand: the
   header's view switch, the Files panel's Tree and Review order, the threads' filter, a comment
   box's Write and Preview, and Settings' choices are all one. Its thumb slides to the segment
@@ -430,13 +432,12 @@ changes in the same frame.
 - `Skeleton` is the `skeleton` utility on a block. Give each the size of what it stands for, and lay
   them out as the content will be, at its heights, with its rows' insets, markers and frames
   (`TimelineSkeleton`, `ThreadListSkeleton`, `OverviewSkeleton`). Lay out enough to fill the view in
-  a window of the usual height, not a screenful's start, and have the view cut them off at its foot:
-  a wait never scrolls. Put them in `Skeletons`, which names the wait to a screen reader and shows
-  nothing for the wait's first 300 ms, then the skeletons in one Swap; a switch to a view showing it
-  holds what that view replaces, as for `Loading`. In a tab's middle, give them to
-  `MiddlePlaceholder` as its `skeleton`, which carries the tab's wait: once GitHub hasn't answered
-  for eight seconds, the mark takes the skeletons' place to say so and offer Cancel, as `Loading`
-  does.
+  a window 1000 px tall, not a screenful's start, and have the view cut them off at its foot: a wait
+  never scrolls. Put them in `Skeletons`, which names the wait to a screen reader and shows nothing
+  for the wait's first 300 ms, then the skeletons in one Swap; a switch to a view showing it holds
+  what that view replaces, as for `Loading`. In a tab's middle, give them to `MiddlePlaceholder` as
+  its `skeleton`, which carries the tab's wait: once GitHub hasn't answered for eight seconds, the
+  mark takes the skeletons' place to say so and offer Cancel, as `Loading` does.
 - A view that shows `Loading` or skeletons sets `aria-busy` on its own box until its content is in,
   so a screen reader waits for the content rather than reading the wait.
 - Pass `busy={false}` to a button that can be busy, not nothing, and its `working` too, so it holds
@@ -1005,7 +1006,8 @@ text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" di
   Preview is at the right, then the control that closes the box (`close`), which keeps the draft.
   "as login" shows only when more than one account is signed in. On a new comment on lines those
   words are a button: its menu, its keys and the bracket's two ends in the gutter change the lines,
-  and the box keeps its text.
+  and the box keeps its text. Each end's tooltip, which end it is and its keys, shows over its line,
+  never under it, where the box is.
 - **Body.** The editor, or its preview. The box has one ring, which is its focus; nothing inside it
   has another. An empty box under the pull request says what it's for in a quiet hint (`hint`):
   "Comment on #264"; one whose head says it, as a reply's does, has none.
@@ -1025,19 +1027,20 @@ text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" di
 - **Sending.** A comment is its card from the moment it's sent, where that card will be: the box
   draws the text as it will read, formatted from its first frame, with "Sending…" where its time
   will be (`SentPost`; "Saving…" for an edit), as tall as the card and no taller. A new thread's has
-  the head row its thread will have, keeping the room of the buttons that row will hold, so its
-  words wrap, or beside lines give up, where the thread's will; and a reply is the next comment of
-  its thread's card, each over the row that offers a reply. A comment on the pull request itself is
-  the timeline's last row, drawn as its card, while the box at the end stays as it is, empty, and on
-  screen where its foot was as it sent: the frame that draws the row brings it back whole (`reveal`,
-  `nearest`); an edit there is the comment's card, saying "Saving…". Each stays until the card from
-  GitHub is drawn, and gives way to it in one frame with nothing moving: the text never leaves the
-  screen. A send that fails turns back into the open box with the text as it was, under a note that
-  says what wasn't sent and why, in the danger tone. The box's own action sends it again: a note
-  never offers a second button for what a button under it does. A screen reader hears each step from
-  the comments' one live region (`tell`): that it's sending, that it was sent, or the note. A note
-  takes focus back into its box only from a reader still there, or with focus nowhere: one who left
-  for the code keeps their place.
+  the head row its thread will have, keeping the room of the buttons that row will hold, so it gives
+  up what the thread's will, where the thread's will; and a reply is the next comment of its
+  thread's card, each over the row that offers a reply. A comment on the pull request itself is the
+  timeline's last row, drawn as its card, while the box at the end stays as it is, empty, its editor
+  on its ground with its hint, and Write | Preview and "Attach files…" dimmed with what an empty box
+  dims, and on screen where its foot was as it sent: the frame that draws the row brings it back
+  whole (`reveal`, `nearest`); an edit there is the comment's card, saying "Saving…". Each stays
+  until the card from GitHub is drawn, and gives way to it in one frame with nothing moving: the
+  text never leaves the screen. A send that fails turns back into the open box with the text as it
+  was, under a note that says what wasn't sent and why, in the danger tone. The box's own action
+  sends it again: a note never offers a second button for what a button under it does. A screen
+  reader hears each step from the comments' one live region (`tell`): that it's sending, that it was
+  sent, or the note. A note takes focus back into its box only from a reader still there, or with
+  focus nowhere: one who left for the code keeps their place.
 - **An edit's box is the comment.** From an edit opening to its card showing what was saved, the
   comment's text shows once, in the box: the thread's card draws without that comment and offers no
   reply meanwhile.
@@ -1118,7 +1121,9 @@ them.
 - A term is drawn by `TermRow` wherever it's listed, with one menu. A term the reader ignores is
   plain text, and waits in the "Ignored" group at the list's end.
 - A section's heading folds it. Nothing is hidden: a collapsed section keeps its heading, and the
-  tl;dr never collapses. What goes into a collapsed section expands it first.
+  tl;dr never collapses. What goes into a collapsed section expands it first. Its row in the outline
+  says so with the heading's chevron, pointing right, in its ball's place: `lo-fg-subtle`, or Powder
+  while it's the section on screen.
 - The stack overview is a subject of the Overview view, not a layer. Its list of layers is Lo's,
   drawn live from the stack.
 

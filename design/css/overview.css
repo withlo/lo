@@ -389,5 +389,6 @@
    hairline, then the rest. Why the repo's definitions can't be used sits over them. */
 .lo-glossary { max-width: var(--lo-read-measure); }
 .lo-glossary__note { padding-bottom: 12px; }
-/* The hairline takes the place of the last marked row's own. */
-.lo-glossary__rest { margin-top: -1px; border-top: 1px solid var(--lo-border); }
+/* The hairline takes the place of the last marked row's own, a step stronger than the rows', so the
+   two groups read apart in both themes. */
+.lo-glossary__rest { margin-top: -1px; border-top: 1px solid var(--lo-border-strong); }

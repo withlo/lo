@@ -195,9 +195,21 @@
 .lo-prose > .lo-section-head + .lo-section-head {
   margin-top: 52px;
 }
-/* A collapsed section's row in the outline is quieter, as its heading is. */
+/*
+ * A collapsed section's row in the outline is quieter, as its heading is, and has the heading's
+ * chevron in its ball's place, which says so: Powder while its section is on screen, as the ball is.
+ */
 .lo-toc__item[data-collapsed] {
   color: var(--lo-fg-subtle);
+}
+.lo-toc__item[data-collapsed]::before {
+  content: none;
+}
+.lo-toc__fold {
+  color: var(--lo-fg-subtle);
+}
+.lo-toc__item[aria-current='true'] .lo-toc__fold {
+  color: var(--lo-accent);
 }
 
 /*
