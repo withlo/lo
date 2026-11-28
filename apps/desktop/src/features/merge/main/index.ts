@@ -117,9 +117,7 @@ export default defineFeature(contract, {
       shipping?.cancel(key);
     },
     sent: () => merging?.list() ?? [],
-    askAgain({ key }) {
-      merges().askAgain(key);
-    },
+    askAgain: ({ key }) => merges().askAgain(key),
     dismiss({ key }) {
       merging?.dismiss(key);
     },

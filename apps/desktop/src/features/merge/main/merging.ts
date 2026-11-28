@@ -919,19 +919,20 @@ export class Merging {
   /**
    * Asks GitHub again how the merge from the plan named `key` went, when Lo couldn't tell: about
    * the merge, while GitHub still answers about it, or else by reading the pull request again. A
-   * read: nothing is sent again.
+   * read: nothing is sent again. Says whether it asks about the merge itself, which `jobs` has said
+   * is pending again by then; a read of the pull request says nothing till it's made.
    */
-  askAgain(key: string): void {
+  askAgain(key: string): boolean {
     // Or a plan refused while Lo couldn't tell how the last merge of its pull request ended.
     const sent = this.#byKey(key) ?? this.#sent.get(this.#planned.get(key)?.key ?? '');
-    if (!sent) return;
+    if (!sent) return false;
     // Auto-merge's write is one request, which GitHub can't be asked about: the read settles it.
     if (sent.own) {
       if (sent.own.kind === 'unknown') this.#settle(sent);
-      return;
+      return false;
     }
     const job = this.#options.jobs.job(sent.pull);
-    if (!job || endedWith(job)?.kind !== 'unknown') return;
+    if (!job || endedWith(job)?.kind !== 'unknown') return false;
     if (this.#options.jobs.followAgain(sent.pull)) {
       // A read since the last end settles nothing of this ask: only its own end gives turns back.
       sent.unwatch?.();
@@ -940,9 +941,10 @@ export class Merging {
       // running: a stack's merge holds every layer's.
       if (!sent.turn) sent.lacking = sentNames(sent.plan);
       this.#holdLacking(sent);
-      return;
+      return true;
     }
     this.#settle(sent);
+    return false;
   }
 
   /**
