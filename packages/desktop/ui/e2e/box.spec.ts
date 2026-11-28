@@ -28,9 +28,7 @@ function foot(page: Page, width: number, vim: boolean) {
       window.box.vim(on);
       window.box.width(wide);
       // What it gives up is measured as the frame is laid out, before it's painted.
-      for (let frame = 0; frame < 2; frame += 1) {
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-      }
+      await window.waits.frames(`the box laid out ${wide} px wide`, 2);
       const frame = document.querySelector('#box [role="group"], #box > *')!;
       const edge = frame.getBoundingClientRect().right;
       const controls = [...frame.querySelectorAll<HTMLElement>('button, .mode-chip')].filter(

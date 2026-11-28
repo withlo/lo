@@ -274,20 +274,10 @@ const heads = {
     const found: { width: number; drawn: Drawn[] }[] = [];
     for (const width of widths) {
       heads.size(width);
-      await heads.frames(2);
+      await window.waits.frames(`the headers laid out ${width} px wide`, 2);
       found.push({ width, drawn: heads.read() });
     }
     return found;
-  },
-  /** Waits for `count` frames. */
-  frames(count: number): Promise<void> {
-    return new Promise((resolve) => {
-      const next = (left: number): void => {
-        if (left === 0) resolve();
-        else requestAnimationFrame(() => next(left - 1));
-      };
-      next(count);
-    });
   },
 };
 

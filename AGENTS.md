@@ -186,7 +186,11 @@ What `ui`'s components do that only a real browser shows, such as where `Tab` mo
 by Playwright specs in `packages/desktop/ui/e2e/`. Each builds its own page with Vite and opens it
 in Electron's Chromium (`pnpm nx run ui:e2e`), and CI runs them with the app's smoke test. On Linux
 each worker opens its pages on an Xvfb display of its own, as the smoke test's workers do, so a run
-there needs Xvfb, and shows nothing on the screen.
+there needs Xvfb, and shows nothing on the screen. The window is never shown, so its page is never
+throttled as one in the background would be, and a test gets it once it has drawn its first frame. A
+spec waits for a frame, or for a resize observer's notice, only through the page's `window.waits`
+(`e2e/electron.ts`), which fails within 10 s saying what it waited for, so a frame that never comes
+fails as that, and not as the test running out of time.
 
 ## The desktop app
 

@@ -43,7 +43,7 @@ async function open(layout: 'split' | 'inline', width: number): Promise<Page> {
 }
 
 function frames(page: Page): Promise<void> {
-  return page.evaluate(() => window.heads.frames(3));
+  return page.evaluate(() => window.waits.frames('the headers to lay out what changed', 3));
 }
 
 function read(page: Page) {

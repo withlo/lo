@@ -22,22 +22,19 @@ document.querySelector('#root')!.append(pane);
 keepEnd(pane);
 
 /** Two frames, by when what changed is laid out and drawn. */
-const drawn = () =>
-  new Promise<void>((resolve) =>
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-  );
+const drawn = (what: string) => window.waits.frames(what, 2);
 
 const ends = {
   /** Scrolls the pane to `top`, as the reader would, and says where it is once drawn. */
   async scroll(top: number) {
     pane.scrollTop = top;
-    await drawn();
+    await drawn(`the pane scrolled to ${top}`);
     return ends.where();
   },
   /** Makes the box `height` tall, as it would be as lines go, and says where things are once drawn. */
   async shrink(height: number) {
     box.style.height = `${height}px`;
-    await drawn();
+    await drawn(`the box ${height} px tall`);
     return ends.where();
   },
   /** How far the pane scrolls, how far it can, and where its tenth row and its box are on screen. */

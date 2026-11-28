@@ -123,9 +123,7 @@ const skeleton = {
       box.style.width = `${width}px`;
       box.style.height = '900px';
     }
-    for (let frame = 0; frame < 3; frame += 1) {
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-    }
+    await window.waits.frames(`the overview and its skeleton laid out ${width} px wide`, 3);
     return { overview: overviewPlaces(overview), skeleton: skeletonPlaces(view) };
   },
 };

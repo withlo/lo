@@ -29,9 +29,7 @@ function callout(page: Page, width: number) {
   return page.evaluate(async (wide) => {
     document.querySelector<HTMLElement>('#frame')!.style.width = `${wide}px`;
     // What it gives up is measured as the frame is laid out, before it's painted.
-    for (let frame = 0; frame < 3; frame += 1) {
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-    }
+    await window.waits.frames(`the callout laid out ${wide} px wide`, 3);
     const box = document.querySelector<HTMLElement>('#frame .lo-ov-stale')!;
     const rect = (selector: string) => box.querySelector(selector)!.getBoundingClientRect();
     const [banner, icon, title, sub, button] = [
@@ -92,9 +90,7 @@ test('the callout keeps its button beside its text while it fits, and is one col
 function flag(page: Page, width: number) {
   return page.evaluate(async (wide) => {
     document.querySelector<HTMLElement>('#flagframe')!.style.width = `${wide}px`;
-    for (let frame = 0; frame < 3; frame += 1) {
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-    }
+    await window.waits.frames(`the flag laid out ${wide} px wide`, 3);
     const box = document.querySelector<HTMLElement>('#flagframe .lo-codeblock__flag')!;
     const text = box.querySelector<HTMLElement>('.lo-codeblock__flagtext')!;
     const line = Number.parseFloat(getComputedStyle(text).lineHeight);
@@ -178,13 +174,7 @@ function heads(page: Page, sent: string, landed: string, widths: readonly number
       for (const width of each) {
         for (const frame of rows) frame.style.width = `${width}px`;
         // One frame: a popover's head fits itself in its own resize observer, made before this one.
-        await new Promise<void>((resolve) => {
-          const sized = new ResizeObserver(() => {
-            sized.disconnect();
-            resolve();
-          });
-          sized.observe(rows[0]!);
-        });
+        await window.waits.resized(`${frames.join(' and ')} laid out ${width} px wide`, rows[0]!);
         // Each one's head row, the one row drawn with a border under it.
         const [mine, theirs] = rows.map((frame) => {
           const head = frame.querySelector('.border-b')!;
