@@ -20,6 +20,7 @@ import {
   type PullTab,
 } from '../../tab/window/shared.ts';
 import { on } from '../settings.ts';
+import { editRefusal, openEdit } from './edit.ts';
 import { Example } from './Example.tsx';
 import { markOf, newestHead, standingOf, type MarkKind } from './facts.ts';
 import { blockAt, drawnIn, onDrawn } from './follow.ts';
@@ -339,4 +340,17 @@ export function showStackOverview(tab: PullTab): boolean {
 /** Sets view `id`'s Overview back to its layer's own overview, as showing the layer does. */
 export function showOwnOverview(id: string): void {
   setSubject(id, 'pull');
+}
+
+/**
+ * Opens Edit term on the term `name` names, by any name it goes by, in the definitions of pull
+ * request's tab `tab`'s repository, as `terms.edit` does. Says whether it opened.
+ */
+export function editTermIn(tab: PullTab, name: string): boolean {
+  return editRefusal(tab, name) === true && openEdit(tab.id, name);
+}
+
+/** Whether Edit term can open on the term `name` names in tab `tab`, or why not, in a few words. */
+export function termEditableIn(tab: PullTab, name: string): true | string {
+  return editRefusal(tab, name);
 }

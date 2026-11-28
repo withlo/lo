@@ -222,6 +222,16 @@
   min-height: 2lh;
 }
 
+/*
+ * A text field that grows with what's written in it, from three of its lines to eight, then
+ * scrolls: with `py-6` and its border, as a definition's field has.
+ */
+@utility grow-3-8 {
+  field-sizing: content;
+  min-height: calc(3lh + 2 * var(--lo-sp-6) + 2px);
+  max-height: calc(8lh + 2 * var(--lo-sp-6) + 2px);
+}
+
 /* Popovers and menus sit over the window's content and its dialogs, since one can open from a
    dialog. */
 @utility z-popover {

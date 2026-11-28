@@ -1,12 +1,14 @@
 // The overview feature in main: for each pull request's tab, its overview and its repository's
 // definitions, read from GitHub's REST API as the tab's account and sent to the window each time
-// they change, with their files on request. What's read is kept in the database, which clearing
-// the cache empties. While Settings turns overviews off, and until Lo has read the settings file,
-// nothing is read.
+// they change, with their files on request; and an edit of a term of the definitions, written as
+// the tab's account. What's read is kept in the database, which clearing the cache empties. While
+// Settings turns overviews off, and until Lo has read the settings file, nothing is read.
 
 import { isOnScreen, RepoRef, type GithubClient, type ReadPriorityNow } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import { jobs } from '../../../ipc/jobs.ts';
+import { mainJobs } from '../../../main/background.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { watchPresence } from '../../../main/screen.ts';
 import { provides } from '../../../main/services.ts';
@@ -15,10 +17,12 @@ import { clearing, settings } from '../../settings/service.ts';
 import type { Acting } from '../../tab/contract.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
+import { contract as overviewJobs } from '../jobs.ts';
 import { overviews } from '../service.ts';
 import { auto, collapsed, on as overviewsOn } from '../settings.ts';
 import { Blobs } from './blobs.ts';
 import { codeReply, readKey } from './code.ts';
+import { Edits } from './edits.ts';
 import { LayerReads } from './layers.ts';
 import { SavedRefs } from './saved.ts';
 import { installSkill, skillState } from './skill.ts';
@@ -50,9 +54,14 @@ interface Kept {
   stores: Stores;
   /** What stacks' layers' overviews and descriptions were read. */
   layers: LayerReads;
+  /** The edits of the definitions main writes. */
+  edits: Edits;
 }
 
 const log = (line: string) => console.error(`overview: ${line}`);
+
+/** The overview's jobs in the background process, as main runs them. */
+const background = jobs(overviewJobs, mainJobs);
 
 function tabOf(id: string): OverviewTab {
   const tab = followed.get(id);
@@ -64,6 +73,23 @@ function definitionsOf(id: string): TabStore {
   const store = definitions.get(id);
   if (!store) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
   return store;
+}
+
+/** Who edits tab `id`'s repository's definitions, the tab's account, and which repository that is. */
+function editorOf(
+  context: FeatureContext<typeof contract>,
+  id: string,
+): { login: string; repository: RepoRef } {
+  const info = context.use(tabs).pull(id);
+  if (!info || !definitions.has(id)) {
+    throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
+  }
+  if (info.acting?.kind !== 'account') throw new IpcError('refused', 'Sign in to edit terms');
+  // A fork's pull request edits its base repository's.
+  return {
+    login: info.acting.login,
+    repository: new RepoRef(info.repository.owner, info.repository.name),
+  };
 }
 
 /** Runs `request` as `acting`, in its account's queue as `priority` says, or as nobody. */
@@ -97,13 +123,28 @@ function subjectOf(id: string, stack: boolean | undefined): OverviewTab {
 /** What's kept, from the database the first time anything asks for it. */
 function keptIn(context: FeatureContext<typeof contract>): Kept {
   const blobs = kept?.blobs ?? new Blobs(context.database, { log });
+  const stores =
+    kept?.stores ??
+    new Stores({
+      github: (acting, request, priority) => readAs(context, acting, request, priority),
+      kept: new KeptStores(context.database, { log }),
+      log,
+    });
   kept ??= {
     blobs,
     saved: new SavedRefs(context.database, { log }),
     stacked: new SavedRefs(context.database, { log, of: 'stack' }),
-    stores: new Stores({
-      github: (acting, request, priority) => readAs(context, acting, request, priority),
-      kept: new KeptStores(context.database, { log }),
+    stores,
+    edits: new Edits({
+      async write(login, request, paused) {
+        const poller = await context.use(github).poller(login);
+        return poller.writeChanging([], (client) => request(client, poller.writeSpacing), {
+          whilePaused: paused,
+        });
+      },
+      read: (login, request) => readAs(context, { kind: 'account', login }, request, 'foreground'),
+      make: (input) => background.edit(input),
+      stores,
       log,
     }),
     layers: new LayerReads({
@@ -305,6 +346,14 @@ export default defineFeature(contract, {
     storeFile: ({ id, file }) => definitionsOf(id).file(file),
     retryStore({ id }) {
       return definitionsOf(id).retry();
+    },
+    editTerm({ id, edit }, context) {
+      const { login, repository } = editorOf(context, id);
+      return keptIn(context).edits.edit(login, repository, edit);
+    },
+    checkEdit({ id, commit }, context) {
+      const { login, repository } = editorOf(context, id);
+      return keptIn(context).edits.check(login, repository, commit);
     },
     currentSkill: () => skillState(process.env),
     installSkill({ agents }, { publish }) {

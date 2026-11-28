@@ -52,6 +52,7 @@ function stateOf(found: StoreState['found'], more: Partial<StoreState> = {}): St
     saved: false,
     checkedAt: 1,
     problem: null,
+    push: true,
     ...more,
   };
 }

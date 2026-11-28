@@ -1,13 +1,14 @@
 /**
  * Changes to the repository's definitions, the store, each made as a new store: a term added, a
- * term's definition replaced, with the one it had kept first among its changes, and a change
- * suggested for a locked term. And the store written as `terms.json`, as {@link parseStore} reads
- * it back. The workflow makes these changes when a pull request merges; nothing changes a store in
- * place.
+ * term's definition replaced, with the one it had kept first among its changes, a change suggested
+ * for a locked term, and a person's edit of a term in Lo. And the store written as `terms.json`, as
+ * {@link parseStore} reads it back. The workflow makes the first three when a pull request merges,
+ * and Lo the last; nothing changes a store in place.
  */
 
 import { utf8Length } from './source.ts';
 import {
+  parseStore,
   STORE_LIMITS,
   type Account,
   type Change,
@@ -101,6 +102,167 @@ function termOf(store: Store, key: string): StoreTerm {
   const term = store.terms.get(key);
   if (!term) throw new Error(`The store has no term ${JSON.stringify(key)}.`);
   return term;
+}
+
+/**
+ * A person's edit of a term, in Lo: its definition and the other forms that name it, by the account
+ * signed in, at a time. It's human-written, from `lo`, and the definition it replaces goes first
+ * among the term's changes. A locked term takes it too: a lock only turns merged pull requests'
+ * changes into suggestions.
+ */
+export interface TermEdit {
+  /** The term as written, which an edit never renames: what adds it back if it was deleted. */
+  term: string;
+  /** Its definition, one paragraph. Its spaces at either end go. */
+  definition: string;
+  /**
+   * The other forms that name it, each as written: those with nothing but spaces, and those that
+   * name the term itself or another form before them, go.
+   */
+  aliases: readonly string[];
+  by: Account;
+  /** When, as an RFC 3339 time in UTC: `2026-11-27T10:30:00Z`. */
+  at: string;
+}
+
+/**
+ * The term as an edit started from it, which says whether it changed since: its definition and the
+ * forms that name it; or none, for a term the store didn't hold, as one deleted elsewhere is.
+ */
+export type EditBase = { definition: string; aliases: readonly string[] } | null;
+
+/**
+ * What an edit of a term came to: `edited`, the store with it; `same`, where the store holds it
+ * already, so nothing changes; `changed`, where the term isn't as the edit started from it (another
+ * definition, other forms, or deleted, `undefined`, or there again), with what it is now; or
+ * `refused`, where the store can't hold it, in a sentence: a form that names another term, too
+ * many, or a definition its rules refuse.
+ */
+export type EditResult =
+  | { kind: 'edited'; store: Store }
+  | { kind: 'same' }
+  | { kind: 'changed'; term: StoreTerm | undefined }
+  | { kind: 'refused'; message: string };
+
+/**
+ * `store` with `edit` of the term `key`, a term's key, made: where the term is as `base` says it
+ * was as the edit started, else what it is now. A term deleted since the edit started is added back
+ * only from a base of none, as "Save mine" asks once Lo has said it was. A term that holds the edit
+ * already, however it came to, changes nothing.
+ */
+export function editTerm(store: Store, key: string, base: EditBase, edit: TermEdit): EditResult {
+  const current = store.terms.get(key);
+  const text = edit.definition.trim();
+  const aliases = aliasesOf(edit.term, edit.aliases);
+  if (current && sameDefinition(current.definition, text) && sameNames(current.aliases, aliases)) {
+    return { kind: 'same' };
+  }
+  if (base === null ? current !== undefined : !current || !isAsBase(current, base)) {
+    return { kind: 'changed', term: current };
+  }
+  const refusal = editRefusal(store, key, edit.term, aliases, current === undefined);
+  if (refusal !== undefined) return { kind: 'refused', message: refusal };
+  const given: StoreDefinition = {
+    definition: text,
+    written: 'human',
+    by: edit.by,
+    from: 'lo',
+    at: edit.at,
+  };
+  const defined = current ? withDefinition(store, key, given) : withTerm(store, edit.term, given);
+  const next = withAliases(defined, key, aliases);
+  // The store's own rules, on the term alone: its definition, its forms, who and when.
+  const alone: Store = {
+    format: 1,
+    terms: new Map([[key, next.terms.get(key)!]]),
+    names: new Map([[key, key]]),
+  };
+  const read = parseStore(storeText(alone));
+  if (!read.ok) return { kind: 'refused', message: read.problem.message };
+  return { kind: 'edited', store: next };
+}
+
+/**
+ * Why `store` can't take the term `key`, named `term`, named by `aliases` too, in a sentence: too
+ * many forms, a form another term goes by, and for one it adds (`adds`), a store that's full or a
+ * name another term goes by.
+ */
+function editRefusal(
+  store: Store,
+  key: string,
+  term: string,
+  aliases: readonly string[],
+  adds: boolean,
+): string | undefined {
+  if (aliases.length > STORE_LIMITS.aliases) {
+    return `A term has at most ${STORE_LIMITS.aliases} other forms, and this has ${aliases.length}.`;
+  }
+  for (const alias of aliases) {
+    const owner = store.names.get(termKey(alias));
+    if (owner !== undefined && owner !== key) {
+      return `${JSON.stringify(alias)} names ${JSON.stringify(owner)}, another term.`;
+    }
+  }
+  if (!adds) return undefined;
+  if (termKey(term) !== key)
+    return `${JSON.stringify(term)} isn't the term ${JSON.stringify(key)}.`;
+  const owner = store.names.get(key);
+  if (owner !== undefined)
+    return `${JSON.stringify(term)} names ${JSON.stringify(owner)}, another term.`;
+  if (store.terms.size >= STORE_LIMITS.terms) {
+    return `The store holds ${STORE_LIMITS.terms.toLocaleString('en-US')} terms, the most it may.`;
+  }
+  return undefined;
+}
+
+/** Whether `term` is as `base` says it was: the same definition, and the same forms. */
+function isAsBase(term: StoreTerm, base: NonNullable<EditBase>): boolean {
+  return (
+    sameDefinition(term.definition, base.definition) &&
+    sameNames(term.aliases, aliasesOf(term.term, base.aliases))
+  );
+}
+
+/** The keys `names` go by, each once, in order. */
+function keysOf(names: readonly string[]): string[] {
+  return [...new Set(names.map(termKey))].toSorted();
+}
+
+/** Whether two lists of forms name the same, whatever their order, case and runs of spaces. */
+function sameNames(a: readonly string[], b: readonly string[]): boolean {
+  const [one, two] = [keysOf(a), keysOf(b)];
+  return one.length === two.length && one.every((name, index) => name === two[index]);
+}
+
+/**
+ * `aliases` of `term` as an edit leaves them: each without spaces at either end, and none that's
+ * empty, names the term or names what one before it does.
+ */
+export function aliasesOf(term: string, aliases: readonly string[]): string[] {
+  const seen = new Set([termKey(term)]);
+  const kept: string[] = [];
+  for (const each of aliases) {
+    const alias = each.trim();
+    const key = termKey(alias);
+    if (key === '' || seen.has(key)) continue;
+    seen.add(key);
+    kept.push(alias);
+  }
+  return kept;
+}
+
+/** `store` with the term `key` named by `aliases` besides its own name, and by nothing else. */
+function withAliases(store: Store, key: string, aliases: readonly string[]): Store {
+  const current = termOf(store, key);
+  const names = new Map(store.names);
+  for (const alias of current.aliases) {
+    if (names.get(termKey(alias)) === key) names.delete(termKey(alias));
+  }
+  for (const alias of aliases) names.set(termKey(alias), key);
+  names.set(key, key);
+  const terms = new Map(store.terms);
+  terms.set(key, { ...current, aliases: [...aliases] });
+  return { ...store, terms, names };
 }
 
 /** Only the fields of a definition, from anything holding one. */

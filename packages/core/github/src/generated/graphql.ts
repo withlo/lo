@@ -713,6 +713,15 @@ export type MergedPullRequestFieldsFragment = { number: number, createdAt: strin
       | { __typename: 'Tree', oid: string }
      | null, refUpdateRule: { pattern: string } | null } | null, commits: { nodes: Array<{ commit: { oid: string } } | null> | null }, mergeCommit: { oid: string, parents: { nodes: Array<{ oid: string } | null> | null } } | null, stackEntry: { position: number, stack: { number: number } | null } | null };
 
+export type MoveTermsMutationVariables = Exact<{
+  repositoryId: string;
+  before: string;
+  after: string;
+}>;
+
+
+export type MoveTermsMutation = { updateRefs: { clientMutationId: string | null } | null };
+
 export type OpenPullRequestsQueryVariables = Exact<{
   owner: string;
   name: string;
@@ -2987,6 +2996,14 @@ export type SubmitPullRequestReviewMutationVariables = Exact<{
 
 export type SubmitPullRequestReviewMutation = { submitPullRequestReview: { pullRequestReview: { id: string, state: PullRequestReviewState } | null } | null };
 
+export type TermsAccessQueryVariables = Exact<{
+  owner: string;
+  name: string;
+}>;
+
+
+export type TermsAccessQuery = { repository: { id: string, viewerPermission: RepositoryPermission | null } | null };
+
 export type TimelineQueryVariables = Exact<{
   owner: string;
   name: string;
@@ -4253,6 +4270,15 @@ export const MergedPullRequestsDocument = new TypedDocumentString(`
     }
   }
 }`) as unknown as TypedDocumentString<MergedPullRequestsQuery, MergedPullRequestsQueryVariables>;
+export const MoveTermsDocument = new TypedDocumentString(`
+    mutation MoveTerms($repositoryId: ID!, $before: GitObjectID!, $after: GitObjectID!) {
+  updateRefs(
+    input: {repositoryId: $repositoryId, refUpdates: [{name: "refs/lo/terms", beforeOid: $before, afterOid: $after, force: false}]}
+  ) {
+    clientMutationId
+  }
+}
+    `) as unknown as TypedDocumentString<MoveTermsMutation, MoveTermsMutationVariables>;
 export const OpenPullRequestsDocument = new TypedDocumentString(`
     query OpenPullRequests($owner: String!, $name: String!, $first: Int!, $after: String, $merged: Int!) {
   rateLimit {
@@ -5206,6 +5232,14 @@ export const SubmitPullRequestReviewDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<SubmitPullRequestReviewMutation, SubmitPullRequestReviewMutationVariables>;
+export const TermsAccessDocument = new TypedDocumentString(`
+    query TermsAccess($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    id
+    viewerPermission
+  }
+}
+    `) as unknown as TypedDocumentString<TermsAccessQuery, TermsAccessQueryVariables>;
 export const TimelineDocument = new TypedDocumentString(`
     query Timeline($owner: String!, $name: String!, $number: Int!, $last: Int!, $before: String) {
   rateLimit {

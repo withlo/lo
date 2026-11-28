@@ -1,0 +1,56 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits",
+    "body_sha256": "12092948ee3bd31dde5147df50670f4f1cdb973186d99726becd418120668732"
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "\"050baced4e9ecba4c49abb353671730694ead6903f853f7a37dc7d879551c55e\"",
+      "location": "https://api.github.com/repos/rozed-dev/e2e/git/commits/2895d79cd06e05d06053528f1716f2600ce7078d",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4970",
+      "x-ratelimit-reset": "1795871724",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "30"
+    },
+    "body": {
+      "sha": "2895d79cd06e05d06053528f1716f2600ce7078d",
+      "node_id": "C_kwDOVleUfdoAKDI4OTVkNzljZDA2ZTA1ZDA2MDUzNTI4ZjE3MTZmMjYwMGNlNzA3OGQ",
+      "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits/2895d79cd06e05d06053528f1716f2600ce7078d",
+      "html_url": "https://github.com/rozed-dev/e2e/commit/2895d79cd06e05d06053528f1716f2600ce7078d",
+      "author": {
+        "name": "rozed-bot",
+        "email": "rozed-bot@scornz.com",
+        "date": "2026-11-28T12:24:04Z"
+      },
+      "committer": {
+        "name": "rozed-bot",
+        "email": "rozed-bot@scornz.com",
+        "date": "2026-11-28T12:24:04Z"
+      },
+      "tree": {
+        "sha": "f691f7f5ede0a9beafb8391be0013a32185c19d0",
+        "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/f691f7f5ede0a9beafb8391be0013a32185c19d0"
+      },
+      "message": "Edit \"bucket\"",
+      "parents": [
+        {
+          "sha": "5d1a0040435631be0e43b46898659955f3d7f6b5",
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits/5d1a0040435631be0e43b46898659955f3d7f6b5",
+          "html_url": "https://github.com/rozed-dev/e2e/commit/5d1a0040435631be0e43b46898659955f3d7f6b5"
+        }
+      ],
+      "verification": {
+        "verified": false,
+        "reason": "unsigned",
+        "signature": null,
+        "payload": null,
+        "verified_at": null
+      }
+    }
+  }
+}

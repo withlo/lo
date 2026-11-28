@@ -1,0 +1,56 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits",
+    "body_sha256": "2e634fd0d77034bdd82c817197262a5178d5b6dd28c5e1fcb8ee197ef699d189"
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "\"8d6a92c004f68d4fed8523e892704d981b4b08d88a77bff4566e2e5128771876\"",
+      "location": "https://api.github.com/repos/rozed-dev/e2e/git/commits/2c093e0da0df24043f7bce85590252c8c7170ef3",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4969",
+      "x-ratelimit-reset": "1795871724",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "31"
+    },
+    "body": {
+      "sha": "2c093e0da0df24043f7bce85590252c8c7170ef3",
+      "node_id": "C_kwDOVleUfdoAKDJjMDkzZTBkYTBkZjI0MDQzZjdiY2U4NTU5MDI1MmM4YzcxNzBlZjM",
+      "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits/2c093e0da0df24043f7bce85590252c8c7170ef3",
+      "html_url": "https://github.com/rozed-dev/e2e/commit/2c093e0da0df24043f7bce85590252c8c7170ef3",
+      "author": {
+        "name": "rozed-bot",
+        "email": "rozed-bot@scornz.com",
+        "date": "2026-11-28T12:24:04Z"
+      },
+      "committer": {
+        "name": "rozed-bot",
+        "email": "rozed-bot@scornz.com",
+        "date": "2026-11-28T12:24:04Z"
+      },
+      "tree": {
+        "sha": "f691f7f5ede0a9beafb8391be0013a32185c19d0",
+        "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/f691f7f5ede0a9beafb8391be0013a32185c19d0"
+      },
+      "message": "Edit \"bucket\" elsewhere",
+      "parents": [
+        {
+          "sha": "5d1a0040435631be0e43b46898659955f3d7f6b5",
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits/5d1a0040435631be0e43b46898659955f3d7f6b5",
+          "html_url": "https://github.com/rozed-dev/e2e/commit/5d1a0040435631be0e43b46898659955f3d7f6b5"
+        }
+      ],
+      "verification": {
+        "verified": false,
+        "reason": "unsigned",
+        "signature": null,
+        "payload": null,
+        "verified_at": null
+      }
+    }
+  }
+}

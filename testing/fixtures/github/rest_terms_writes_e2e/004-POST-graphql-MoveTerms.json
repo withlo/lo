@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "MoveTerms",
+    "variables": {
+      "repositoryId": "R_kgDOVleUfQ",
+      "before": "0000000000000000000000000000000000000000",
+      "after": "5d1a0040435631be0e43b46898659955f3d7f6b5"
+    },
+    "query_sha256": "a81345f675bf009a4da74013c3bf5b47df9752802cfadae59ae82565eff5e8e9"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4992",
+      "x-ratelimit-reset": "1795872124",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "8"
+    },
+    "body": {
+      "data": {
+        "updateRefs": {
+          "clientMutationId": null
+        }
+      }
+    }
+  }
+}

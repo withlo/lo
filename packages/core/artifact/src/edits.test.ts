@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  aliasesOf,
+  editTerm,
   emptyStore,
   fittedStoreText,
   parseStore,
@@ -10,8 +12,11 @@ import {
   withDefinition,
   withSuggestion,
   withTerm,
+  type EditBase,
+  type EditResult,
   type StoreDefinition,
   type Store,
+  type TermEdit,
 } from './index.ts';
 import { utf8Length } from './source.ts';
 
@@ -275,4 +280,151 @@ describe('fitting the store in its size', () => {
 test('definitions are the same but for runs of spaces', () => {
   expect(sameDefinition('The  tokens\ta tenant has. ', 'The tokens a tenant has.')).toBe(true);
   expect(sameDefinition('The tokens.', 'The Tokens.')).toBe(false);
+});
+
+/** The store `result` made: throws unless the edit was made. */
+function edited(result: EditResult): Store {
+  if (result.kind !== 'edited') throw new Error(`The edit came to ${result.kind}.`);
+  return result.store;
+}
+
+describe('editing a term', () => {
+  const by = { login: 'ravi-k' };
+  /** An edit of Bucket, by ravi-k, at `LATER`. */
+  function edit(text: string, aliases: readonly string[] = ['buckets']): TermEdit {
+    return { term: 'Bucket', definition: text, aliases, by, at: LATER };
+  }
+  /** Bucket as FULL holds it, for an edit to start from. */
+  const BASE: EditBase = { definition: 'The tokens a tenant has to spend.', aliases: ['buckets'] };
+
+  test('saves the definition as human-written by the account, from Lo, and keeps the one it replaces first among its changes', () => {
+    const store = edited(editTerm(read(FULL), 'bucket', BASE, edit('  What a tenant spends.  ')));
+    const bucket = store.terms.get('bucket')!;
+    expect(bucket).toMatchObject({
+      term: 'Bucket',
+      definition: 'What a tenant spends.',
+      written: 'human',
+      by,
+      from: 'lo',
+      at: LATER,
+      // A lock stops merged pull requests, not an edit in Lo, and keeps its suggestions.
+      locked: { by: { login: 'mona' }, at: LATER },
+      suggestions: [{ definition: 'A tenant’s tokens.' }],
+    });
+    expect(bucket.changes.map((change) => change.definition)).toEqual([
+      'The tokens a tenant has to spend.',
+      'The tokens a tenant has.',
+    ]);
+    expect(read(storeText(store))).toEqual(store);
+  });
+
+  test('names the term by the forms the edit gives, and by no other', () => {
+    const store = edited(
+      editTerm(
+        read(FULL),
+        'bucket',
+        BASE,
+        edit('A tenant’s tokens.', [' token bucket ', '', 'BUCKET', 'Token  Bucket', 'pail']),
+      ),
+    );
+    expect(store.terms.get('bucket')!.aliases).toEqual(['token bucket', 'pail']);
+    expect(store.names.get('token bucket')).toBe('bucket');
+    expect(store.names.get('pail')).toBe('bucket');
+    expect(store.names.has('buckets')).toBe(false);
+    expect(store.names.get('token')).toBe('token');
+    expect(read(storeText(store)).names).toEqual(store.names);
+  });
+
+  test('changes nothing where the store holds the edit already, but for runs of spaces, however it came to', () => {
+    expect(
+      editTerm(read(FULL), 'bucket', BASE, edit('The tokens  a tenant has to spend.', ['Buckets'])),
+    ).toEqual({ kind: 'same' });
+    // Saved meanwhile, as this edit is, from another definition.
+    const older: EditBase = { definition: 'The tokens a tenant has.', aliases: [] };
+    expect(
+      editTerm(read(FULL), 'bucket', older, edit('The tokens a tenant has to spend.')),
+    ).toEqual({ kind: 'same' });
+  });
+
+  test('says what the term is now when it changed since the edit started', () => {
+    const store = read(FULL);
+    const bucket = store.terms.get('bucket');
+    const older: EditBase = { definition: 'The tokens a tenant has.', aliases: ['buckets'] };
+    expect(editTerm(store, 'bucket', older, edit('Mine.'))).toEqual({
+      kind: 'changed',
+      term: bucket,
+    });
+    const fewer: EditBase = { ...BASE, aliases: [] };
+    expect(editTerm(store, 'bucket', fewer, edit('Mine.'))).toEqual({
+      kind: 'changed',
+      term: bucket,
+    });
+    // Whatever the order and case its forms are written in, the term is as it was.
+    const same: EditBase = { ...BASE, aliases: ['BUCKETS', 'bucket'] };
+    expect(editTerm(store, 'bucket', same, edit('Mine.')).kind).toBe('edited');
+  });
+
+  test('says a term deleted since the edit started is gone, and adds it back from a base of none', () => {
+    const store = read(FULL);
+    expect(editTerm(store, 'tenant', BASE, { ...edit('Mine.'), term: 'Tenant' })).toEqual({
+      kind: 'changed',
+      term: undefined,
+    });
+    const added = edited(
+      editTerm(store, 'tenant', null, { ...edit('Who spends.', ['tenants']), term: 'Tenant' }),
+    );
+    expect(added.terms.get('tenant')).toMatchObject({
+      term: 'Tenant',
+      definition: 'Who spends.',
+      aliases: ['tenants'],
+      written: 'human',
+      from: 'lo',
+      changes: [],
+    });
+    expect(added.names.get('tenants')).toBe('tenant');
+    // Back meanwhile, it's changed again.
+    expect(editTerm(store, 'bucket', null, edit('Mine.')).kind).toBe('changed');
+  });
+
+  test('refuses a form another term goes by, too many forms, and a definition the store can’t hold', () => {
+    const store = read(FULL);
+    expect(editTerm(store, 'bucket', BASE, edit('Mine.', ['token']))).toEqual({
+      kind: 'refused',
+      message: '"token" names "token", another term.',
+    });
+    const many = Array.from({ length: STORE_LIMITS.aliases + 1 }, (_, n) => `pail ${n}`);
+    expect(editTerm(store, 'bucket', BASE, edit('Mine.', many)).kind).toBe('refused');
+    const bold = editTerm(store, 'bucket', BASE, edit('The **tokens**.'));
+    expect(bold).toMatchObject({ kind: 'refused', message: expect.stringMatching(/\bbold\b/) });
+    expect(editTerm(store, 'bucket', BASE, edit('   ')).kind).toBe('refused');
+    // A term added back can't take a name another goes by.
+    const named = editTerm(store, 'buckets', null, { ...edit('Mine.', []), term: 'Buckets' });
+    expect(named).toMatchObject({
+      kind: 'refused',
+      message: expect.stringMatching(/another term/),
+    });
+  });
+
+  test('adds no term to a store that holds as many as it may', () => {
+    let store = emptyStore();
+    for (let term = 0; term < STORE_LIMITS.terms; term++) {
+      store = withTerm(store, `Term ${term}`, definition('A term.'));
+    }
+    const result = editTerm(store, 'pail', null, { ...edit('Mine.', []), term: 'Pail' });
+    expect(result).toMatchObject({ kind: 'refused', message: expect.stringMatching(/the most/) });
+  });
+
+  test('leaves the store it edits as it was', () => {
+    const store = read(FULL);
+    const before = storeText(store);
+    editTerm(store, 'bucket', BASE, edit('Mine.', ['pail']));
+    expect(storeText(store)).toBe(before);
+    expect(store.names.has('pail')).toBe(false);
+  });
+});
+
+test('an edit’s forms lose their spaces at either end, and those that are empty or name the term or one before', () => {
+  expect(
+    aliasesOf('Bucket', [' pail ', 'bucket', 'PAIL', '  ', 'token  bucket', 'Token Bucket']),
+  ).toEqual(['pail', 'token  bucket']);
 });

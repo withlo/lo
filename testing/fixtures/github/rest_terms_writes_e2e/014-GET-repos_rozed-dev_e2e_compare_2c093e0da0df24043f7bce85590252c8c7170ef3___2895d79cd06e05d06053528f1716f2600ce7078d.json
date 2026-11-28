@@ -1,0 +1,288 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/compare/2c093e0da0df24043f7bce85590252c8c7170ef3...2895d79cd06e05d06053528f1716f2600ce7078d?per_page=1"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"958e7004424193a51dac8ce8f1e750440a3af717c6bc3deef9c254ccabd30af6\"",
+      "last-modified": "Sat, 28 Nov 2026 12:24:04 GMT",
+      "link": "<https://api.github.com/repositories/1448580221/compare/2c093e0da0df24043f7bce85590252c8c7170ef3...2895d79cd06e05d06053528f1716f2600ce7078d?per_page=1&page=1>; rel=\"first\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4966",
+      "x-ratelimit-reset": "1795871724",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "34"
+    },
+    "body": {
+      "url": "https://api.github.com/repos/rozed-dev/e2e/compare/2c093e0da0df24043f7bce85590252c8c7170ef3...2895d79cd06e05d06053528f1716f2600ce7078d",
+      "html_url": "https://github.com/rozed-dev/e2e/compare/2c093e0da0df24043f7bce85590252c8c7170ef3...2895d79cd06e05d06053528f1716f2600ce7078d",
+      "permalink_url": "https://github.com/rozed-dev/e2e/compare/rozed-dev:2c093e0...rozed-dev:2895d79",
+      "diff_url": "https://github.com/rozed-dev/e2e/compare/2c093e0da0df24043f7bce85590252c8c7170ef3...2895d79cd06e05d06053528f1716f2600ce7078d.diff",
+      "patch_url": "https://github.com/rozed-dev/e2e/compare/2c093e0da0df24043f7bce85590252c8c7170ef3...2895d79cd06e05d06053528f1716f2600ce7078d.patch",
+      "base_commit": {
+        "sha": "2c093e0da0df24043f7bce85590252c8c7170ef3",
+        "node_id": "C_kwDOVleUfdoAKDJjMDkzZTBkYTBkZjI0MDQzZjdiY2U4NTU5MDI1MmM4YzcxNzBlZjM",
+        "commit": {
+          "author": {
+            "name": "rozed-bot",
+            "email": "rozed-bot@scornz.com",
+            "date": "2026-11-28T12:24:04Z"
+          },
+          "committer": {
+            "name": "rozed-bot",
+            "email": "rozed-bot@scornz.com",
+            "date": "2026-11-28T12:24:04Z"
+          },
+          "message": "Edit \"bucket\" elsewhere",
+          "tree": {
+            "sha": "f691f7f5ede0a9beafb8391be0013a32185c19d0",
+            "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/f691f7f5ede0a9beafb8391be0013a32185c19d0"
+          },
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits/2c093e0da0df24043f7bce85590252c8c7170ef3",
+          "comment_count": 0,
+          "verification": {
+            "verified": false,
+            "reason": "unsigned",
+            "signature": null,
+            "payload": null,
+            "verified_at": null
+          }
+        },
+        "url": "https://api.github.com/repos/rozed-dev/e2e/commits/2c093e0da0df24043f7bce85590252c8c7170ef3",
+        "html_url": "https://github.com/rozed-dev/e2e/commit/2c093e0da0df24043f7bce85590252c8c7170ef3",
+        "comments_url": "https://api.github.com/repos/rozed-dev/e2e/commits/2c093e0da0df24043f7bce85590252c8c7170ef3/comments",
+        "author": {
+          "login": "rozed-bot",
+          "id": 353226052,
+          "node_id": "U_kgDOFQ3NRA",
+          "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/rozed-bot",
+          "html_url": "https://github.com/rozed-bot",
+          "followers_url": "https://api.github.com/users/rozed-bot/followers",
+          "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+          "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+          "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+          "repos_url": "https://api.github.com/users/rozed-bot/repos",
+          "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "committer": {
+          "login": "rozed-bot",
+          "id": 353226052,
+          "node_id": "U_kgDOFQ3NRA",
+          "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/rozed-bot",
+          "html_url": "https://github.com/rozed-bot",
+          "followers_url": "https://api.github.com/users/rozed-bot/followers",
+          "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+          "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+          "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+          "repos_url": "https://api.github.com/users/rozed-bot/repos",
+          "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "parents": [
+          {
+            "sha": "5d1a0040435631be0e43b46898659955f3d7f6b5",
+            "url": "https://api.github.com/repos/rozed-dev/e2e/commits/5d1a0040435631be0e43b46898659955f3d7f6b5",
+            "html_url": "https://github.com/rozed-dev/e2e/commit/5d1a0040435631be0e43b46898659955f3d7f6b5"
+          }
+        ]
+      },
+      "merge_base_commit": {
+        "sha": "5d1a0040435631be0e43b46898659955f3d7f6b5",
+        "node_id": "C_kwDOVleUfdoAKDVkMWEwMDQwNDM1NjMxYmUwZTQzYjQ2ODk4NjU5OTU1ZjNkN2Y2YjU",
+        "commit": {
+          "author": {
+            "name": "rozed-bot",
+            "email": "rozed-bot@scornz.com",
+            "date": "2026-11-28T12:24:02Z"
+          },
+          "committer": {
+            "name": "rozed-bot",
+            "email": "rozed-bot@scornz.com",
+            "date": "2026-11-28T12:24:02Z"
+          },
+          "message": "Definitions for the recording",
+          "tree": {
+            "sha": "3923d47eaa42212be8447c41eb89b1780a754d8b",
+            "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/3923d47eaa42212be8447c41eb89b1780a754d8b"
+          },
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits/5d1a0040435631be0e43b46898659955f3d7f6b5",
+          "comment_count": 0,
+          "verification": {
+            "verified": false,
+            "reason": "unsigned",
+            "signature": null,
+            "payload": null,
+            "verified_at": null
+          }
+        },
+        "url": "https://api.github.com/repos/rozed-dev/e2e/commits/5d1a0040435631be0e43b46898659955f3d7f6b5",
+        "html_url": "https://github.com/rozed-dev/e2e/commit/5d1a0040435631be0e43b46898659955f3d7f6b5",
+        "comments_url": "https://api.github.com/repos/rozed-dev/e2e/commits/5d1a0040435631be0e43b46898659955f3d7f6b5/comments",
+        "author": {
+          "login": "rozed-bot",
+          "id": 353226052,
+          "node_id": "U_kgDOFQ3NRA",
+          "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/rozed-bot",
+          "html_url": "https://github.com/rozed-bot",
+          "followers_url": "https://api.github.com/users/rozed-bot/followers",
+          "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+          "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+          "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+          "repos_url": "https://api.github.com/users/rozed-bot/repos",
+          "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "committer": {
+          "login": "rozed-bot",
+          "id": 353226052,
+          "node_id": "U_kgDOFQ3NRA",
+          "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/rozed-bot",
+          "html_url": "https://github.com/rozed-bot",
+          "followers_url": "https://api.github.com/users/rozed-bot/followers",
+          "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+          "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+          "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+          "repos_url": "https://api.github.com/users/rozed-bot/repos",
+          "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "parents": []
+      },
+      "status": "diverged",
+      "ahead_by": 1,
+      "behind_by": 1,
+      "total_commits": 1,
+      "commits": [
+        {
+          "sha": "2895d79cd06e05d06053528f1716f2600ce7078d",
+          "node_id": "C_kwDOVleUfdoAKDI4OTVkNzljZDA2ZTA1ZDA2MDUzNTI4ZjE3MTZmMjYwMGNlNzA3OGQ",
+          "commit": {
+            "author": {
+              "name": "rozed-bot",
+              "email": "rozed-bot@scornz.com",
+              "date": "2026-11-28T12:24:04Z"
+            },
+            "committer": {
+              "name": "rozed-bot",
+              "email": "rozed-bot@scornz.com",
+              "date": "2026-11-28T12:24:04Z"
+            },
+            "message": "Edit \"bucket\"",
+            "tree": {
+              "sha": "f691f7f5ede0a9beafb8391be0013a32185c19d0",
+              "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/f691f7f5ede0a9beafb8391be0013a32185c19d0"
+            },
+            "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits/2895d79cd06e05d06053528f1716f2600ce7078d",
+            "comment_count": 0,
+            "verification": {
+              "verified": false,
+              "reason": "unsigned",
+              "signature": null,
+              "payload": null,
+              "verified_at": null
+            }
+          },
+          "url": "https://api.github.com/repos/rozed-dev/e2e/commits/2895d79cd06e05d06053528f1716f2600ce7078d",
+          "html_url": "https://github.com/rozed-dev/e2e/commit/2895d79cd06e05d06053528f1716f2600ce7078d",
+          "comments_url": "https://api.github.com/repos/rozed-dev/e2e/commits/2895d79cd06e05d06053528f1716f2600ce7078d/comments",
+          "author": {
+            "login": "rozed-bot",
+            "id": 353226052,
+            "node_id": "U_kgDOFQ3NRA",
+            "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/rozed-bot",
+            "html_url": "https://github.com/rozed-bot",
+            "followers_url": "https://api.github.com/users/rozed-bot/followers",
+            "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+            "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+            "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+            "repos_url": "https://api.github.com/users/rozed-bot/repos",
+            "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+            "type": "User",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "committer": {
+            "login": "rozed-bot",
+            "id": 353226052,
+            "node_id": "U_kgDOFQ3NRA",
+            "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/rozed-bot",
+            "html_url": "https://github.com/rozed-bot",
+            "followers_url": "https://api.github.com/users/rozed-bot/followers",
+            "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+            "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+            "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+            "repos_url": "https://api.github.com/users/rozed-bot/repos",
+            "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+            "type": "User",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "parents": [
+            {
+              "sha": "5d1a0040435631be0e43b46898659955f3d7f6b5",
+              "url": "https://api.github.com/repos/rozed-dev/e2e/commits/5d1a0040435631be0e43b46898659955f3d7f6b5",
+              "html_url": "https://github.com/rozed-dev/e2e/commit/5d1a0040435631be0e43b46898659955f3d7f6b5"
+            }
+          ]
+        }
+      ],
+      "files": [
+        {
+          "sha": "51d7bbd7a35fedd3479f69ac8d7a633e54373788",
+          "filename": "terms.json",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4,
+          "changes": 8,
+          "blob_url": "https://github.com/rozed-dev/e2e/blob/2895d79cd06e05d06053528f1716f2600ce7078d/terms.json",
+          "raw_url": "https://github.com/rozed-dev/e2e/raw/2895d79cd06e05d06053528f1716f2600ce7078d/terms.json",
+          "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/terms.json?ref=2895d79cd06e05d06053528f1716f2600ce7078d",
+          "patch": "@@ -3,13 +3,13 @@\n   \"terms\": {\n     \"bucket\": {\n       \"term\": \"bucket\",\n-      \"definition\": \"The tokens a tenant has to spend.\",\n-      \"written\": \"agent\",\n+      \"definition\": \"What a tenant spends from, refilled each second.\",\n+      \"written\": \"human\",\n       \"by\": {\n         \"login\": \"rozed-bot\"\n       },\n-      \"from\": \"#80\",\n-      \"at\": \"2026-11-11T09:30:00Z\"\n+      \"from\": \"lo\",\n+      \"at\": \"2026-11-28T12:00:00Z\"\n     }\n   }\n }"
+        }
+      ]
+    }
+  }
+}
