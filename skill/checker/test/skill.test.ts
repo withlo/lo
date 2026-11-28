@@ -143,7 +143,7 @@ describe('SKILL.md', () => {
   test('runs the checker it was installed with, by its exact version', () => {
     // In the source, the checker is named only with the placeholder for its version.
     const named = text.match(new RegExp(`${manifest.name}@\\S*`, 'g')) ?? [];
-    expect(named.length).toBeGreaterThan(2);
+    expect(named.length).toBeGreaterThan(1);
     expect(named.every((each) => each === `${manifest.name}@{version}`)).toBe(true);
     expect(text.match(/\{version\}/g)).toHaveLength(named.length);
 

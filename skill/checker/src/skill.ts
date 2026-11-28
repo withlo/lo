@@ -89,9 +89,15 @@ export const PERSONAL_SKILL: Skill = {
 
 /**
  * The name a person's copy had before it was `lo-explain`, which a repository's has now, and the
- * files it had, by their paths in its folder.
+ * files it had in any version, by their paths in its folder.
  */
 export const OLD_PERSONAL = {
   name: REPO_SKILL.name,
-  files: ['LICENSE', 'SKILL.md', 'references/format.md', 'references/figures.md'],
+  files: [
+    'LICENSE',
+    'SKILL.md',
+    'references/format.md',
+    'references/figures.md',
+    'references/writing.md',
+  ],
 } as const;
