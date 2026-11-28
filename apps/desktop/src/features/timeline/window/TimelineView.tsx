@@ -553,7 +553,12 @@ function Rows({
     return { kind: 'row', row: key };
   });
   return (
-    <div ref={root} className="h-full overflow-y-auto" data-lo-scope="timeline" {...menu}>
+    <div
+      ref={root}
+      className="h-full overflow-y-auto gutter-stable"
+      data-lo-scope="timeline"
+      {...menu}
+    >
       <Timeline
         listRef={list}
         tabIndex={0}
