@@ -200,6 +200,7 @@ function drawBlock(): { writing: WritingBlock; texts: string[]; marks: DraftMark
     setDrafts(drafts) {
       marks.splice(0, marks.length, ...drafts);
     },
+    lines: () => [],
     openDraft: () => false,
   };
   overview.blocks.set(KEY, writing);

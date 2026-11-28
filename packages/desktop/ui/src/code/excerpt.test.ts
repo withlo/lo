@@ -1453,3 +1453,63 @@ describe('threads beside lines', () => {
     expect(document.activeElement).toBe(scroller);
   });
 });
+
+/** The text of the line the block holding `element` is under. */
+function under(element: Element): string | null | undefined {
+  return element.closest('.cm-content > *')?.previousElementSibling?.textContent;
+}
+
+describe('a new comment’s lines changing', () => {
+  test('they change within the lines it shows on their side: an unchanged line’s on the range’s', () => {
+    const shown = open();
+    expect(shown.lines('new')).toEqual(Array.from({ length: 14 }, (_, index) => index + 4));
+    // Old lines 5 and 15, which the changes removed.
+    expect(shown.lines('old')).toEqual([5, 15]);
+  });
+
+  test('between lines, its box goes under their new last line, the same box with focus in it', async () => {
+    const shown = open();
+    const composer = shown.compose(
+      { file: 'a', side: 'new', from: 6, to: 8 },
+      'New',
+      composerEvents(),
+    );
+    const box = boxes()[0]!;
+    expect(under(box)).toBe('line 8');
+    expect(composer.move({ file: 'a', side: 'new', from: 6, to: 9 })).toBe(true);
+    expect(boxes()).toHaveLength(1);
+    expect(boxes()[0]).toBe(box);
+    expect(under(box)).toBe('line 9');
+    expect(inBox(document.activeElement)).toBe(true);
+    await Promise.resolve();
+    expect(picked()).toEqual(added.slice(5, 9));
+    // One line, the removed line 5.
+    expect(composer.move({ file: 'a', side: 'old', line: 5 })).toBe(true);
+    expect(under(box)).toBe('line 5');
+    expect(composer.move({ file: 'a', side: 'new', from: 6, to: 9 })).toBe(true);
+    // Not onto another box's line, nor one it doesn't show.
+    shown.compose({ file: 'a', side: 'new', line: 12 }, '', composerEvents(), undefined, {
+      focus: false,
+    });
+    expect(composer.move({ file: 'a', side: 'new', from: 6, to: 12 })).toBe(false);
+    expect(composer.move({ file: 'a', side: 'new', from: 6, to: 19 })).toBe(false);
+    expect(under(box)).toBe('line 9');
+  });
+
+  test('beside lines, its box stays in the popover as it goes to the new lines', () => {
+    const { shown, layers } = inScroll(1);
+    const { excerpt } = shown[0]!;
+    const composer = excerpt.compose(
+      { file: 'a0', side: 'new', from: 7, to: 8 },
+      'Hi',
+      composerEvents(),
+    );
+    const box = layers()[0]!.querySelector('.lo-diffcomposer');
+    expect(box).not.toBeNull();
+    expect(composer.move({ file: 'a0', side: 'new', from: 7, to: 10 })).toBe(true);
+    expect(layers()[0]!.querySelector('.lo-diffcomposer')).toBe(box);
+    expect(excerpt.popoverPinned()).toBe(true);
+    expect(inBox(document.activeElement)).toBe(true);
+    expect(composer.move({ file: 'a0', side: 'new', from: 7, to: 30 })).toBe(false);
+  });
+});

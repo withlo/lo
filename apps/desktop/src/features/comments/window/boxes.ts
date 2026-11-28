@@ -122,18 +122,22 @@ import {
 import { wrotePull } from './written.ts';
 import {
   blockComment,
+  type BlockSpan,
   blockWhere,
   type BoxNote,
   type BoxWhere,
   boxAt,
   changedLines,
+  changedOnBlock,
   CHECK_FIRST,
   commentableOn,
   draftOn,
+  draftOnPlace,
   githubPath,
   IN_A_LAYER,
   inTimeline,
   linesAt,
+  linesOfBlock,
   type LinesChange,
   NEW_SIDE_ONLY,
   NO_LINES,
@@ -1737,6 +1741,7 @@ export async function commentOnFile(tab: PullTab, key: string): Promise<void> {
  * isn't on lines.
  */
 interface Relining {
+  readonly kind: 'diff';
   readonly box: Box;
   readonly diff: WritingDiff;
   readonly drawn: ReturnType<WritingDiff['drawn']>;
@@ -1745,13 +1750,28 @@ interface Relining {
   readonly lines: Lines;
 }
 
+/**
+ * What changing the lines of box `box`, a new comment's written on a code block of its overview,
+ * works from, where they can change now: the block drawn, the box's home there, and the lines the
+ * block shows on its lines' side. Its comment goes where those lines are at the head on screen, as
+ * `c` on them places it: on those lines there, their file or the pull request, as its head says.
+ */
+interface BlockRelining {
+  readonly kind: 'block';
+  readonly box: Box;
+  readonly writing: WritingBlock;
+  readonly home: DraftHomeRow;
+  /** The lines the block shows on the side its lines are on, in order. */
+  readonly shown: readonly number[];
+}
+
 /** Box `box`'s lines as they can change now, or why they can't. */
-function reliningOf(box: Box): Relining | string {
+function reliningOf(box: Box): Relining | BlockRelining | string {
   const { view, state } = box;
   const { place } = state;
-  if (place.kind !== 'thread' || place.lines === null || !box.composer) return '';
-  // In a code block's popover, its lines are the block's.
-  if (box.drawnIn !== 'diff') return '';
+  if (!box.composer) return '';
+  if (box.drawnIn === 'block') return blockReliningOf(box);
+  if (place.kind !== 'thread' || place.lines === null || box.drawnIn !== 'diff') return '';
   const why = heldWhere(box);
   if (why !== undefined) return why;
   const diff = writingDiff(view);
@@ -1767,7 +1787,22 @@ function reliningOf(box: Box): Relining | string {
   const { start, end } = place.lines;
   const last = Line.of(end.side, end.number);
   const lines = start ? Lines.range(Line.of(start.side, start.number), last) : Lines.one(last);
-  return { box, diff, drawn, path: place.path, takes, lines };
+  return { kind: 'diff', box, diff, drawn, path: place.path, takes, lines };
+}
+
+/**
+ * Box `box`'s lines on its code block as they can change now, or why they can't: a new comment's,
+ * on any place, not a reply's or an edit's, which are in a thread.
+ */
+function blockReliningOf(box: Box): BlockRelining | string {
+  const { home } = box;
+  if (home.kind !== 'block' || inThread(box.state.place) !== undefined) return '';
+  const why = heldWhere(box);
+  if (why !== undefined) return why;
+  const writing = writingBlock(box.view, keyOfBlock(home.block));
+  if (!writing) return '';
+  const { at } = home.block;
+  return { kind: 'block', box, writing, home: home.block, shown: writing.lines(at.side) };
 }
 
 /**
@@ -1782,11 +1817,12 @@ function heldWhere(box: Box): string | undefined {
 
 /**
  * Where box `box`'s lines go as they change `how`, or why they can't: a new comment's, while it's
- * open in the diff and not on its way.
+ * open in the diff or a code block and not on its way.
  */
-function relined(box: Box, how: LinesChange): Lines | string {
+function relined(box: Box, how: LinesChange): Lines | BlockSpan | string {
   const relining = reliningOf(box);
   if (typeof relining === 'string') return relining;
+  if (relining.kind === 'block') return changedFromBlock(relining, how);
   const lines = changedLines(relining.takes, relining.lines, how);
   if (typeof lines === 'string') return lines;
   return draftThere(relining, lines) ?? lines;
@@ -1802,17 +1838,154 @@ function draftThere({ box, drawn, path }: Relining, lines: Lines): string | unde
 }
 
 /**
+ * The code block lines box `box`'s lines go on as they change `how`, within those the block
+ * shows, or why they can't: as in the diff, and not onto a line another box of the block is on.
+ */
+function changedFromBlock(relining: BlockRelining, how: LinesChange): BlockSpan | string {
+  const at = changedOnBlock(relining.shown, relining.home.at, how);
+  return typeof at === 'string' ? at : (drawnThere(relining, at) ?? at);
+}
+
+/**
+ * Why a box being relined on a code block can't go on its lines `at`: the block draws one box on a
+ * line, and another is on their last, open or kept with words in it. It names that one's lines.
+ */
+function drawnThere({ box, home }: BlockRelining, at: BlockSpan): string | undefined {
+  const spot = spotOf({ kind: 'block', block: { ...home, at } }, box.state.place);
+  for (const each of boxesOf(box.view).values()) {
+    if (each === box || (each.composer === undefined && each.state.text.trim() === '')) continue;
+    if (spotOf(each.home, each.state.place) !== spot) continue;
+    return draftOn(linesOfBlock(each.home.kind === 'block' ? each.home.block.at : at));
+  }
+  return undefined;
+}
+
+/** Each box's change of lines on a code block on its way, which the next waits for. */
+const relinings = new WeakMap<Box, Promise<void>>();
+
+/**
+ * Changes the lines of box `box`, on a code block, to those `change` gives for them as they are
+ * then, once any change before it is done, or says why it can't, as {@link moveOnBlock} does. A key
+ * pressed twice moves the lines twice.
+ */
+function reliningOnBlock(box: Box, change: (relining: BlockRelining) => BlockSpan | string): void {
+  const before = relinings.get(box) ?? Promise.resolve();
+  const next = before
+    .then(async () => {
+      const relining = reliningOf(box);
+      if (typeof relining === 'string' || relining.kind !== 'block') {
+        if (relining !== '' && typeof relining === 'string') refuse(relining);
+        return;
+      }
+      const at = change(relining);
+      if (typeof at === 'string') {
+        if (at !== '') refuse(at);
+        return;
+      }
+      await moveOnBlock(relining, at);
+    })
+    .catch((error: unknown) => {
+      console.error("Lo couldn't change a comment's lines:", error);
+    });
+  relinings.set(box, next);
+  void next.then(() => {
+    if (relinings.get(box) === next) relinings.delete(box);
+  });
+}
+
+/**
+ * Moves the box being relined on its code block to the block's lines `at`, as it is: the block
+ * moves it under their last line, and its comment goes where they are at the head on screen, as
+ * `c` on them places it, its head saying so: on those lines there, their file or the pull request.
+ * Its draft goes with it, saved there before it leaves its old place, its home the new lines.
+ * Another draft where it would go keeps it where it is, and a toast says why. A screen reader hears
+ * the new words.
+ */
+async function moveOnBlock(relining: BlockRelining, at: BlockSpan): Promise<void> {
+  const { box, writing, home } = relining;
+  const { view, composer } = box;
+  const head = pullOf(view)?.shown ?? undefined;
+  if (head === undefined || !composer) return;
+  const onHead = await commentOnHead(view, home.commit, home.path, at);
+  // A file gone at the head is named by its path in the base, as GitHub names one it deletes.
+  const commentable = await commentableOf(
+    view,
+    head,
+    onHead.path,
+    onHead.kind === 'gone' ? null : previousAt(view, onHead.path),
+  );
+  // Gone meanwhile: to another push, or the box closed, sent or moved on.
+  const same = box.home.kind === 'block' && box.home.block === home;
+  if (pullOf(view)?.shown !== head || box.composer !== composer || !same) return;
+  const kept = heldWhere(box);
+  if (kept !== undefined) {
+    refuse(kept);
+    return;
+  }
+  const { from } = writing.block;
+  const screen = from === null ? Screen.full(head) : Screen.replayed(from, head);
+  const goes = blockComment(onHead, commentableOn(screen, commentable));
+  const moved: DraftHomeRow = { ...home, at, why: whyOf(goes), head: head.toLowerCase() };
+  const place =
+    goes.kind === 'pull'
+      ? ON_PULL
+      : placeOf(head, onHead.path, goes.kind === 'lines' ? goes.lines : undefined);
+  const key = placeKey(place);
+  const own = boxesOf(view);
+  const other = own.get(key);
+  const taken =
+    other !== undefined &&
+    other !== box &&
+    (other.composer !== undefined || other.state.text.trim() !== '');
+  const why = taken ? draftOnPlace(place) : drawnThere(relining, at);
+  if (why !== undefined) {
+    refuse(why);
+    return;
+  }
+  if (!composer.move(blockAt(writing, moved))) return;
+  const was = box.state.place;
+  const old = box.key;
+  if (old !== key) {
+    // An empty box closed there, which nothing shows, gives way.
+    other?.dropSave();
+    own.delete(old);
+    box.key = key;
+    own.set(key, box);
+  }
+  box.home = { kind: 'block', block: moved };
+  box.set({ place, where: whereOf(view, moved, place) });
+  // Its draft is saved at its new place, then leaves its old one, which main may still name until
+  // it hears.
+  box.dropSave();
+  dropped.get(view)?.delete(key);
+  if (composer.text.trim() !== '') save(view, place, composer.text, moved);
+  if (old !== key) {
+    save(view, was, '', null);
+    holdDroppedAt(view, old);
+  }
+  markDrafts(view);
+  replyingChanged(view);
+  tell(box.state.where?.head ?? whereText(place));
+}
+
+/**
  * Changes box `box`'s lines `how`, as its lines button's menu and its keys do: see
  * {@link moveTo}. Where they can't change that way, the key's toast says why.
  */
 export function changeLines(box: Box, how: LinesChange): void {
+  if (box.drawnIn === 'block') {
+    reliningOnBlock(box, (relining) => changedFromBlock(relining, how));
+    return;
+  }
   const lines = relined(box, how);
   if (typeof lines === 'string') {
     if (lines !== '') refuse(lines);
     return;
   }
   const relining = reliningOf(box);
-  if (typeof relining !== 'string') moveTo(relining, lines);
+  if (typeof relining !== 'string' && relining.kind === 'diff' && !('side' in lines)) {
+    moveTo(relining, lines);
+  }
 }
 
 /**
@@ -1821,9 +1994,24 @@ export function changeLines(box: Box, how: LinesChange): void {
  * it was, and a toast says why.
  */
 export function dragLines(box: Box, at: Place | Span): void {
+  if (box.drawnIn === 'block') {
+    reliningOnBlock(box, (relining) => {
+      const span: BlockSpan =
+        'line' in at
+          ? { side: at.side, from: at.line, to: at.line }
+          : { side: at.side, from: Math.min(at.from, at.to), to: Math.max(at.from, at.to) };
+      const { shown, home } = relining;
+      // Lines the block doesn't show on the box's side aren't the block's to give.
+      if (span.side !== home.at.side || !shown.includes(span.from) || !shown.includes(span.to)) {
+        return '';
+      }
+      return drawnThere(relining, span) ?? span;
+    });
+    return;
+  }
   const relining = reliningOf(box);
-  if (typeof relining === 'string') {
-    if (relining !== '') refuse(relining);
+  if (typeof relining === 'string' || relining.kind !== 'diff') {
+    if (typeof relining === 'string' && relining !== '') refuse(relining);
     return;
   }
   const lines = linesAt(relining.takes, at);
@@ -1922,7 +2110,8 @@ export function changingLines(how: LinesChange): Handler<LinesTarget> {
 
 /**
  * Whether box `id`'s lines can change, its head's words a button: a new comment's on lines, open
- * in the diff.
+ * in the diff, or any new comment's open in a code block, which is on the block's lines wherever
+ * it goes.
  */
 export function linesChange(id: string): boolean {
   const box = boxNamed(id);
@@ -3188,9 +3377,19 @@ export const movingToFile: Handler<BoxTarget | LinesTarget> = {
     if (!box) return 'The comment box has closed.';
     return heldWhere(box) ?? true;
   },
+  // From the lines button's menu, only where the comment goes on lines: a code block's may go on
+  // their file already, or the pull request.
   listed: (target) =>
-    target.kind === 'box' ? (onFileOffered.listed?.(target) ?? true) : linesChange(target.box),
+    target.kind === 'box'
+      ? (onFileOffered.listed?.(target) ?? true)
+      : linesChange(target.box) && onLines(target.box),
 };
+
+/** Whether box `id`'s comment goes on lines. */
+function onLines(id: string): boolean {
+  const place = boxNamed(id)?.state.place;
+  return place?.kind === 'thread' && place.lines !== null;
+}
 
 /** "Move comment to file" where a box's note offers it. */
 const onFileOffered = offering('onFile');

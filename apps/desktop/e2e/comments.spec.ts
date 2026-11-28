@@ -599,6 +599,47 @@ async function popoverBox(page: Page) {
   return box;
 }
 
+/** The toast that says `text`. */
+const toast = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
+
+/** Where the end `end` of the open box's bracket is in code block `block`'s lane, to press. */
+async function handleIn(block: ReturnType<typeof codeBlock>, end: 'first' | 'last' | 'both') {
+  const handle = block.locator(`.lo-threadlane .lo-handle[data-handle="${end}"]`);
+  await expect(handle).toBeVisible();
+  const rect = (await handle.boundingBox())!;
+  return { x: rect.x + rect.width / 2, y: rect.y + Math.min(10, rect.height / 2) };
+}
+
+/** Drags from `from` to the middle of code block `block`'s line that says `text`, and lets go. */
+async function dragToLine(
+  page: Page,
+  block: ReturnType<typeof codeBlock>,
+  from: { x: number; y: number },
+  text: string,
+): Promise<void> {
+  const line = block.locator('.cm-line:visible', { hasText: text }).first();
+  const rect = (await line.boundingBox())!;
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x, rect.y + rect.height / 2, { steps: 6 });
+  await page.mouse.up();
+}
+
+/** The lines each draft with words in it on tab `tab` is on, as main keeps them: `3–6`, or `6`. */
+function draftLines(page: Page, tab: string): Promise<string[]> {
+  return page.evaluate(async (id) => {
+    const reply = await window.lo.invoke('comments.current', { id });
+    if (!reply.ok) return [];
+    const lines: string[] = [];
+    for (const { text, place } of reply.value.drafts?.drafts ?? []) {
+      if (text.trim() === '' || place.kind !== 'thread' || place.lines === null) continue;
+      const { start, end } = place.lines;
+      lines.push(start ? `${start.number}–${end.number}` : `${end.number}`);
+    }
+    return lines;
+  }, tab);
+}
+
 /** A write Lo sends GitHub, held on its way. */
 interface HeldWrite {
   /** Resolves once Lo has sent one. */
@@ -1016,6 +1057,45 @@ test.describe('writing in a code block’s popover', () => {
       await expect(again.locator('.cm-content')).toHaveText('A note');
     },
   );
+
+  onStacks(
+    'a new comment’s lines in a code block’s popover change by key, from its lines button’s menu and by its bracket’s ends, within the lines the block shows, its draft going with them',
+    async ({ page }) => {
+      test.setTimeout(60_000);
+      const tab = await open(page, STACK.b);
+      const block = codeBlock(page, 'src/cost.ts');
+      await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
+      // The block shows lines 3 to 6; this is line 4.
+      await block.locator('.cm-line:visible').nth(1).click();
+      await page.keyboard.press('c');
+      const box = await popoverBox(page);
+      await page.keyboard.type('Both lines?');
+      const lines = box.getByRole('button', { name: /^Lines? / });
+      await expect(lines).toHaveText('Line 4');
+      await page.keyboard.press(`${cmd}+Alt+ArrowDown`);
+      await expect(lines).toHaveText('Lines 4–5');
+      await page.keyboard.press(`${cmd}+Alt+Shift+ArrowUp`);
+      await expect(lines).toHaveText('Lines 3–5');
+      await page.keyboard.press(`${cmd}+Alt+Shift+ArrowUp`);
+      await expect(toast(page, 'No line above takes a comment')).toBeVisible();
+      // The same box, focus still in it, its text kept.
+      await expect(box.locator('.cm-content')).toBeFocused();
+      await expect(box.locator('.cm-content')).toHaveText('Both lines?');
+      await lines.click();
+      const menu = page.getByRole('menu');
+      await expect(menu.getByRole('menuitem', { name: /Add line above/ })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      await menu.getByRole('menuitem', { name: /Remove last line/ }).click();
+      await expect(lines).toHaveText('Lines 3–4');
+      // Its last line's end, dragged to the block's last line: the popover steps aside meanwhile.
+      await dragToLine(page, block, await handleIn(block, 'last'), '}');
+      await expect(lines).toHaveText('Lines 3–6');
+      await expect(box.locator('.cm-content')).toBeFocused();
+      await expect.poll(() => draftLines(page, tab)).toEqual(['3–6']);
+    },
+  );
 });
 
 test.describe('a code block between lines', () => {
@@ -1035,6 +1115,46 @@ test.describe('a code block between lines', () => {
       await expect(page.locator('.lo-diffcomposer')).toHaveCount(0);
       await expect(page.locator('.lo-diffview')).toBeHidden();
       await expect(thread.getByRole('button', { name: 'Reply', exact: true })).toBeVisible();
+    },
+  );
+
+  onStacks(
+    'a new comment’s box under a code block’s line goes under its lines’ new last line as they change, the same box, focus in it',
+    async ({ page }) => {
+      test.setTimeout(60_000);
+      const tab = await open(page, STACK.b);
+      const block = codeBlock(page, 'src/cost.ts');
+      await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
+      await block.locator('.cm-line:visible').nth(1).click();
+      await page.keyboard.press('c');
+      const box = block.locator('.lo-diffcomposer');
+      await expect(box.locator('.cm-content')).toBeFocused();
+      await box.evaluate((element) => element.setAttribute('data-first', ''));
+      await page.keyboard.type('Down to the end');
+      const lines = box.getByRole('button', { name: /^Lines? / });
+      await expect(lines).toHaveText('Line 4');
+      /** The line the box is drawn under. */
+      const under = () =>
+        box.evaluate(
+          (element) =>
+            element.closest('.cm-content > *')?.previousElementSibling?.textContent ?? null,
+        );
+      await page.keyboard.press(`${cmd}+Alt+ArrowDown`);
+      await page.keyboard.press(`${cmd}+Alt+ArrowDown`);
+      await expect(lines).toHaveText('Lines 4–6');
+      await expect.poll(under).toBe('}');
+      await expect(page.locator('.lo-diffcomposer[data-first]')).toHaveCount(1);
+      await expect(box.locator('.cm-content')).toBeFocused();
+      // Its first line's end, dragged up to the block's first: out of the flow meanwhile.
+      await dragToLine(page, block, await handleIn(block, 'first'), 'What GitHub charges');
+      await expect(lines).toHaveText('Lines 3–6');
+      await expect.poll(under).toBe('}');
+      await expect(page.locator('.lo-diffcomposer[data-first]')).toHaveCount(1);
+      await expect(box.locator('.cm-content')).toBeFocused();
+      await expect(box.locator('.cm-content')).toHaveText('Down to the end');
+      await page.keyboard.press(`${cmd}+Alt+ArrowDown`);
+      await expect(toast(page, 'No line below takes a comment')).toBeVisible();
+      await expect.poll(() => draftLines(page, tab)).toEqual(['3–6']);
     },
   );
 });
