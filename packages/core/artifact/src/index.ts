@@ -25,6 +25,7 @@ export {
   namedFigures,
   type CodeReference,
   type FigureReference,
+  type GlossaryEntry,
   type PartReference,
 } from './reading.ts';
 export {

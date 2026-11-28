@@ -39,6 +39,7 @@ const SEVERITIES = {
   'glossary-content': 'error',
   'glossary-item': 'error',
   'glossary-mark': 'error',
+  'mark-definition': 'error',
   // Blocks.
   'block-unknown': 'error',
   'block-unclosed': 'error',

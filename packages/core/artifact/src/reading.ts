@@ -6,13 +6,15 @@
  * its size and never recursion.
  */
 
-import { MAX_NAME } from '@lo/markdown';
+import { inlineTokens, MAX_NAME } from '@lo/markdown';
 import type { Token } from 'markdown-it';
 
 import { OTHER, unreadLink } from './addresses.ts';
+import { isPlainTerm, notDefinition, notDefinitionText } from './definitions.ts';
 import { quote, type FindingCode, type Findings } from './findings.ts';
 import { LIMITS, MIN_STEPS, MIN_TABS } from './limits.ts';
 import { utf8Length } from './source.ts';
+import { STORE_LIMITS } from './store.ts';
 import {
   CLOSE,
   closes,
@@ -67,6 +69,28 @@ export interface FigureReference {
   parts: PartReference[];
 }
 
+/** An entry of the glossary, defining its term, as written. */
+export interface GlossaryEntry {
+  /** The term as the glossary writes it. */
+  name: string;
+  /** What `term:` links name it by. */
+  key: string;
+  mark?: Mark;
+  /** The line of `artifact.md` it's on. */
+  line: number;
+  /**
+   * Its definition as written: the Markdown after its term, its mark and its colon, with each line
+   * break and the spaces around it as one space. Left out when it's more than one paragraph.
+   */
+  definition?: string;
+  /**
+   * Why the repository's definitions can't hold its definition, such as "holds bold text"; left out
+   * when they can. They hold one paragraph of text, inline code and links to code and terms, in at
+   * most {@link STORE_LIMITS.definition} bytes, which is what a marked term's definition must be.
+   */
+  unstorable?: string;
+}
+
 /** A part of a figure, by its id, and the line of `artifact.md` its link is on. */
 export interface PartReference {
   id: string;
@@ -110,6 +134,8 @@ export class Reading {
   readonly blocks = new WeakMap<Token, BlockMeta>();
   /** The glossary's items kept, by their opening token. */
   readonly terms = new WeakMap<Token, { name: string; key: string; mark?: Mark }>();
+  /** The glossary's entries kept, in order. */
+  readonly entries: GlossaryEntry[] = [];
   /** A figure's parts kept, by their item's opening token: the part's id. */
   readonly parts = new WeakMap<Token, string>();
 
@@ -650,6 +676,25 @@ export class Reading {
         this.add('glossary-item', line, term.message);
         continue;
       }
+      // As the repository's definitions hold it.
+      if (!isPlainTerm(found.name)) {
+        this.add(
+          'glossary-item',
+          line,
+          `"${quote(found.name)}" isn't plain text. A term has no line break, tab, invisible or control character, and no space at either end.`,
+        );
+        continue;
+      }
+      const inline = tokens[j + 2]!;
+      const start = definitionStart(inline.content, found.name, found.after);
+      if (found.mark !== undefined && start === undefined) {
+        this.add(
+          'glossary-mark',
+          line,
+          `The mark on "${quote(found.name)}" is written with an escape or an entity. Write it as it reads: **${quote(found.name)}** (${found.mark}): definition.`,
+        );
+        continue;
+      }
       const { key } = term.value;
       const earlier = this.definitions.get(key);
       if (earlier) {
@@ -661,9 +706,31 @@ export class Reading {
         continue;
       }
       this.definitions.set(key, { name: found.name, line: line ?? 1 });
+      // One paragraph, written on its lines, as one line.
+      const written =
+        close[j] === j + 4 && start !== undefined
+          ? inline.content
+              .slice(start)
+              .replace(/[ \t]*\n[ \t]*/g, ' ')
+              .trim()
+          : undefined;
       found.take();
       const { name, mark } = found;
       this.terms.set(item, mark === undefined ? { name, key } : { name, key, mark });
+      const unstorable =
+        written === undefined
+          ? start === undefined
+            ? 'starts after a colon written as an escape or an entity'
+            : 'is more than one paragraph'
+          : unstorableOf(written, inline.children ?? []);
+      this.entries.push({
+        name,
+        key,
+        ...(mark === undefined ? {} : { mark }),
+        line: line ?? 1,
+        ...(written === undefined ? {} : { definition: written }),
+        ...(unstorable === undefined ? {} : { unstorable }),
+      });
       item.type = TERM_OPEN;
       tokens[close[j]!]!.type = TERM_CLOSE;
     }
@@ -1000,7 +1067,9 @@ function markOf(
     return {
       ok: false,
       code: 'glossary-mark',
-      message: `"(${quote(other[1]!)})" isn't a mark. A term is marked (new) or (changed), in lower case, between it and its colon: **Bucket** (new): definition.`,
+      message: MARKS.some(([, mark]) => mark === other[1]!.trim())
+        ? `"(${quote(other[1]!)})" is spaced wrongly. A mark goes one space after the term, right before its colon: **Bucket** (new): definition.`
+        : `"(${quote(other[1]!)})" isn't a mark. A term is marked (new) or (changed), in lower case, between it and its colon: **Bucket** (new): definition.`,
     };
   }
   return { ok: false, code: 'glossary-item', message: SHAPE };
@@ -1016,7 +1085,7 @@ function definition(
   close: Int32Array,
   j: number,
 ):
-  | { ok: true; name: string; mark?: Mark; take: () => void }
+  | { ok: true; name: string; mark?: Mark; after: string; take: () => void }
   | { ok: false; code: FindingCode; message: string } {
   const shape = { ok: false, code: 'glossary-item', message: SHAPE } as const;
   const inline = tokens[j + 2];
@@ -1060,11 +1129,106 @@ function definition(
     ok: true,
     name,
     ...(marked.mark === undefined ? {} : { mark: marked.mark }),
+    after: after.content.slice(0, marked.length),
     take: () => {
       after.content = rest;
       inline.children = rest === '' ? children.slice(next) : [after, ...children.slice(end + 2)];
     },
   };
+}
+
+/**
+ * Where the definition starts in `content`, a glossary item's first paragraph as written, which
+ * opens with its term, `name`, in bold, and goes on with `after`, its mark and its colon, written
+ * as they read. Each `**` or `__`, as the paragraph opens, that's outside an escape and a code span
+ * and has `after` next may end the term. The paragraph up to there is read again, alone: the first
+ * that reads as `name` in bold and then `after` is the term's end. Undefined when none does, or
+ * once the bold reads as ending before one, as it does when `after` isn't written as it reads.
+ */
+function definitionStart(content: string, name: string, after: string): number | undefined {
+  const opener = content.slice(0, 2);
+  if (opener !== '**' && opener !== '__') return undefined;
+  // One that doesn't end the bold is inside the term, which ends at the next that does.
+  for (let at = 2, tries = 0; at < content.length && tries < TRIES;) {
+    const unit = content.charCodeAt(at);
+    if (unit === 0x5c && isPunctuation(content.charCodeAt(at + 1))) at += 2;
+    else if (unit === 0x60) at = pastCode(content, at);
+    else if (content.startsWith(opener, at) && content.startsWith(after, at + 2)) {
+      const start = at + 2 + after.length;
+      const read = readsAsTerm(content.slice(0, start), name, after);
+      if (read === 'term') return start;
+      if (read === 'not') return undefined;
+      tries += 1;
+      at += 2;
+    } else at += 1;
+  }
+  return undefined;
+}
+
+/** The most places a term's bold is looked for an end, each read again. */
+const TRIES = 32;
+
+/**
+ * Whether `source` reads, alone, as `name` in bold and then `after`: `term`; as bold that doesn't
+ * end there, `later`; or as anything else, `not`.
+ */
+function readsAsTerm(source: string, name: string, after: string): 'term' | 'later' | 'not' {
+  const kept = (inlineTokens(source, LIMITS.depth) ?? []).filter(isWritten);
+  if (kept[0]?.type !== 'strong_open') return 'not';
+  let depth = 0;
+  let end = -1;
+  for (const [index, token] of kept.entries()) {
+    if (token.type === 'strong_open') depth += 1;
+    if (token.type === 'strong_close' && --depth === 0) {
+      end = index;
+      break;
+    }
+  }
+  if (end === -1) return 'later';
+  const last = kept.at(-1);
+  if (end !== kept.length - 2 || last?.type !== 'text' || last.content !== after) return 'not';
+  let text = '';
+  for (const { type, content } of kept.slice(1, end)) {
+    if (type !== 'text' && type !== 'code_inline') return 'not';
+    text += content;
+  }
+  return text === name ? 'term' : 'not';
+}
+
+/** Where a code span that starts at `at`, with a run of backticks, ends, or past the run if none. */
+function pastCode(content: string, at: number): number {
+  let run = at;
+  while (content.charCodeAt(run) === 0x60) run += 1;
+  const length = run - at;
+  for (let next = content.indexOf('`', run); next !== -1; next = content.indexOf('`', next)) {
+    let end = next;
+    while (content.charCodeAt(end) === 0x60) end += 1;
+    if (end - next === length) return end;
+    next = end;
+  }
+  return run;
+}
+
+/** Whether `unit` is ASCII punctuation, which a backslash escapes. */
+function isPunctuation(unit: number): boolean {
+  return (
+    (unit >= 0x21 && unit <= 0x2f) ||
+    (unit >= 0x3a && unit <= 0x40) ||
+    (unit >= 0x5b && unit <= 0x60) ||
+    (unit >= 0x7b && unit <= 0x7e)
+  );
+}
+
+/**
+ * Why the repository's definitions can't hold `written`, a glossary item's definition as written,
+ * whose tokens in the overview are `children`: too long, or holding what a definition can't, as
+ * the overview reads it or as it reads alone. Undefined when they can.
+ */
+function unstorableOf(written: string, children: readonly Token[]): string | undefined {
+  const length = utf8Length(written);
+  if (length > STORE_LIMITS.definition) return `is ${length.toLocaleString('en-US')} bytes`;
+  const not = notDefinition(children) ?? notDefinitionText(written);
+  return not === undefined ? undefined : `holds ${not.what}`;
 }
 
 /** Whether `token` isn't empty text, which markdown-it leaves where emphasis was looked for. */

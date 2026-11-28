@@ -232,10 +232,58 @@ describe('the glossary', () => {
     expect(parsed.findings[0]?.message).toBe(
       '"(New)" isn\'t a mark. A term is marked (new) or (changed), in lower case, between it and its colon: **Bucket** (new): definition.',
     );
+    for (const at of [1, 2, 4]) {
+      expect(parsed.findings[at]?.message).toBe(
+        '"(new)" is spaced wrongly. A mark goes one space after the term, right before its colon: **Bucket** (new): definition.',
+      );
+    }
     expect(parsed.findings[5]?.message).toBe('"F" has no definition.');
     expect(collect(parsed, 'glossary')[0]?.terms.map(({ key, mark }) => [key, mark])).toEqual([
       ['h (new)', undefined],
     ]);
+  });
+
+  test('a mark is written as it reads, with no escape or entity', () => {
+    const parsed = parse(
+      '[a](term:a) [b](term:b) [c](term:c) [d](term:d)',
+      '',
+      '## Glossary',
+      '',
+      '- **A** \\(new): an escaped parenthesis.',
+      '- **B** (new)&#58; an entity for its colon.',
+      '- **C** (changed&#41;: an entity for its parenthesis.',
+      '- **D**&#58; an unmarked term’s colon may be either.',
+    );
+    // Each item that isn't kept leaves its term undefined, too.
+    expect(found(parsed).filter((each) => each.startsWith('glossary'))).toEqual([
+      `glossary-mark@${LINE + 4}`,
+      `glossary-mark@${LINE + 5}`,
+      `glossary-mark@${LINE + 6}`,
+    ]);
+    expect(parsed.findings.find(({ code }) => code === 'glossary-mark')?.message).toBe(
+      'The mark on "A" is written with an escape or an entity. Write it as it reads: **A** (new): definition.',
+    );
+    expect(collect(parsed, 'glossary')[0]?.terms.map(({ key }) => key)).toEqual(['d']);
+  });
+
+  test('a term is plain text, with no tab or space at either end', () => {
+    const parsed = parse(
+      '[a](term:a) [b](term:b) [c](term:c)',
+      '',
+      '## Glossary',
+      '',
+      '- **A\tB**: a tab.',
+      '- **`b `**: a space at its end, kept by its code.',
+      '- **&#32;C**: a space at its start.',
+    );
+    expect(found(parsed).filter((each) => each.startsWith('glossary'))).toEqual([
+      `glossary-item@${LINE + 4}`,
+      `glossary-item@${LINE + 5}`,
+      `glossary-item@${LINE + 6}`,
+    ]);
+    expect(parsed.findings.find(({ code }) => code === 'glossary-item')?.message).toBe(
+      '"A\uFFFDB" isn\'t plain text. A term has no line break, tab, invisible or control character, and no space at either end.',
+    );
   });
 
   test('holds one list and nothing else', () => {

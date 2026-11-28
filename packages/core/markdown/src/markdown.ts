@@ -121,6 +121,24 @@ export function markdownTree<X extends Extension = Plain>(
   }
 }
 
+/**
+ * `text`, Markdown read as part of a paragraph, as {@link markdownTree} reads a paragraph's text in
+ * a tree that may nest `depth` deep: markdown-it's inline tokens, with no syntax added and nothing
+ * built. For telling what a piece of text holds. Never throws on any text: undefined for one that
+ * overflows the stack anyway.
+ */
+export function inlineTokens(text: string, depth?: number): Token[] | undefined {
+  const source = text.toWellFormed().replace(/\r\n?/g, '\n').replaceAll('\0', '\uFFFD');
+  const nesting = resolveLimits(depth === undefined ? undefined : { depth }).depth + SLACK + 2;
+  try {
+    const [inline] = parser(nesting, undefined).parseInline(source, environment(undefined));
+    return inline?.children ?? [];
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    return undefined;
+  }
+}
+
 export function finish<X extends Extension>(
   blocks: Block<X>[],
   notes: ReadonlySet<Note>,

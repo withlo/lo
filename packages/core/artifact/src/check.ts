@@ -12,7 +12,9 @@ import { ARTIFACT, Findings, quote, type Finding, type FindingCode } from './fin
 import type { Header } from './header.ts';
 import { ARTIFACT_READ, CHECK_TIMEOUT, FORMAT, LIMITS } from './limits.ts';
 import { tooLong, type ParsedArtifact } from './parse.ts';
+import type { GlossaryEntry } from './reading.ts';
 import type { CodeReader, OverviewFiles } from './readers.ts';
+import { STORE_LIMITS } from './store.ts';
 
 /**
  * What Lo does with an overview.
@@ -182,10 +184,27 @@ async function check(
       ? await checkCode(parsed.references, header.commit, readCode, findings, signal)
       : [],
   }));
+  // Like the code, the marks are the overview's to get right, but Lo shows it all the same.
+  checkMarks(parsed.glossary, findings);
   if (invalid || mismatch || !header) {
     return { outcome: { kind: 'invalid' }, findings: findings.list() };
   }
   return { outcome: { kind: 'shown', header, code, figures }, findings: findings.list() };
+}
+
+/**
+ * Adds each term `glossary`, the overview's, marks whose definition the repository's definitions
+ * can't hold, which merging the pull request would put there.
+ */
+function checkMarks(glossary: readonly GlossaryEntry[], findings: Findings): void {
+  for (const { name, mark, line, unstorable } of glossary) {
+    if (mark === undefined || unstorable === undefined) continue;
+    findings.add(
+      'mark-definition',
+      line,
+      `"${quote(name)}" is marked (${mark}), so its definition goes into the repository's definitions, and it ${unstorable}. They hold one paragraph of text, inline code and links to code and terms, in at most ${STORE_LIMITS.definition.toLocaleString('en-US')} bytes: write it so, or take the mark off.`,
+    );
+  }
 }
 
 /** What's wrong with `header` for the ref `options` say the overview is on: a code and a message. */

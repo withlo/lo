@@ -5,6 +5,7 @@
  * same to reading it.
  */
 
+import { inlineTokens } from '@lo/markdown';
 import { expect, test } from 'vitest';
 
 import {
@@ -16,6 +17,7 @@ import {
   severityOf,
   type ParsedArtifact,
   type StoreRead,
+  type StoreTerm,
 } from '../src/index.ts';
 import { HEADER } from './support.ts';
 import { isPlainPath, problems } from './walker.ts';
@@ -60,6 +62,10 @@ const PIECES = [
   '- **Term** (new): a definition.\n',
   '- **Term** (changed): another.\n',
   '- **Term** (New): ',
+  '- **Term** \\(new): escaped.\n',
+  '- **Term** (new)&#58; an entity.\n',
+  '- **Term** (new): **bold**, [web](https://example.com).\n',
+  '- **`t `** (new): a space.\n',
   ' (new):',
   '(changed)',
   '- **Hash  map**:\n  on the next line.\n',
@@ -185,7 +191,44 @@ function wrong(parsed: ParsedArtifact): string[] {
     if (!isPlainPath(target.path)) found.push(`the reference ${String(target.path)}`);
     if (!(line >= 1) || !['block', 'step', 'link'].includes(from)) found.push(`${from}@${line}`);
   }
+  // A term the repository's definitions could take, they read as the overview does.
+  for (const { name, key, definition, unstorable } of parsed.glossary) {
+    if (!isPlain(name)) found.push(`the term ${name}`);
+    if (unstorable !== undefined || definition === undefined) continue;
+    const read = parseStore(
+      JSON.stringify({
+        format: 1,
+        terms: {
+          [key]: {
+            term: name,
+            definition,
+            written: 'agent',
+            by: { login: 'a' },
+            from: 'lo',
+            at: AT,
+          },
+        },
+      }),
+    );
+    if (!read.ok) found.push(`the definition of ${name}: ${read.problem.message}`);
+  }
   return found;
+}
+
+const AT = '2026-11-27T10:30:00Z';
+
+/** Whether `text` is a term as the store holds one: no control or invisible character, trimmed. */
+function isPlain(text: string): boolean {
+  return !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(text) && text.trim() === text;
+}
+
+/** Whether `text`, a definition, reads as only text, inline code and links to code and terms. */
+function isDefinition(text: string): boolean {
+  return (inlineTokens(text) ?? []).every(
+    (token) =>
+      ['text', 'code_inline', 'link_close'].includes(token.type) ||
+      (token.type === 'link_open' && /^(?:code|term):/.test(String(token.attrGet('href') ?? ''))),
+  );
 }
 
 test('300 random mixes never throw, and hold only what the format allows', () => {
@@ -355,6 +398,17 @@ const STORE_PIECES = [
   '\u0000',
   'é',
   '__proto__',
+  '\\t',
+  '\\n',
+  '\\u000b',
+  '\\u0062',
+  '**',
+  '_',
+  '![x](y)',
+  '<b>',
+  '[x](https://example.com)',
+  '"term": "x", ',
+  '"suggestions": [], ',
 ];
 
 /** `STORE`, changed at random from `seed`: pieces put in, characters taken out. */
@@ -384,9 +438,18 @@ function wrongStore(read: StoreRead): string[] {
   const found: string[] = [];
   for (const [key, term] of read.store.terms) {
     if (term.key !== key) found.push(`the key ${key}`);
-    if (/[\p{Cc}\p{Cf}]/u.test(term.definition + term.term)) found.push(`the term ${key}`);
+    if (![term.term, ...term.aliases].every(isPlain)) found.push(`the term ${key}`);
+    if (!definitionsOf(term).every(isDefinition)) found.push(`the definitions of ${key}`);
+    if (term.suggestions.length > 0 && !term.locked) found.push(`the suggestions of ${key}`);
   }
   return found;
+}
+
+/** Every definition `term` holds: its own, its earlier ones and those suggested. */
+function definitionsOf(term: StoreTerm): string[] {
+  return [term.definition, ...term.changes, ...term.suggestions].map((each) =>
+    typeof each === 'string' ? each : each.definition,
+  );
 }
 
 test('300 random changes to a store never throw, and read only what the store allows', () => {
