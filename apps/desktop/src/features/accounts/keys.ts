@@ -14,10 +14,13 @@ export default defineCommands('accounts', {
     keys: ['y y'],
     when: { scope: 'dialog' },
   },
-  /** Starts signing in with GitHub, with an account to add to those Lo has. */
+  /**
+   * Starts signing in with GitHub, with an account to add to those Lo has: "Add account…" once one
+   * is listed.
+   */
   addAccount: {
     label: 'Sign in with GitHub…',
-    control: 'Sign in with GitHub… on the GitHub row of Settings › Accounts',
+    control: 'Sign in with GitHub…, or Add account…, on the GitHub row of Settings › Accounts',
     group: 'App',
     keys: [],
   },

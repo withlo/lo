@@ -214,7 +214,7 @@ item. Nor does “on screen”: write “this revision”, not “the revision o
 | Dismiss                   | Put away a banner or a toast for good. An offer’s asks where: “Dismiss for #264”, “Dismiss for this stack”, “Dismiss for all stacks”.                                                              | Hide, Close                                          |
 | Copy                      | To the clipboard: “Copy link”. The button reads “Copied” for 2 s.                                                                                                                                  | Yank                                                 |
 | Install                   | Put something on this computer: the `lo` command, the overview skill, a language server.                                                                                                           | Set up, Add                                          |
-| Sign in, Sign out         | “Sign in with GitHub…” is the one command, for any account. “Sign in again” after a sign-out. The noun is “sign-in”. Single sign-on alone keeps GitHub’s word: “Authorize on GitHub”.              | Log in, Add an account, Connect, Authorize           |
+| Sign in, Sign out         | “Sign in with GitHub…” with no account listed, then “Add account…”, which says “Added ravi-k”. “Sign in again” after a sign-out. The noun is “sign-in”. Single sign-on says “Authorize on GitHub”. | Log in, “Add an account”, Connect, Authorize         |
 | Try again                 | Repeat what failed. A retry that’s counting down reads “Retrying in 20 s”, with the button “Try now”. That countdown is the one place “retry” appears.                                             | “Retry” on a button, Reload, “tries again by itself” |
 | Check again               | Look again for something missing or not known: Git, a merge’s result. It only looks, and repeats nothing.                                                                                          | Recheck, Look again                                  |
 | Paste                     | Open the pull request link on the clipboard: “Paste link”.                                                                                                                                         | “Open the link on the clipboard”                     |
@@ -281,7 +281,7 @@ One wording per cause:
 | Rate limit, signed out | GitHub’s rate limit resets at 14:05.              | Sign in with GitHub…       |
 | Signed out             | ravi-k is signed out.                             | Sign in again              |
 | Sign-in can’t be read  | ravi-k’s sign-in can’t be read from the Keychain. | Try again                  |
-| Missing or hidden      | It doesn’t exist, or ravi-k can’t see it.         | Sign in with GitHub…       |
+| Missing or hidden      | It doesn’t exist, or ravi-k can’t see it.         | Add account…               |
 | Out of date            | This revision is out of date.                     | Show latest                |
 | Single sign-on         | rozed-dev requires single sign-on.                | Authorize on GitHub        |
 | Lo not approved        | rozed-dev hasn’t approved Lo.                     | Request approval on GitHub |

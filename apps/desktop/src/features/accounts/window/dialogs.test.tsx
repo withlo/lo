@@ -2,7 +2,7 @@
 // The feature's dialogs in a window of their own, with main answered by a stand-in bridge: what
 // each shows, what it asks main, and that closing one stops what it was doing.
 
-import { NO_TARGET } from '@lo/ui/commands';
+import { holdRegistry, NO_TARGET } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
@@ -82,6 +82,11 @@ function dialog(name: string): HTMLElement | null {
 function status(): string | undefined {
   // The first in it: a button that copies has one of its own.
   return dialog('sign-in')?.querySelector('div[role="status"]')?.textContent;
+}
+
+/** The sign-in dialog's title. */
+function title(): string | undefined {
+  return dialog('sign-in')?.querySelector('h2')?.textContent;
 }
 
 function button(within: Element | null, text: string): HTMLButtonElement {
@@ -372,6 +377,66 @@ describe('the sign-in dialog', () => {
     click(button(dialog('sign-in'), 'Try again'));
     await settle();
     expect(dialog('sign-in')?.textContent).toContain('FAKE-1234');
+  });
+
+  it('adds an account once one is listed, and says whether GitHub signed in a new one', async () => {
+    const bridge = installBridge({ 'accounts.signIn': () => waiting });
+    showAccounts([account('rozed-bot'), account('tess-okafor', { signedOut: 'refused' })]);
+    render();
+    /** Starts adding an account, and has GitHub's page sign in `login`. */
+    const add = async (login: string) => {
+      act(() => openSignIn());
+      await settle();
+      act(() =>
+        bridge.push('accounts.signingIn', { kind: 'signedIn', id: 7, login, name: 'Octo Cat' }),
+      );
+    };
+    act(() => openSignIn());
+    await settle();
+    expect(title()).toBe('Add account');
+    // GitHub's page signs in whichever account it's signed in to, so the line says which to be.
+    expect(dialog('sign-in')?.textContent).toContain(
+      'Enter this code at github.com/login/device, signed in as the account to add',
+    );
+    await add('octo-cat');
+    expect(status()).toBe('Added octo-cat (Octo Cat)');
+    // One listed already adds nothing, whatever case GitHub gives its login in, unless it was
+    // signed out: that signs it in again.
+    await add('Rozed-Bot');
+    expect(status()).toBe('Rozed-Bot was already added');
+    await add('tess-okafor');
+    expect(status()).toBe('Signed in as tess-okafor (Octo Cat)');
+    // One that fails says it couldn't add one, and trying again still adds.
+    act(() => openSignIn());
+    await settle();
+    act(() =>
+      bridge.push('accounts.signingIn', { kind: 'failed', id: 7, why: 'denied', message: 'No.' }),
+    );
+    expect(dialog('sign-in')?.querySelector('[role="alert"]')?.textContent).toContain(
+      'Couldn’t add the account',
+    );
+    click(button(dialog('sign-in'), 'Try again'));
+    await settle();
+    expect(title()).toBe('Add account');
+  });
+
+  it('signs in again an account GitHub signed out, saying only that it signs in', async () => {
+    const bridge = installBridge({ 'accounts.signIn': () => waiting });
+    showAccounts([account('rozed-bot', { signedOut: 'refused' })]);
+    render();
+    act(() => openSignIn({ adds: false }));
+    await settle();
+    const shown = dialog('sign-in');
+    expect(title()).toBe('Sign in with GitHub');
+    expect(shown?.textContent).toContain('Enter this code at github.com/login/device');
+    expect(shown?.textContent).not.toContain('the account to add');
+    act(() =>
+      bridge.push('accounts.signingIn', { kind: 'failed', id: 7, why: 'denied', message: 'No.' }),
+    );
+    expect(shown?.querySelector('[role="alert"]')?.textContent).toContain('Couldn’t sign in');
+    click(button(shown, 'Try again'));
+    await settle();
+    expect(title()).toBe('Sign in with GitHub');
   });
 });
 
@@ -799,5 +864,29 @@ describe('Accounts in Settings', () => {
     click(button(rows[1] ?? null, 'Sign out'));
     expect(dialog('sign-out')?.textContent).toContain('Sign out of tess-okafor?');
     expect(page.textContent).not.toContain('Remove');
+  });
+
+  it('offers to add an account once one is listed, and to sign in again one signed out', async () => {
+    installBridge({ 'accounts.signIn': () => waiting });
+    // The registry Settings' buttons run their commands through, as the window's is.
+    onTestFinished(holdRegistry(registry()));
+    showAccounts([]);
+    const page = render();
+    // Main's list, which has none.
+    await settle();
+    // The first is a sign-in; the palette names it as the button does.
+    expect(button(page, 'Sign in with GitHub…')).toBeDefined();
+    expect(registry().labelled('accounts.addAccount', NO_TARGET)).toBe(undefined);
+    act(() => showAccounts([account('rozed-bot', { signedOut: 'refused' })]));
+    expect(button(page, 'Add account…')).toBeDefined();
+    expect(page.textContent).not.toContain('Sign in with GitHub');
+    expect(registry().labelled('accounts.addAccount', NO_TARGET)).toBe('Add account…');
+    click(button(page, 'Sign in again'));
+    await settle();
+    expect(title()).toBe('Sign in with GitHub');
+    act(() => closeDialog());
+    click(button(page, 'Add account…'));
+    await settle();
+    expect(title()).toBe('Add account');
   });
 });

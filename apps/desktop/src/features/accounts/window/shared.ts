@@ -22,9 +22,17 @@ export function useAccountsHeard(): boolean {
   return useStore(accountsStore, (state) => state.accounts !== undefined || state.unlisted);
 }
 
-/** Opens the sign-in dialog and starts signing in with GitHub, as the welcome screen's `⏎` does. */
+/**
+ * Opens the sign-in dialog and starts signing in with GitHub, as the welcome screen's `⏎` does: to
+ * add an account to those listed, where there are any, as `accounts.addAccount` does.
+ */
 export function signIn(): void {
   openSignIn();
+}
+
+/** Opens the sign-in dialog for signing in an account GitHub signed out, as "Sign in again" asks. */
+export function signInAgain(): void {
+  openSignIn({ adds: false });
 }
 
 /** Opens the dialog for importing accounts from `gh`. */

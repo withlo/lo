@@ -44,6 +44,7 @@ import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import { explain, REMEDY_LABELS, remedyOf } from '../../../window/explain.ts';
 import { avatarImage } from '../../../window/images.ts';
+import { signInAgain } from '../../accounts/window/shared.ts';
 import {
   deletePullComment,
   editPullComment,
@@ -234,7 +235,10 @@ function Failed({ tab, view }: { tab: PullTab; view: TimelineView | undefined })
           }
         : {
             label: REMEDY_LABELS[remedy],
-            onClick: () => registry().run('accounts.addAccount', NO_TARGET),
+            onClick: () =>
+              remedy === 'signInAgain'
+                ? signInAgain()
+                : registry().run('accounts.addAccount', NO_TARGET),
           };
   return (
     <Problem

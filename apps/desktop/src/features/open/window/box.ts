@@ -8,7 +8,7 @@ import { IpcError } from '../../../ipc/contract.ts';
 import { announce } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
 import { contract as accounts } from '../../accounts/contract.ts';
-import { signIn } from '../../accounts/window/shared.ts';
+import { signIn, signInAgain } from '../../accounts/window/shared.ts';
 import { contract as tabs } from '../../tab/contract.ts';
 import type { Opened, Preview, Refusal } from '../contract.ts';
 import { main } from './main.ts';
@@ -284,6 +284,11 @@ export function takeWay(way: BlockedWay, text: string): void {
       void openText(text);
       return;
     case 'signIn':
+      closeBox();
+      if (way.again) signInAgain();
+      else signIn();
+      return;
+    case 'addAccount':
       addAccount();
       return;
     case 'retry':
