@@ -1,11 +1,11 @@
 // An overview's markers in the diff view, on the small pull request, as drawn, side by side and
-// inline, their notes opening between lines, in the flow. The line at the top of the screen and the one in its middle are watched every frame: on a
-// frame with no input, neither may move. Markers that arrive or go while the reader is part way
-// down move nothing; nor do notes opened or closed above the screen, two at a time included; a note
-// opened from its ball, or closed with `Esc`, leaves the line at the top where it is; a note on
-// screen whose mark changes or goes stays as it is until it's scrolled away; and a note closed above
-// the screen just after a scroll that came with no input, as a script's, leaves the screen where
-// that scroll put it.
+// inline, their notes opening between lines, in the flow. The line at the top of the screen and the
+// one in its middle are watched every frame: on a frame with no input, neither may move. Markers
+// that arrive or go while the reader is part way down move nothing; nor do notes opened or closed
+// above the screen, two at a time included; a note opened from its ball, or closed with `Esc`,
+// leaves the line at the top where it is; a note on screen whose mark changes or goes stays as it
+// is until it's scrolled away; and a note closed above the screen just after a scroll that came
+// with no input, as a script's, leaves the screen where that scroll put it.
 
 import type { OverviewMark, Place, Spot } from '@lo/ui/code';
 import type { Page } from '@playwright/test';
