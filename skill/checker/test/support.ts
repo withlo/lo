@@ -109,10 +109,23 @@ export function overview(commit: string, body = '', pr = 4797): string {
 /** The skill's source, `skill/` in the repository. */
 export const SKILL = fileURLToPath(new URL('../../', import.meta.url));
 
-/** The files the skill is made of, by their paths in its folder. */
-export function skillFiles(): string[] {
+/**
+ * Which copy of the skill: a person's own, `lo-explain`, which `install` writes, or a
+ * repository's, `lo-overview`, which `install --repo` writes, with its hook.
+ */
+export type Copy = 'personal' | 'repo';
+
+/** Each copy's name, which its folder is named for. */
+export const COPY_NAMES: Readonly<Record<Copy, string>> = {
+  personal: 'lo-explain',
+  repo: 'lo-overview',
+};
+
+/** The files a copy of the skill is made of, by their paths in its folder. */
+export function skillFiles(copy: Copy = 'personal'): string[] {
   const references = readdirSync(join(SKILL, 'references')).map((name) => `references/${name}`);
-  return ['LICENSE', 'SKILL.md', ...references].toSorted();
+  const own = copy === 'repo' ? ['hook.mjs'] : [];
+  return ['LICENSE', 'SKILL.md', ...own, ...references].toSorted();
 }
 
 /** Every file, folder and link in `dir`, by its path there, each folder's ending in `/`. */
@@ -132,22 +145,38 @@ export const MANIFEST: { name: string; version: string } = JSON.parse(
   readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
 );
 
-/** The skill's own files in the folder `dir`, each by its path there, with its text. */
-function skillIn(dir: string): Record<string, string> {
+/** A copy's files in the folder `dir`, each by its path there, with its text. */
+function skillIn(dir: string, copy: Copy): Record<string, string> {
   return Object.fromEntries(
-    skillFiles().map((path) => [path, readFileSync(join(dir, path), 'utf8')]),
+    skillFiles(copy).map((path) => [path, readFileSync(join(dir, path), 'utf8')]),
   );
 }
 
+/** `text`, a `SKILL.md`, split after its front matter. */
+export function splitMatter(text: string): { matter: string; body: string } {
+  const end = text.indexOf('\n---\n', 4);
+  if (!text.startsWith('---\n') || end === -1) throw new Error('No front matter.');
+  return { matter: text.slice(0, end + 5), body: text.slice(end + 5) };
+}
+
 /**
- * Checks the skill's folder `folder` holds the skill's own files as the repository has them, but
- * for `SKILL.md`'s checker, pinned to this package's version.
+ * Checks the skill's folder `folder` holds a copy's own files as the repository has them, but for
+ * `SKILL.md`'s checker, pinned to this package's version, and a person's copy's front matter, from
+ * `explain.md`.
  */
-export function expectSkill(folder: string): void {
-  const source = skillIn(SKILL);
-  const pinned = source['SKILL.md']!.replaceAll(
+export function expectSkill(folder: string, copy: Copy = 'personal'): void {
+  const source = skillIn(SKILL, 'repo');
+  const skill =
+    copy === 'repo'
+      ? source['SKILL.md']!
+      : splitMatter(readFileSync(join(SKILL, 'explain.md'), 'utf8')).matter +
+        splitMatter(source['SKILL.md']!).body;
+  const pinned = skill.replaceAll(
     `${MANIFEST.name}@{version}`,
     `${MANIFEST.name}@${MANIFEST.version}`,
   );
-  expect(skillIn(folder)).toEqual({ ...source, 'SKILL.md': pinned });
+  const expected = Object.fromEntries(
+    skillFiles(copy).map((path) => [path, path === 'SKILL.md' ? pinned : source[path]!]),
+  );
+  expect(skillIn(folder, copy)).toEqual(expected);
 }

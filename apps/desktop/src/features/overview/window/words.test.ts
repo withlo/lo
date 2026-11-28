@@ -74,8 +74,8 @@ describe('standing', () => {
 });
 
 describe('standing, with what stops an install', () => {
-  const link: SkillRefusal = { kind: 'link', path: '~/.claude/skills/lo-overview' };
-  const LINK = '`~/.claude/skills/lo-overview` is a link, not a folder.';
+  const link: SkillRefusal = { kind: 'link', path: '~/.claude/skills/lo-explain' };
+  const LINK = '`~/.claude/skills/lo-explain` is a link, not a folder.';
 
   it('says a skill reached through a link is installed, and that Lo can’t update it', () => {
     expect(standing(state({ installed: true, blocked: link }))[0]).toEqual({
@@ -151,28 +151,28 @@ describe('refusalWords', () => {
   const refusals: [SkillRefusal, string][] = [
     [{ kind: 'nothingSetUp' }, 'Set up Claude Code or Codex first'],
     [
-      { kind: 'link', path: '/h/.claude/skills/lo-overview' },
-      '`/h/.claude/skills/lo-overview` is a link, not a folder.',
+      { kind: 'link', path: '/h/.claude/skills/lo-explain' },
+      '`/h/.claude/skills/lo-explain` is a link, not a folder.',
     ],
     [
-      { kind: 'notFolder', path: '/h/.claude/skills/lo-overview' },
-      '`/h/.claude/skills/lo-overview` is a file, not a folder.',
+      { kind: 'notFolder', path: '/h/.claude/skills/lo-explain' },
+      '`/h/.claude/skills/lo-explain` is a file, not a folder.',
     ],
     [
-      { kind: 'notFile', path: '/h/.claude/skills/lo-overview/SKILL.md' },
-      '`/h/.claude/skills/lo-overview/SKILL.md` is a folder, not a file.',
+      { kind: 'notFile', path: '/h/.claude/skills/lo-explain/SKILL.md' },
+      '`/h/.claude/skills/lo-explain/SKILL.md` is a folder, not a file.',
     ],
     [
-      { kind: 'otherSkill', path: '/h/skills/lo-overview', name: 'review' },
-      '`/h/skills/lo-overview` holds another skill, “review”.',
+      { kind: 'otherSkill', path: '/h/skills/lo-explain', name: 'review' },
+      '`/h/skills/lo-explain` holds another skill, “review”.',
     ],
     [
-      { kind: 'otherSkill', path: '/h/skills/lo-overview', name: null },
-      '`/h/skills/lo-overview` holds another skill.',
+      { kind: 'otherSkill', path: '/h/skills/lo-explain', name: null },
+      '`/h/skills/lo-explain` holds another skill.',
     ],
     [
-      { kind: 'otherFiles', path: '/h/skills/lo-overview' },
-      '`/h/skills/lo-overview` holds other files.',
+      { kind: 'otherFiles', path: '/h/skills/lo-explain' },
+      '`/h/skills/lo-explain` holds other files.',
     ],
     [failed({ code: 'EACCES', path: '~/.claude/skills' }), '`~/.claude/skills` isn’t writable.'],
     [failed({ code: 'EPERM', path: null }), '`~/.claude/skills` isn’t writable.'],
@@ -205,7 +205,7 @@ describe('notSetUp', () => {
 });
 
 describe('installWords', () => {
-  const link = { kind: 'link', path: '~/.agents/skills/lo-overview' } as const;
+  const link = { kind: 'link', path: '~/.agents/skills/lo-explain' } as const;
 
   it('says it’s done, with no agent named, where it went for each', () => {
     expect(

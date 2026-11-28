@@ -112,7 +112,7 @@ describe('a prompt', () => {
         'Write a Lo overview for this pull request:',
         'https://github.com/rozed-dev/e2e/pull/80',
         '',
-        'Use the lo-overview skill. Read the diff, the description',
+        'Use the lo-explain skill. Read the diff, the description',
         'and the commits; write artifact.md and its figures; run the',
         'checker; then push to refs/lo/pr/80.',
       ].join('\n'),

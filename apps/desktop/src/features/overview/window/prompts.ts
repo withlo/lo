@@ -66,7 +66,7 @@ export function promptOf(facts: PromptFacts): string | undefined {
         'Write a Lo overview for this pull request:',
         link,
         '',
-        'Use the lo-overview skill. Read the diff, the description',
+        'Use the lo-explain skill. Read the diff, the description',
         'and the commits; write artifact.md and its figures; run the',
         `checker; then push to ${ref}.`,
       ].join('\n');
@@ -82,7 +82,7 @@ export function promptOf(facts: PromptFacts): string | undefined {
         link,
         ...since,
         '',
-        `Use the lo-overview skill. Read the overview at ${ref}, then`,
+        `Use the lo-explain skill. Read the overview at ${ref}, then`,
         'the diff, the description and the commits; bring artifact.md',
         'and its figures up to date with the pull request as it is now;',
         `run the checker; then push to ${ref}.`,
@@ -93,10 +93,10 @@ export function promptOf(facts: PromptFacts): string | undefined {
         'Fix the Lo overview for this pull request:',
         link,
         '',
-        `Lo can’t read the overview at ${ref}. Use the lo-overview`,
-        'skill: run its checker on the overview, fix each problem it',
-        'reports, and run it again until it passes; then push to',
-        `${ref}.`,
+        `The overview at ${ref} is one Lo can’t read. Use the`,
+        'lo-explain skill: run its checker on the overview, fix each',
+        'problem it reports, and run it again until it passes; then',
+        `push to ${ref}.`,
       ].join('\n');
     case 'shrink':
       return [
@@ -104,7 +104,7 @@ export function promptOf(facts: PromptFacts): string | undefined {
         link,
         '',
         `The overview at ${ref} is past Lo’s limits. Use the`,
-        'lo-overview skill: make its figures smaller, as SVG where',
+        'lo-explain skill: make its figures smaller, as SVG where',
         'they can be, and cut what it holds that it doesn’t show,',
         `until the checker passes; then push to ${ref}.`,
       ].join('\n');
