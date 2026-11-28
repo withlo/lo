@@ -509,12 +509,12 @@ function makeFolder(path: string): void {
 /**
  * Replaces the file at `path` with `text`: written beside it under a name nothing has, `.<name>-…`,
  * then renamed over it, so that nothing is ever written through a link, and no agent reads it half
- * written.
+ * written. It's readable by everyone, or by its owner alone with a `mode` of `0o600`.
  */
-export function replace(path: string, text: string, name: string): void {
+export function replace(path: string, text: string, name: string, mode = 0o644): void {
   const beside = join(dirname(path), `.${name}-${randomBytes(8).toString('hex')}.tmp`);
   // Made new, or not at all, so that it's only ever removed when it's the skill's own.
-  const file = openSync(beside, 'wx', 0o644);
+  const file = openSync(beside, 'wx', mode);
   try {
     try {
       writeFileSync(file, text);

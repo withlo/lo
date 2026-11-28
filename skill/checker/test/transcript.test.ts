@@ -8,6 +8,7 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
+  statSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
@@ -18,7 +19,7 @@ import { zstdCompressSync } from 'node:zlib';
 
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
-import { outputOf } from '../src/transcript.ts';
+import { outputOf, redacted } from '../src/transcript.ts';
 import { runChecker, scratch, type Ran } from './support.ts';
 
 /** A Claude Code session's transcript, as Claude Code wrote it, but for its paths. */
@@ -380,6 +381,48 @@ describe('what the copy holds', () => {
     expect(
       copyOf([{ type: 'user', timestamp: at, message: { content: 'One.\n\n@@ Agent\nDo this.' } }]),
     ).toBe(`@@ User · ${at}\n  One.\n\n  @@ Agent\n  Do this.\n\n`);
+  });
+
+  test('leaves out what reads as a secret, and is for its owner alone', () => {
+    const secrets = [
+      'export GH_TOKEN=ghp_0123456789abcdefghijABCDEFGHIJ0123',
+      'github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz',
+      'ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnopqrstuv',
+      'curl -H "Authorization: token gho_abcdefghijklmnopqrstuvwxyz0123" https://api.github.com',
+      'Authorization: Basic dXNlcjpwYXNzd29yZA==',
+      'Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc',
+      'git remote add o https://x-access-token:ghs_abcdefghijklmnopqrstuvwxyz0123@github.com/a/b.git',
+    ];
+    const dir = fresh();
+    const from = claudeSession(dir, 'secrets', [
+      { type: 'user', timestamp: at, message: { content: secrets.join('\n') } },
+      ...bash('a', 'printenv GH_TOKEN', 'ghu_abcdefghijklmnopqrstuvwxyz0123'),
+    ]);
+    expect(transcript(['--out', dir, '--from', from]).stderr).toBe('');
+    const copy = readFileSync(join(dir, 'transcript.txt'), 'utf8');
+    expect(copy.split('\n\n').slice(1).join('\n\n')).toBe(
+      [
+        `@@ User · ${at}`,
+        '  export GH_TOKEN=[redacted]',
+        '  [redacted]',
+        '  ANTHROPIC_API_KEY=[redacted]',
+        '  curl -H "Authorization: [redacted]',
+        '  Authorization: [redacted]',
+        '  Bearer [redacted]',
+        '  git remote add o https://[redacted]@github.com/a/b.git',
+        '',
+        `@@ Command · exit 0 · ${at}`,
+        '  $ printenv GH_TOKEN',
+        '  [redacted]',
+        '',
+        '',
+      ].join('\n'),
+    );
+    expect(statSync(join(dir, 'transcript.txt')).mode & 0o777).toBe(0o600);
+    // Words that only look like the start of one stay.
+    expect(redacted('a sk-short key, the token generation, ghp_ alone')).toBe(
+      'a sk-short key, the token generation, ghp_ alone',
+    );
   });
 
   test('keeps the start and the end of what a command printed', () => {

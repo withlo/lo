@@ -147,7 +147,12 @@ Commit them in a pull request. On Codex, each person approves the hook once, in 
       'Bash(gh pr create *)',
       'Bash(gh pr new *)',
     ]);
-    expect(CODEX_GROUPS[0]?.hooks[0]?.command).toBe('node .agents/skills/lo-overview/hook.mjs');
+    // Codex runs it in the folder its session started in, which may be one in the clone.
+    expect(CODEX_GROUPS[0]?.hooks[0]).toEqual({
+      type: 'command',
+      command: 'node "$(git rev-parse --show-toplevel)/.agents/skills/lo-overview/hook.mjs"',
+      timeout: 60,
+    });
   });
 
   test('finds the clone’s top from a folder in it, or the one --repo names', () => {

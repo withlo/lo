@@ -12,10 +12,11 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { platform } from 'node:os';
+import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,6 +24,7 @@ import {
   actionsIn,
   answerFor,
   branchOf,
+  clearStale,
   commandsIn,
   CURRENT,
   failedOrIdle,
@@ -41,7 +43,9 @@ import {
 } from '@lo/skill/hook.mjs';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
-import { scratch } from './support.ts';
+import { git } from '@lo/testing/git';
+
+import { repositoryOf, scratch } from './support.ts';
 
 /** The hook, as Claude Code and Codex run it. */
 const HOOK = fileURLToPath(import.meta.resolve('@lo/skill/hook.mjs'));
@@ -62,12 +66,15 @@ function fresh(name = 'case'): string {
   return dir;
 }
 
-/** What `actionsIn` makes of `command` in `/work`, with each branch by name, `*` for the current. */
+/**
+ * What `actionsIn` makes of `command` in `/work`, with each branch by name, `*` for the current, and
+ * the remote or `--head` it names.
+ */
 function pushed(command: string): string[] {
   return actionsIn(command, '/work').map((action) =>
     action.kind === 'create'
-      ? `create in ${action.dir}`
-      : `push ${action.branches.map((branch) => (branch === CURRENT ? '*' : branch)).join(',')} in ${action.dir}`,
+      ? `create${action.head === undefined ? '' : ` ${action.head}`} in ${action.dir}`
+      : `push ${action.branches.map((branch) => (branch === CURRENT ? '*' : branch)).join(',')}${action.remote === undefined ? '' : ` to ${action.remote}`} in ${action.dir}`,
   );
 }
 
@@ -85,20 +92,21 @@ describe('the commands it answers', () => {
       ['ls'],
     ]);
     expect(commandsIn('a\\\n b > out.txt; (cd x && y)')).toEqual([['a', 'b'], ['cd', 'x'], ['y']]);
+    expect(commandsIn('cat <<EOF > x\nrm -rf /\nEOF\nls')).toEqual([['cat'], ['ls']]);
   });
 
   test('takes in every push of a branch, wherever it runs', () => {
     expect(pushed('git push')).toEqual(['push * in /work']);
-    expect(pushed('git push -u origin HEAD')).toEqual(['push * in /work']);
+    expect(pushed('git push -u origin HEAD')).toEqual(['push * to origin in /work']);
     expect(pushed('git push origin work +other refs/heads/a:refs/heads/b')).toEqual([
-      'push work,other,b in /work',
+      'push work,other,b to origin in /work',
     ]);
-    expect(pushed('git push --force-with-lease origin @')).toEqual(['push * in /work']);
-    expect(pushed('git push -o ci.skip origin work')).toEqual(['push work in /work']);
+    expect(pushed('git push --force-with-lease fork @')).toEqual(['push * to fork in /work']);
+    expect(pushed('git push -o ci.skip origin work')).toEqual(['push work to origin in /work']);
     // The repository, as `--repo` names it, and so the branch checked out.
     expect(pushed('git push --repo origin')).toEqual(['push * in /work']);
-    expect(pushed('git push origin -- --odd')).toEqual(['push --odd in /work']);
-    expect(pushed('git push --all origin')).toEqual(['push * in /work']);
+    expect(pushed('git push origin -- --odd')).toEqual(['push --odd to origin in /work']);
+    expect(pushed('git push --all origin')).toEqual(['push * to origin in /work']);
     expect(pushed('git -C sub -c push.default=current --no-pager push')).toEqual([
       'push * in /work/sub',
     ]);
@@ -109,12 +117,60 @@ describe('the commands it answers', () => {
     expect(pushed('/usr/bin/git push')).toEqual(['push * in /work']);
   });
 
+  test('runs each where the shell would, and leaves out one it can’t tell', () => {
+    const home = homedir();
+    expect(pushed('git -C ~/x push')).toEqual([`push * in ${join(home, 'x')}`]);
+    expect(pushed('git -C~/x push')).toEqual([`push * in ${join(home, 'x')}`]);
+    expect(pushed('cd ~ && git push')).toEqual([`push * in ${home}`]);
+    expect(pushed('cd -P /a && git push')).toEqual(['push * in /a']);
+    // A subshell's `cd` ends with it.
+    expect(pushed('(cd sub && git push) && git push')).toEqual([
+      'push * in /work/sub',
+      'push * in /work',
+    ]);
+    expect(pushed('(cd /a; (cd b; git push); git push); git push')).toEqual([
+      'push * in /a/b',
+      'push * in /a',
+      'push * in /work',
+    ]);
+    // A folder named by a variable, a pattern or `-`, or relative to one of those.
+    for (const command of [
+      'git -C "$R" push',
+      'cd $R && git push',
+      'cd "$(git rev-parse --show-toplevel)" && git push',
+      'cd - && git push',
+      'cd sub* && git push',
+      'cd ~other && git push',
+      'cd $R && cd sub && git push',
+      'git --git-dir=/x/.git push',
+      'git --work-tree /x push',
+    ]) {
+      expect({ command, actions: pushed(command) }).toEqual({ command, actions: [] });
+    }
+    // Until a folder the shell would know again.
+    expect(pushed('cd $R && cd /b && git push')).toEqual(['push * in /b']);
+    expect(pushed('cd $R; gh pr create; cd /b; gh pr create')).toEqual(['create in /b']);
+  });
+
+  test('reads no here-document as commands', () => {
+    expect(pushed("cat > notes.md <<'EOF'\ngit push\nEOF\ngit push")).toEqual(['push * in /work']);
+    expect(pushed('cat <<-END\n\tgit push origin work\n\tEND\nls')).toEqual([]);
+    expect(pushed('git commit -F - <<EOF && git push\nFix\ngit push nope\nEOF')).toEqual([
+      'push * in /work',
+    ]);
+    // A here-string is a word, not a here-document.
+    expect(pushed('cat <<< hi\ngit push')).toEqual(['push * in /work']);
+  });
+
   test('takes in opening a pull request, but not a dry run or one in the browser', () => {
     expect(pushed('gh pr create --fill')).toEqual(['create in /work']);
     expect(pushed('git push -u origin work && gh pr new --draft')).toEqual([
-      'push work in /work',
+      'push work to origin in /work',
       'create in /work',
     ]);
+    expect(pushed('gh pr create --head me:feat --fill')).toEqual(['create me:feat in /work']);
+    expect(pushed('gh pr create -H feat')).toEqual(['create feat in /work']);
+    expect(pushed('gh pr create --head=feat')).toEqual(['create feat in /work']);
     expect(pushed('gh pr create --dry-run')).toEqual([]);
     expect(pushed('gh pr create --web')).toEqual([]);
     expect(pushed('gh pr view 5')).toEqual([]);
@@ -124,7 +180,9 @@ describe('the commands it answers', () => {
     // The writer's own push, which would otherwise start another writer for ever.
     expect(pushed("git push 'https://github.com/o/r.git' 'abc:refs/lo/pr/5'")).toEqual([]);
     expect(pushed('git push origin HEAD:refs/lo/stack/3 HEAD:refs/lo/terms')).toEqual([]);
-    expect(pushed('git push origin HEAD:refs/lo/pr/5 work')).toEqual(['push work in /work']);
+    expect(pushed('git push origin HEAD:refs/lo/pr/5 work')).toEqual([
+      'push work to origin in /work',
+    ]);
     for (const command of [
       'git push --dry-run',
       'git push -nu origin work',
@@ -255,7 +313,7 @@ describe('one writer per pull request', () => {
   const pull = pullOf('https://github.com/Acme/Demo/pull/7')!;
 
   test('takes the lock, holds it with one follow-up, and gives it back', () => {
-    const env = { TMPDIR: fresh('locks') };
+    const env = { LO_OVERVIEW_TMP: fresh('locks') };
     expect(takeLock(pull, { env, call: 'a' })).toBe('taken');
     // The same call again, as one that pushes and opens a pull request runs the hook twice.
     expect(takeLock(pull, { env, call: 'a' })).toBe('same');
@@ -274,7 +332,7 @@ describe('one writer per pull request', () => {
   });
 
   test('lapses a lock no writer kept within its time, follow-up and all', () => {
-    const env = { TMPDIR: fresh('lapse') };
+    const env = { LO_OVERVIEW_TMP: fresh('lapse') };
     expect(takeLock(pull, { env })).toBe('taken');
     expect(takeLock(pull, { env })).toBe('held');
     const later = Date.now() + LOCK_MS + 1000;
@@ -288,7 +346,7 @@ describe('one writer per pull request', () => {
 
   test('keeps locks only in a folder of the person’s own', () => {
     const base = fresh('shared');
-    const env = { TMPDIR: base };
+    const env = { LO_OVERVIEW_TMP: base };
     const folder = lockFolder(env)!;
     expect(folder).toBe(join(base, `lo-overview-${process.getuid?.() ?? ''}`));
     chmodSync(folder, 0o777);
@@ -299,14 +357,71 @@ describe('one writer per pull request', () => {
 
     const linked = fresh('linked');
     symlinkSync(fresh('target'), join(linked, `lo-overview-${process.getuid?.() ?? ''}`));
-    expect(lockFolder({ TMPDIR: linked })).toBeUndefined();
+    expect(lockFolder({ LO_OVERVIEW_TMP: linked })).toBeUndefined();
+  });
+
+  test('keeps them in /tmp, whatever TMPDIR says, as a sandboxed command sees another', () => {
+    const uid = process.getuid?.() ?? '';
+    expect(lockFolder({ TMPDIR: fresh('tmpdir') })).toBe(`/tmp/lo-overview-${uid}`);
+  });
+
+  test('takes the lock itself when the writer gave it back as the follow-up was recorded', () => {
+    const env = { LO_OVERVIEW_TMP: fresh('race') };
+    const folder = lockFolder(env)!;
+    expect(takeLock(pull, { env })).toBe('taken');
+    // The writer's `done` looked for a follow-up, found none, and takes the lock away just after.
+    const gone = () => rmSync(join(folder, 'acme.demo.7.lock'));
+    expect(takeLock(pull, { env, meanwhile: gone })).toBe('taken');
+    expect(readdirSync(folder)).toEqual(['acme.demo.7.lock']);
+  });
+
+  test('hands the writer a follow-up recorded as it gave the lock back', () => {
+    const env = { LO_OVERVIEW_TMP: fresh('race') };
+    const folder = lockFolder(env)!;
+    expect(takeLock(pull, { env })).toBe('taken');
+    // The hook saw the lock held, and records its follow-up as the lock goes.
+    const recorded = () => writeFileSync(join(folder, 'acme.demo.7.again'), `${pull.url}\n`);
+    expect(giveBack(pull, { env, meanwhile: recorded })).toBe('again');
+    expect(takeLock(pull, { env })).toBe('held');
+    expect(giveBack(pull, { env })).toBe('again');
+    expect(giveBack(pull, { env })).toBe('done');
+  });
+
+  test('drops a follow-up no writer is left to take, as a new writer reads it all', () => {
+    const env = { LO_OVERVIEW_TMP: fresh('orphan') };
+    const folder = lockFolder(env)!;
+    writeFileSync(join(folder, 'acme.demo.7.again'), `${pull.url}\n`);
+    expect(takeLock(pull, { env })).toBe('taken');
+    expect(giveBack(pull, { env })).toBe('done');
+  });
+
+  test('moves a lapsed lock aside before it removes it, and puts back one taken meanwhile', () => {
+    const folder = lockFolder({ LO_OVERVIEW_TMP: fresh('stale') })!;
+    const lock = join(folder, 'acme.demo.7.lock');
+    const again = join(folder, 'acme.demo.7.again');
+    writeFileSync(lock, '{}\n');
+    writeFileSync(again, 'x\n');
+    // Looked at as lapsed, but taken again by the time it's moved: it stands, follow-up and all.
+    clearStale(lock, again, Date.now());
+    expect(readdirSync(folder).toSorted()).toEqual(['acme.demo.7.again', 'acme.demo.7.lock']);
+    // Lapsed: both go, and nothing's left beside them.
+    clearStale(lock, again, Date.now() + LOCK_MS + 1000);
+    expect(readdirSync(folder)).toEqual([]);
   });
 });
 
-/** A clone in a folder of its own, with what `.lo/settings.json` holds, if anything. */
+/**
+ * A clone in a folder of its own that installed the skill, with what `.lo/settings.json` holds, if
+ * anything.
+ */
 function clone(settings?: string): string {
   const top = fresh('clone');
   mkdirSync(join(top, '.git'));
+  mkdirSync(join(top, '.claude', 'skills', 'lo-overview'), { recursive: true });
+  writeFileSync(
+    join(top, '.claude', 'skills', 'lo-overview', 'SKILL.md'),
+    '---\nname: lo-overview\n---\n',
+  );
   if (settings !== undefined) {
     mkdirSync(join(top, '.lo'));
     writeFileSync(join(top, '.lo', 'settings.json'), settings);
@@ -333,7 +448,7 @@ function claudeInput(command: string, cwd: string, stdout = 'To o\n   a..b  work
 function answer(input: object, env: NodeJS.ProcessEnv, found: Record<string, string> = {}) {
   const said = hook(input, {
     env,
-    find: (_dir, branch) => pullOf(found[branch === CURRENT ? '*' : branch]),
+    find: (_dir, { branch }) => pullOf(found[branch === CURRENT ? '*' : branch]),
   });
   return said === undefined ? undefined : JSON.parse(said).hookSpecificOutput;
 }
@@ -342,7 +457,7 @@ describe('the hook', () => {
   const link = 'https://github.com/acme/demo/pull/7';
 
   test('asks Claude Code to start the skill in the background, once per writer', () => {
-    const env = { TMPDIR: fresh('tmp'), HOME: fresh('home') };
+    const env = { LO_OVERVIEW_TMP: fresh('tmp'), HOME: fresh('home') };
     const top = clone();
     const first = answer(claudeInput('git push', top), env, { '*': link });
     expect(first.hookEventName).toBe('PostToolUse');
@@ -360,7 +475,7 @@ describe('the hook', () => {
   });
 
   test('asks Codex to start it with spawn_agent, from what Codex gives it', () => {
-    const env = { TMPDIR: fresh('tmp'), HOME: fresh('home') };
+    const env = { LO_OVERVIEW_TMP: fresh('tmp'), HOME: fresh('home') };
     const top = clone();
     const said = answer(
       {
@@ -388,14 +503,14 @@ describe('the hook', () => {
           turn_id: 't',
           tool_response: 'Exit code: 1\nOutput:\nfatal: x',
         },
-        { TMPDIR: fresh('tmp'), HOME: env.HOME },
+        { LO_OVERVIEW_TMP: fresh('tmp'), HOME: env.HOME },
         { '*': link },
       ),
     ).toBeUndefined();
   });
 
   test('finds an opened pull request from what was printed, or what Claude Code read of it', () => {
-    const env = { TMPDIR: fresh('tmp'), HOME: fresh('home') };
+    const env = { LO_OVERVIEW_TMP: fresh('tmp'), HOME: fresh('home') };
     const top = clone();
     const created = answer(
       claudeInput(
@@ -427,7 +542,7 @@ describe('the hook', () => {
   });
 
   test('answers once for a command that pushes and opens the same pull request', () => {
-    const env = { TMPDIR: fresh('tmp'), HOME: fresh('home') };
+    const env = { LO_OVERVIEW_TMP: fresh('tmp'), HOME: fresh('home') };
     const top = clone();
     const input = claudeInput('git push -u origin work && gh pr create --fill', top, `${link}\n`);
     // Claude Code runs it once for each of the hook's rules the command matches.
@@ -439,7 +554,11 @@ describe('the hook', () => {
 
   test('says nothing when it’s off, the push changed nothing, or there’s no open pull request', () => {
     const home = fresh('home');
-    const env = { TMPDIR: fresh('tmp'), HOME: home, XDG_CONFIG_HOME: join(home, '.config') };
+    const env = {
+      LO_OVERVIEW_TMP: fresh('tmp'),
+      HOME: home,
+      XDG_CONFIG_HOME: join(home, '.config'),
+    };
     expect(
       answer(claudeInput('git push', clone('{ "overview.auto": false }')), env, { '*': link }),
     ).toBeUndefined();
@@ -459,8 +578,87 @@ describe('the hook', () => {
     writeFileSync(join(home, '.config', 'lo', 'settings.json'), '{ "overview.auto": false }');
     expect(answer(claudeInput('git push', top), env, { '*': link })).toBeUndefined();
     // Nothing was locked, so nothing waits.
-    const locks = join(env.TMPDIR, `lo-overview-${process.getuid?.() ?? ''}`);
+    const locks = join(env.LO_OVERVIEW_TMP, `lo-overview-${process.getuid?.() ?? ''}`);
     expect(existsSync(locks) ? readdirSync(locks) : []).toEqual([]);
+  });
+
+  test('says nothing for a clone that never installed the skill, or a folder it can’t tell', () => {
+    const env = { LO_OVERVIEW_TMP: fresh('tmp'), HOME: fresh('home') };
+    const top = clone();
+    const other = fresh('other');
+    mkdirSync(join(other, '.git'));
+    expect(answer(claudeInput('git push', other), env, { '*': link })).toBeUndefined();
+    expect(answer(claudeInput(`git -C '${other}' push`, top), env, { '*': link })).toBeUndefined();
+    expect(answer(claudeInput('cd "$R" && git push', top), env, { '*': link })).toBeUndefined();
+    expect(answer(claudeInput('git push', join(top, 'gone')), env, { '*': link })).toBeUndefined();
+    const mcp = {
+      ...claudeInput('', other),
+      tool_name: 'mcp__github__create_pull_request',
+      tool_response: [{ type: 'text', text: link }],
+    };
+    expect(answer(mcp, env)).toBeUndefined();
+    // From the clone's own folder, a push in the other doesn't count, and its own does.
+    expect(
+      answer(claudeInput(`git -C '${other}' push && git push`, top), env, { '*': link })
+        .additionalContext,
+    ).toContain(link);
+  });
+
+  test('says nothing yet for a push that runs in the background', () => {
+    const env = { LO_OVERVIEW_TMP: fresh('tmp'), HOME: fresh('home') };
+    const input = {
+      ...claudeInput('git push', clone(), ''),
+      tool_input: { command: 'git push', run_in_background: true },
+      tool_response: { backgroundTaskId: 'b1', stdout: '', stderr: '' },
+    };
+    expect(answer(input, env, { '*': link })).toBeUndefined();
+  });
+
+  test('takes an opened pull request’s printed link only when it’s the one printed', () => {
+    const env = { LO_OVERVIEW_TMP: fresh('tmp'), HOME: fresh('home') };
+    const top = clone();
+    const printed =
+      'https://github.com/acme/demo/pull/9\n{"url":"https://github.com/acme/demo/pull/3"}\n';
+    // Codex gives all a command printed, so the second link could be anything's.
+    const input = {
+      ...claudeInput('gh pr create --fill && gh pr view 3 --json url', top),
+      turn_id: 't',
+      tool_response: `Exit code: 0\nOutput:\n${printed}`,
+    };
+    expect(answer(input, env, { '*': link }).additionalContext).toContain(`${link} for this push`);
+    expect(answer(input, { ...env, LO_OVERVIEW_TMP: fresh('tmp') })).toBeUndefined();
+  });
+
+  test('asks gh about three branches at most, however many a push names', () => {
+    const env = { LO_OVERVIEW_TMP: fresh('tmp'), HOME: fresh('home') };
+    const asked: string[] = [];
+    const said = hook(claudeInput('git push origin a b c d e', clone()), {
+      env,
+      find: (_dir, { branch }) => {
+        asked.push(String(branch));
+        return undefined;
+      },
+    });
+    expect(said).toBeUndefined();
+    expect(asked).toEqual(['a', 'b', 'c']);
+  });
+
+  test('looks for the branch named, on the remote pushed to, or the head gh pr create names', () => {
+    const env = { LO_OVERVIEW_TMP: fresh('tmp'), HOME: fresh('home') };
+    const top = clone();
+    const targets: unknown[] = [];
+    const find = (_dir: string, target: unknown) => {
+      targets.push(target);
+      return undefined;
+    };
+    hook(claudeInput('git push fork feat', top), { env, find });
+    hook(claudeInput('gh pr create --head me:feat', top, ''), { env, find });
+    hook(claudeInput('gh pr create', top, ''), { env, find });
+    expect(targets).toEqual([
+      { branch: 'feat', remote: 'fork' },
+      { branch: 'feat', owner: 'me' },
+      { branch: CURRENT },
+    ]);
   });
 
   test('says how to start each pull request’s writer, and that the others are being written', () => {
@@ -479,16 +677,45 @@ describe('the hook', () => {
   });
 });
 
-/** A `gh` that answers `gh pr view` with `view`, and says what it was asked in `asked`. */
-function fakeGh(view: string): { bin: string; asked: string } {
+/**
+ * A `gh` that answers `gh pr view` as GitHub would for a clone of acme/demo: the branch checked out,
+ * `work`, is #7's head, and `me`'s fork's `feat` is #8's; each in `state`. What it was asked goes in
+ * `asked`.
+ */
+function fakeGh(state = 'OPEN'): { bin: string; asked: string } {
   const bin = fresh('bin');
   const asked = join(bin, 'asked');
+  const view = (number: number, head: string, owner: string) =>
+    `'{"url":"https://github.com/acme/demo/pull/${number}","state":"${state}","headRefName":"${head}","headRepositoryOwner":{"login":"${owner}"}}'`;
   writeFileSync(
     join(bin, 'gh'),
-    `#!/bin/sh\nprintf '%s\\n' "$*" >> '${asked}'\n[ "$1 $2" = 'pr view' ] && printf '%s\\n' '${view}'\n`,
+    [
+      '#!/bin/sh',
+      `printf '%s\\n' "$*" >> '${asked}'`,
+      'case "$*" in',
+      `  'pr view --json url,state,headRefName,headRepositoryOwner') echo ${view(7, 'work', 'acme')} ;;`,
+      `  *' -- acme:work') echo ${view(7, 'work', 'acme')} ;;`,
+      `  *' -- me:feat') echo ${view(8, 'feat', 'me')} ;;`,
+      // gh reads a number as a pull request's.
+      `  *' -- acme:7') echo ${view(7, 'work', 'acme')} ;;`,
+      '  *) exit 1 ;;',
+      'esac',
+      '',
+    ].join('\n'),
   );
   chmodSync(join(bin, 'gh'), 0o755);
   return { bin, asked };
+}
+
+/** A real clone of acme/demo, with `work` checked out and `me`'s fork as a remote. */
+function realClone(): string {
+  const top = clone();
+  rmSync(join(top, '.git'), { recursive: true });
+  repositoryOf(top, { 'a.txt': 'a\n' });
+  git(top, 'checkout', '-q', '-b', 'work');
+  git(top, 'remote', 'add', 'origin', 'https://github.com/acme/demo.git');
+  git(top, 'remote', 'add', 'fork', 'git@github.com:me/demo.git');
+  return top;
 }
 
 /** Runs the hook with `input` on its standard input, with `bin` first on the path. */
@@ -496,25 +723,59 @@ function run(input: string, bin: string, tmp = fresh('tmp')) {
   return spawnSync(process.execPath, [HOOK], {
     input,
     encoding: 'utf8',
-    env: { PATH: `${bin}:${process.env.PATH}`, HOME: fresh('home'), TMPDIR: tmp },
+    env: { PATH: `${bin}:${process.env.PATH}`, HOME: fresh('home'), LO_OVERVIEW_TMP: tmp },
   });
 }
 
+/** The pull request the hook asks the agent to write the overview of, if any. */
+function answered(ran: ReturnType<typeof run>): string | undefined {
+  expect(ran.status).toBe(0);
+  expect(ran.stderr).toBe('');
+  if (ran.stdout === '') return undefined;
+  const said: string = JSON.parse(ran.stdout).hookSpecificOutput.additionalContext;
+  return /write the overview of (\S+) for this push/.exec(said)?.[1];
+}
+
 describe('the hook, run as a script', () => {
-  test('asks gh for the pushed branch’s open pull request, and answers', () => {
-    const { bin, asked } = fakeGh('{"url":"https://github.com/acme/demo/pull/7","state":"OPEN"}');
-    const top = clone();
-    const ran = run(JSON.stringify(claudeInput('git push origin work', top)), bin);
-    expect(ran.status).toBe(0);
-    expect(ran.stderr).toBe('');
-    expect(JSON.parse(ran.stdout).hookSpecificOutput.additionalContext).toContain('/pull/7 ');
-    expect(existsSync(asked)).toBe(true);
-    expect(readFileSync(asked, 'utf8')).toBe('pr view --json url,state -- work\n');
+  test('asks gh for the open pull request of the branch checked out, by what gh reads of it', () => {
+    const { bin, asked } = fakeGh();
+    const top = realClone();
+    for (const command of ['git push', 'git push -u origin work', 'git push origin HEAD']) {
+      expect(answered(run(JSON.stringify(claudeInput(command, top)), bin))).toBe(
+        'https://github.com/acme/demo/pull/7',
+      );
+    }
+    expect(readFileSync(asked, 'utf8')).toBe(
+      'pr view --json url,state,headRefName,headRepositoryOwner\n'.repeat(3),
+    );
+  });
+
+  test('finds another branch’s by the owner of the remote it went to, a fork’s too', () => {
+    const { bin, asked } = fakeGh();
+    const top = realClone();
+    expect(answered(run(JSON.stringify(claudeInput('git push fork feat', top)), bin))).toBe(
+      'https://github.com/acme/demo/pull/8',
+    );
+    expect(readFileSync(asked, 'utf8')).toBe(
+      'pr view --json url,state,headRefName,headRepositoryOwner -- me:feat\n',
+    );
+  });
+
+  test('takes no pull request whose head isn’t the branch pushed', () => {
+    const { bin, asked } = fakeGh();
+    const top = realClone();
+    // A branch named `7`, which gh would read as #7.
+    expect(
+      answered(run(JSON.stringify(claudeInput('git push origin 7', top)), bin)),
+    ).toBeUndefined();
+    expect(readFileSync(asked, 'utf8')).toBe(
+      'pr view --json url,state,headRefName,headRepositoryOwner -- acme:7\n',
+    );
   });
 
   test('says nothing for a closed pull request, a branch that reads as an option, or bad input', () => {
-    const { bin, asked } = fakeGh('{"url":"https://github.com/acme/demo/pull/7","state":"MERGED"}');
-    const top = clone();
+    const { bin, asked } = fakeGh('MERGED');
+    const top = realClone();
     for (const input of [
       JSON.stringify(claudeInput('git push', top)),
       JSON.stringify(claudeInput('git push origin -- -web', top)),
@@ -530,6 +791,8 @@ describe('the hook, run as a script', () => {
       });
     }
     // `-web` was never handed to gh.
-    expect(readFileSync(asked, 'utf8')).toBe('pr view --json url,state\n');
+    expect(readFileSync(asked, 'utf8')).toBe(
+      'pr view --json url,state,headRefName,headRepositoryOwner\n',
+    );
   });
 });

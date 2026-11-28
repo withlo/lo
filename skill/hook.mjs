@@ -37,6 +37,7 @@ import {
   readFileSync,
   readSync,
   realpathSync,
+  renameSync,
   statSync,
   unlinkSync,
   utimesSync,
@@ -53,11 +54,19 @@ import { fileURLToPath } from 'node:url';
  */
 
 /**
- * What a tool call did that an overview is written after: opened a pull request, its link given
- * when the call printed it, or pushed branches (`current` for the branch checked out), in `dir`.
+ * What a tool call did that an overview is written after, in the folder `dir`: opened a pull
+ * request, for the branch `--head` names, if it names one; or pushed branches (`CURRENT` for the
+ * branch checked out) to the remote it names, if it names one.
  *
- * @typedef {{ kind: 'create', dir: string, url: Pull | undefined }
- *   | { kind: 'push', dir: string, branches: readonly (string | typeof CURRENT)[] }} Action
+ * @typedef {{ kind: 'create', dir: string, head: string | undefined }
+ *   | { kind: 'push', dir: string, remote: string | undefined, branches: readonly (string | typeof CURRENT)[] }} Action
+ */
+
+/**
+ * A branch whose open pull request is looked for: by its name, or `CURRENT`; on the remote that
+ * was pushed to, or in the fork of the owner `gh pr create --head <owner>:<branch>` names.
+ *
+ * @typedef {{ branch: string | typeof CURRENT, remote?: string, owner?: string }} Target
  */
 
 /** The branch checked out where a push ran, which `git push` with no refspec pushes. */
@@ -80,25 +89,49 @@ const MOST = 3;
 
 // --- The command ----------------------------------------------------------------------------------
 
+/** Where a subshell, `( … )`, starts and ends among the commands `piecesIn` finds. */
+const OPEN = Symbol('subshell starts');
+const CLOSE = Symbol('subshell ends');
+
 /**
  * The simple commands in the shell command `text`, each its words with their quotes taken out, in
  * the order they run. Words are split as a shell splits them, on spaces outside quotes, and commands
- * on `;`, `&&`, `||`, `|`, `&`, newlines and parentheses. Redirections are dropped. Nothing is
- * expanded: `$(…)` and backquotes stay in their word as written.
+ * on `;`, `&&`, `||`, `|`, `&`, newlines and parentheses. Redirections are dropped, and a
+ * here-document's lines with them. Nothing is expanded: `$(…)` and backquotes stay in their word as
+ * written.
  *
  * @param {string} text
  * @returns {string[][]}
  */
 export function commandsIn(text) {
-  /** @type {string[][]} */
-  const commands = [];
+  return piecesIn(text).filter((piece) => Array.isArray(piece));
+}
+
+/**
+ * The simple commands in the shell command `text`, as `commandsIn` finds them, with `OPEN` and
+ * `CLOSE` where a subshell starts and ends.
+ *
+ * @param {string} text
+ * @returns {(string[] | typeof OPEN | typeof CLOSE)[]}
+ */
+function piecesIn(text) {
+  /** @type {(string[] | typeof OPEN | typeof CLOSE)[]} */
+  const pieces = [];
   /** @type {string[]} */
   let words = [];
   /** @type {string | undefined} */
   let word;
   let redirect = false;
+  /** Whether the word being read is a here-document's delimiter, and with `<<-`. */
+  /** @type {{ dash: boolean } | undefined} */
+  let delimiter;
+  /** The here-documents whose lines start after this line. */
+  /** @type {{ end: string, dash: boolean }[]} */
+  let heredocs = [];
   const endWord = () => {
     if (word === undefined) return;
+    if (delimiter) heredocs.push({ end: word, dash: delimiter.dash });
+    delimiter = undefined;
     if (redirect) redirect = false;
     else words.push(word);
     word = undefined;
@@ -106,7 +139,7 @@ export function commandsIn(text) {
   const endCommand = () => {
     endWord();
     redirect = false;
-    if (words.length > 0) commands.push(words);
+    if (words.length > 0) pieces.push(words);
     words = [];
   };
   let at = 0;
@@ -158,10 +191,36 @@ export function commandsIn(text) {
       // A file descriptor's number before the operator goes with it: `2>&1`.
       if (word !== undefined && /^\d+$/.test(word)) word = undefined;
       endWord();
-      at += 1;
-      while (text[at] === '>' || text[at] === '<' || text[at] === '&' || text[at] === '|') at += 1;
+      // `<<` and `<<-` start a here-document, whose delimiter is the word after; `<<<` doesn't.
+      if (text.startsWith('<<', at) && text[at + 2] !== '<') {
+        delimiter = { dash: text[at + 2] === '-' };
+        at += delimiter.dash ? 3 : 2;
+      } else {
+        at += 1;
+        while (text[at] === '>' || text[at] === '<' || text[at] === '&' || text[at] === '|') {
+          at += 1;
+        }
+      }
       redirect = true;
-    } else if (c === ';' || c === '&' || c === '|' || c === '\n' || c === '(' || c === ')') {
+    } else if (c === '\n') {
+      endCommand();
+      at += 1;
+      // A here-document's lines are its text, never commands: past each, up to its delimiter.
+      for (const { end, dash } of heredocs) {
+        for (;;) {
+          if (at >= text.length) break;
+          const close = text.indexOf('\n', at);
+          const line = text.slice(at, close === -1 ? text.length : close);
+          at = close === -1 ? text.length : close + 1;
+          if ((dash ? line.replace(/^\t+/, '') : line) === end) break;
+        }
+      }
+      heredocs = [];
+    } else if (c === '(' || c === ')') {
+      endCommand();
+      pieces.push(c === '(' ? OPEN : CLOSE);
+      at += 1;
+    } else if (c === ';' || c === '&' || c === '|') {
       endCommand();
       at += 1;
     } else {
@@ -170,7 +229,7 @@ export function commandsIn(text) {
     }
   }
   endCommand();
-  return commands;
+  return pieces;
 }
 
 /**
@@ -198,7 +257,9 @@ const WRAPPERS = new Set(['command', 'env', 'exec', 'nohup', 'time']);
 /**
  * What the shell command `text`, run in the folder `cwd`, does that an overview is written after:
  * each pull request it opens with `gh pr create`, and each push of branches with `git push`. A
- * `cd` moves where the commands after it run, and `git -C` where its own does.
+ * `cd` moves where the commands after it run, up to the end of the subshell it's in, and `git -C`
+ * where its own does. One that runs where the hook can't tell, such as after `cd "$dir"`, is left
+ * out.
  *
  * @param {string} text
  * @param {string} cwd
@@ -207,8 +268,20 @@ const WRAPPERS = new Set(['command', 'env', 'exec', 'nohup', 'time']);
 export function actionsIn(text, cwd) {
   /** @type {Action[]} */
   const actions = [];
+  /** @type {string | undefined} */
   let dir = cwd;
-  for (const words of commandsIn(text)) {
+  /** Where each subshell started, the innermost last. */
+  /** @type {(string | undefined)[]} */
+  const outer = [];
+  for (const words of piecesIn(text)) {
+    if (words === OPEN) {
+      outer.push(dir);
+      continue;
+    }
+    if (words === CLOSE) {
+      if (outer.length > 0) dir = outer.pop();
+      continue;
+    }
     let at = 0;
     while (at < words.length) {
       const word = words[at] ?? '';
@@ -221,28 +294,36 @@ export function actionsIn(text, cwd) {
     if (program === undefined) continue;
     const name = basename(program);
     if (name === 'cd') {
-      dir = moved(dir, args[0]);
+      dir = moved(
+        dir,
+        args.find((arg) => arg === '-' || !arg.startsWith('-')),
+      );
     } else if (name === 'git' || name === 'git.exe') {
       const push = pushIn(args, dir);
       if (push) actions.push(push);
-    } else if ((name === 'gh' || name === 'gh.exe') && opensPull(args)) {
-      actions.push({ kind: 'create', dir, url: undefined });
+    } else if (name === 'gh' || name === 'gh.exe') {
+      const create = createIn(args);
+      if (create && dir !== undefined) actions.push({ kind: 'create', dir, head: create.head });
     }
   }
   return actions;
 }
 
 /**
- * Where `cd <to>` from `dir` goes.
+ * Where `cd <to>` from `dir` goes, `~` expanded: `undefined` where the hook can't tell, as for a
+ * folder named by a variable, a pattern, `-`, or a relative path from a folder it couldn't tell.
  *
- * @param {string} dir
+ * @param {string | undefined} dir
  * @param {string | undefined} to
+ * @returns {string | undefined}
  */
 function moved(dir, to) {
   if (to === undefined || to === '~') return homedir();
-  if (to === '-' || to.includes('$') || to.includes('`')) return dir;
+  if (to === '-' || /[$`*?[\]{}]/.test(to)) return undefined;
   if (to.startsWith('~/')) return join(homedir(), to.slice(2));
-  return resolve(dir, to);
+  if (to.startsWith('~')) return undefined;
+  if (isAbsolute(to)) return resolve(to);
+  return dir === undefined ? undefined : resolve(dir, to);
 }
 
 /** git's options before its command that take the word after them. */
@@ -252,10 +333,11 @@ const GIT_VALUED = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace
 const PUSH_VALUED = new Set(['--repo', '-o', '--push-option', '--receive-pack', '--exec']);
 
 /**
- * The push `git <args>`, run in `dir`, makes of branches, if it's one that pushes any.
+ * The push `git <args>`, run in `dir`, makes of branches, if it's one that pushes any, and runs
+ * where the hook can tell.
  *
  * @param {readonly string[]} args
- * @param {string} dir
+ * @param {string | undefined} dir
  * @returns {Action | undefined}
  */
 function pushIn(args, dir) {
@@ -265,13 +347,19 @@ function pushIn(args, dir) {
     const arg = args[at] ?? '';
     if (arg === '-C') {
       const to = args[at + 1] ?? '';
-      if (to !== '') here = resolve(here, to);
+      if (to !== '') here = moved(here, to);
       at += 2;
+    } else if (arg.startsWith('-C') && arg.length > 2) {
+      here = moved(here, arg.slice(2));
+      at += 1;
+    } else if (/^--(?:git-dir|work-tree)(?:=|$)/.test(arg)) {
+      // Another repository than the folder's, which the hook doesn't look for.
+      return undefined;
     } else if (GIT_VALUED.has(arg)) at += 2;
     else if (arg.startsWith('-')) at += 1;
     else break;
   }
-  if (args[at] !== 'push') return undefined;
+  if (args[at] !== 'push' || here === undefined) return undefined;
   /** @type {string[]} */
   const positional = [];
   let all = false;
@@ -295,10 +383,10 @@ function pushIn(args, dir) {
       if (valued === letters.length - 1) i += 1;
     } else if (!arg.startsWith('-')) positional.push(arg);
   }
-  const specs = positional.slice(1);
+  const [remote, ...specs] = positional;
   if (specs.length === 0) {
     // `--tags` alone pushes tags, and no branch.
-    return tags && !all ? undefined : { kind: 'push', dir: here, branches: [CURRENT] };
+    return tags && !all ? undefined : { kind: 'push', dir: here, remote, branches: [CURRENT] };
   }
   /** @type {(string | typeof CURRENT)[]} */
   const branches = [];
@@ -307,7 +395,7 @@ function pushIn(args, dir) {
     if (branch !== undefined && !branches.includes(branch)) branches.push(branch);
   }
   if (all && !branches.includes(CURRENT)) branches.push(CURRENT);
-  return branches.length === 0 ? undefined : { kind: 'push', dir: here, branches };
+  return branches.length === 0 ? undefined : { kind: 'push', dir: here, remote, branches };
 }
 
 /**
@@ -334,14 +422,24 @@ export function branchOf(spec) {
 }
 
 /**
- * Whether `gh <args>` opens a pull request: `gh pr create`, or its other name, `gh pr new`, but
- * not a dry run or one that finishes in the browser.
+ * Whether `gh <args>` opens a pull request, `gh pr create`, or its other name, `gh pr new`, but not
+ * a dry run or one that finishes in the browser; and the branch its `--head` names, if any.
  *
  * @param {readonly string[]} args
+ * @returns {{ head: string | undefined } | undefined}
  */
-function opensPull(args) {
-  if (args[0] !== 'pr' || (args[1] !== 'create' && args[1] !== 'new')) return false;
-  return !args.slice(2).some((arg) => arg === '--dry-run' || arg === '--web' || arg === '-w');
+function createIn(args) {
+  if (args[0] !== 'pr' || (args[1] !== 'create' && args[1] !== 'new')) return undefined;
+  /** @type {string | undefined} */
+  let head;
+  for (let at = 2; at < args.length; at++) {
+    const arg = args[at] ?? '';
+    if (arg === '--dry-run' || arg === '--web' || arg === '-w') return undefined;
+    if (arg === '--head' || arg === '-H') head = args[++at];
+    else if (arg.startsWith('--head=')) head = arg.slice('--head='.length);
+    else if (arg.startsWith('-H') && arg.length > 2) head = arg.slice(2);
+  }
+  return { head };
 }
 
 // --- What the call printed ------------------------------------------------------------------------
@@ -605,8 +703,11 @@ export function offBy(top, env) {
 // --- One writer per pull request ------------------------------------------------------------------
 
 /**
- * The folder the locks are kept in: one of the person's own in the temporary folder, made for them
- * alone, or `undefined` when it can't be, or is someone else's, or open to others.
+ * The folder the locks are kept in: one of the person's own in `/tmp`, made for them alone, or
+ * `undefined` when it can't be, or is someone else's, or open to others. It's `/tmp`, not `TMPDIR`,
+ * since Claude Code gives a command in its sandbox a `TMPDIR` of its own, which the hook, run
+ * outside it, doesn't see. `LO_OVERVIEW_TMP` names another folder in its place, as tests do; on
+ * Windows it's the person's temporary folder.
  *
  * @param {NodeJS.ProcessEnv} env
  * @returns {string | undefined}
@@ -614,7 +715,9 @@ export function offBy(top, env) {
 export function lockFolder(env = process.env) {
   const uid = typeof process.getuid === 'function' ? process.getuid() : undefined;
   const who = uid ?? safeName(userInfo().username);
-  const base = env.TMPDIR !== undefined && isAbsolute(env.TMPDIR) ? env.TMPDIR : tmpdir();
+  const named = env.LO_OVERVIEW_TMP;
+  const base =
+    named !== undefined && isAbsolute(named) ? named : platform() === 'win32' ? tmpdir() : '/tmp';
   const folder = join(base, `lo-overview-${who}`);
   try {
     mkdirSync(folder, { mode: 0o700 });
@@ -725,34 +828,72 @@ function held(path, now) {
  * held by a writer gone past `LOCK_MS`; `same` when the same call took it, as a command that both
  * pushes and opens a pull request runs the hook twice; `held` when a writer has it, after recording
  * one follow-up for it; `unlocked` when there's nowhere to keep locks, so nothing stops another.
+ * `meanwhile` runs once a follow-up is recorded, as a writer's `done` might, for tests.
  *
  * @param {Pull} pull
- * @param {{ env?: NodeJS.ProcessEnv, now?: number, call?: string }} [options]
+ * @param {{ env?: NodeJS.ProcessEnv, now?: number, call?: string, meanwhile?: () => void }} [options]
  * @returns {'taken' | 'same' | 'held' | 'unlocked'}
  */
-export function takeLock(pull, { env = process.env, now = Date.now(), call } = {}) {
+export function takeLock(pull, { env = process.env, now = Date.now(), call, meanwhile } = {}) {
   const folder = lockFolder(env);
   if (folder === undefined) return 'unlocked';
   const { lock, again } = lockFiles(folder, pull);
-  const follow = () => {
-    if (call !== undefined && takenBy(lock) === call) return 'same';
-    makeNew(again, `${pull.url}\n`);
-    return 'held';
-  };
   try {
-    if (held(lock, now)) return follow();
-    if (lstatSync(lock, { throwIfNoEntry: false }) !== undefined && !held(lock, now)) {
-      // A lock a writer gone for good left, and its follow-up. Looked at again just before, so a
-      // lock another hook took meanwhile stays.
-      removeIfThere(lock);
-      removeIfThere(again);
+    // A few tries, as a writer may give the lock back, or a hook take it, as this looks.
+    for (let tries = 0; tries < 3; tries++) {
+      if (held(lock, now)) {
+        if (call !== undefined && takenBy(lock) === call) return 'same';
+        makeNew(again, `${pull.url}\n`);
+        meanwhile?.();
+        // Still held once the follow-up is there: the writer's `done` will find it.
+        if (held(lock, now)) return 'held';
+        // Given back meanwhile, by a writer that may never have seen it: take the lock instead.
+        removeIfThere(again);
+        continue;
+      }
+      clearStale(lock, again, now);
+      if (makeNew(lock, `${JSON.stringify({ pr: pull.url, call: call ?? null })}\n`)) {
+        // A follow-up left from before is for a writer that's gone: the new one reads it all.
+        removeIfThere(again);
+        return 'taken';
+      }
     }
-    if (makeNew(lock, `${JSON.stringify({ pr: pull.url, call: call ?? null })}\n`)) return 'taken';
-    // Another hook took it just now.
-    return follow();
+    return held(lock, now) ? 'held' : 'unlocked';
   } catch {
     return 'unlocked';
   }
+}
+
+/**
+ * Removes the lock at `lock`, and its follow-up at `again`, when a writer gone past `LOCK_MS` left
+ * it. It's moved aside first, then looked at, so that a lock another hook took just now is never
+ * the one removed.
+ *
+ * @param {string} lock
+ * @param {string} again
+ * @param {number} now
+ */
+export function clearStale(lock, again, now) {
+  if (lstatSync(lock, { throwIfNoEntry: false }) === undefined) return;
+  const aside = `${lock}.${randomBytes(8).toString('hex')}.stale`;
+  try {
+    renameSync(lock, aside);
+  } catch (error) {
+    if (isCode(error, 'ENOENT')) return;
+    throw error;
+  }
+  if (held(aside, now)) {
+    // Taken again as this looked: back where it was, unless another's been taken since.
+    try {
+      linkSync(aside, lock);
+    } catch {
+      // Another lock is there: it stands.
+    }
+    removeIfThere(aside);
+    return;
+  }
+  removeIfThere(aside);
+  removeIfThere(again);
 }
 
 /**
@@ -781,25 +922,41 @@ export function keepLock(pull, { env = process.env, now = Date.now() } = {}) {
 /**
  * Gives back the lock on writing `pull`'s overview, as a writer does once it's done: `again`, with
  * the lock kept, when a follow-up was recorded meanwhile, which it then takes; `done` otherwise.
+ * `meanwhile` runs once the lock's gone, as a hook might, for tests.
  *
  * @param {Pull} pull
- * @param {{ env?: NodeJS.ProcessEnv, now?: number }} [options]
+ * @param {{ env?: NodeJS.ProcessEnv, now?: number, meanwhile?: () => void }} [options]
  * @returns {'again' | 'done'}
  */
-export function giveBack(pull, { env = process.env, now = Date.now() } = {}) {
+export function giveBack(pull, { env = process.env, now = Date.now(), meanwhile } = {}) {
   const folder = lockFolder(env);
   if (folder === undefined) return 'done';
   const { lock, again } = lockFiles(folder, pull);
-  try {
-    if (lstatSync(again).isFile()) {
+  /** Takes the follow-up, if there's one. */
+  const followUp = () => {
+    try {
+      if (!lstatSync(again).isFile()) return false;
       unlinkSync(again);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  try {
+    if (followUp()) {
       keepLock(pull, { env, now });
       return 'again';
     }
+    removeIfThere(lock);
+    meanwhile?.();
+    // A push the hook took in between the look and the lock's removal, which it left for this
+    // writer: this writer's, unless a hook has taken the lock since, for a writer of its own.
+    if (followUp() && makeNew(lock, `${JSON.stringify({ pr: pull.url, call: null })}\n`)) {
+      return 'again';
+    }
   } catch {
-    // No follow-up.
+    // Nothing more to give back.
   }
-  removeIfThere(lock);
   return 'done';
 }
 
@@ -837,18 +994,98 @@ function isBranchName(name) {
 }
 
 /**
- * The open pull request `gh` finds for `branch`, or for the branch checked out, from `dir`.
+ * The first line `git <args>` prints in `dir`, or `undefined` when it fails. It asks for nothing,
+ * and never waits long.
  *
  * @param {string} dir
- * @param {string | typeof CURRENT} branch
+ * @param {readonly string[]} args
+ * @param {NodeJS.ProcessEnv} env
+ */
+function gitLine(dir, args, env) {
+  const ran = spawnSync('git', ['-C', dir, ...args], {
+    encoding: 'utf8',
+    timeout: 5000,
+    maxBuffer: 64 * 1024,
+    stdio: ['ignore', 'pipe', 'ignore'],
+    env: { ...env, GIT_TERMINAL_PROMPT: '0' },
+  });
+  if (ran.error || ran.status !== 0) return undefined;
+  const line = ran.stdout.split('\n')[0]?.trim();
+  return line === '' ? undefined : line;
+}
+
+/**
+ * The owner of the repository on GitHub that `remote`, a remote's name or address, points to in the
+ * clone at `dir`, or `undefined` when it isn't one on GitHub.
+ *
+ * @param {string} dir
+ * @param {string | undefined} remote
+ * @param {NodeJS.ProcessEnv} env
+ */
+function ownerOf(dir, remote, env) {
+  if (remote === undefined) return undefined;
+  const address =
+    /^[A-Za-z0-9._-]+$/.test(remote) && !remote.startsWith('-')
+      ? gitLine(dir, ['remote', 'get-url', '--push', remote], env)
+      : remote;
+  const owner =
+    /github\.com[:/]+([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/[A-Za-z0-9._-]+?(?:\.git)?\/?$/.exec(
+      address ?? '',
+    )?.[1];
+  return owner;
+}
+
+/**
+ * The names the branch checked out in `dir` has: its own, and those it's pushed to and tracks on
+ * its remote, as `git push` with no branch named may push it under another.
+ *
+ * @param {string} dir
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string[]}
+ */
+function currentNames(dir, env) {
+  const own = gitLine(dir, ['symbolic-ref', '--quiet', '--short', 'HEAD'], env);
+  if (own === undefined) return [];
+  const names = [own];
+  for (const which of ['@{push}', '@{upstream}']) {
+    const remote = gitLine(dir, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', which], env);
+    const name = remote?.slice(remote.indexOf('/') + 1);
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+/**
+ * The open pull request `gh` finds, from `dir`, for `target`'s branch: the one checked out, by
+ * what `gh` reads of its config, or another by `<owner>:<branch>`, the owner its remote points to,
+ * so that a fork's is found too. It's taken only when it's open, and its head is the branch: `gh`
+ * reads a name of digits as a pull request's number.
+ *
+ * @param {string} dir
+ * @param {Target} target
  * @param {NodeJS.ProcessEnv} env
  * @returns {Pull | undefined}
  */
-export function openPullFor(dir, branch, env) {
-  const args = ['pr', 'view', '--json', 'url,state'];
-  if (branch !== CURRENT) {
+export function openPullFor(dir, target, env) {
+  const current = currentNames(dir, env);
+  const args = ['pr', 'view', '--json', 'url,state,headRefName,headRepositoryOwner'];
+  /** @type {string[]} */
+  let names;
+  /** @type {string | undefined} */
+  let owner;
+  const branch =
+    target.branch !== CURRENT && target.owner === undefined && target.branch === current[0]
+      ? CURRENT
+      : target.branch;
+  if (branch === CURRENT) {
+    if (current.length === 0) return undefined;
+    names = current;
+  } else {
     if (!isBranchName(branch)) return undefined;
-    args.push('--', branch);
+    owner = target.owner ?? ownerOf(dir, target.remote, env);
+    if (owner === undefined && /^[0-9]+$/.test(branch)) return undefined;
+    args.push('--', owner === undefined ? branch : `${owner}:${branch}`);
+    names = [branch];
   }
   const ran = spawnSync('gh', args, {
     cwd: dir,
@@ -861,7 +1098,17 @@ export function openPullFor(dir, branch, env) {
   if (ran.error || ran.status !== 0) return undefined;
   try {
     const found = JSON.parse(ran.stdout);
-    return found?.state === 'OPEN' ? pullOf(found.url) : undefined;
+    if (field(found, 'state') !== 'OPEN') return undefined;
+    const head = field(found, 'headRefName');
+    if (typeof head !== 'string' || !names.includes(head)) return undefined;
+    const login = field(field(found, 'headRepositoryOwner'), 'login');
+    if (
+      owner !== undefined &&
+      (typeof login !== 'string' || login.toLowerCase() !== owner.toLowerCase())
+    ) {
+      return undefined;
+    }
+    return pullOf(field(found, 'url'));
   } catch {
     return undefined;
   }
@@ -883,43 +1130,85 @@ function folderAt(path) {
   }
 }
 
+/** Where a repository that installed the skill has it, by the path from its top. */
+const INSTALLED = join('.claude', 'skills', 'lo-overview', 'SKILL.md');
+
+/**
+ * The top of the repository `dir` is in, when it installed the skill, or `undefined`: a push from
+ * any other clone isn't the hook's to answer.
+ *
+ * @param {string} dir
+ */
+function skilledTop(dir) {
+  const top = topOf(dir);
+  if (top === undefined) return undefined;
+  try {
+    return statSync(join(top, INSTALLED)).isFile() ? top : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The open pull requests `input`, the hook's, says the call opened or pushed to, each with the
- * repository's top folder, in the order found, at most `MOST`.
+ * repository's top folder, in the order found, at most `MOST`, and `gh` asked at most that many
+ * times. A call whose folder the hook can't tell, that runs in the background, or that ran in a
+ * clone without the skill, says none.
  *
  * @param {unknown} input
  * @param {NodeJS.ProcessEnv} env
- * @param {(dir: string, branch: string | typeof CURRENT) => Pull | undefined} find
- * @returns {{ pull: Pull, top: string | undefined }[]}
+ * @param {(dir: string, target: Target) => Pull | undefined} find
+ * @returns {{ pull: Pull, top: string }[]}
  */
-export function pullsOf(input, env, find = (dir, branch) => openPullFor(dir, branch, env)) {
+export function pullsOf(input, env, find = (dir, target) => openPullFor(dir, target, env)) {
   const tool = field(input, 'tool_name');
-  const cwd = folderAt(field(input, 'cwd')) ?? process.cwd();
+  const cwd = folderAt(field(input, 'cwd'));
+  if (cwd === undefined) return [];
   const response = field(input, 'tool_response');
   const printed = textOf(response);
-  /** @type {{ pull: Pull, top: string | undefined }[]} */
+  /** @type {{ pull: Pull, top: string }[]} */
   const pulls = [];
-  /** @param {Pull | undefined} pull @param {string} dir */
-  const add = (pull, dir) => {
+  /** @param {Pull | undefined} pull @param {string} top */
+  const add = (pull, top) => {
     if (pull && pulls.length < MOST && !pulls.some((each) => sameLock(each.pull, pull))) {
-      pulls.push({ pull, top: topOf(dir) });
+      pulls.push({ pull, top });
     }
   };
+  let asked = 0;
+  /** @param {string} dir @param {Target} target */
+  const ask = (dir, target) => (asked++ < MOST ? find(dir, target) : undefined);
   if (typeof tool === 'string' && /^mcp__.+__create_pull_request$/.test(tool)) {
-    add(firstPullIn(printed), cwd);
+    const top = skilledTop(cwd);
+    if (top !== undefined) add(firstPullIn(printed), top);
     return pulls;
   }
   if (tool !== 'Bash') return pulls;
-  const command = commandText(field(input, 'tool_input'));
+  const given = field(input, 'tool_input');
+  // Still running, so not pushed yet, whatever it prints later.
+  if (field(given, 'run_in_background') === true) return pulls;
+  const command = commandText(given);
   if (command === undefined) return pulls;
   const actions = actionsIn(command, cwd);
   if (actions.length === 0 || failedOrIdle(printed)) return pulls;
+  const creates = actions.filter((action) => action.kind === 'create').length;
   for (const action of actions) {
-    const dir = folderAt(action.dir) ?? cwd;
+    if (pulls.length >= MOST || asked >= MOST) break;
+    const dir = folderAt(action.dir);
+    const top = dir === undefined ? undefined : skilledTop(dir);
+    if (dir === undefined || top === undefined) continue;
     if (action.kind === 'create') {
-      add(createdPull(response, printed) ?? find(dir, CURRENT), dir);
+      const head = action.head;
+      const colon = head?.indexOf(':') ?? -1;
+      /** @type {Target} */
+      const target =
+        head === undefined
+          ? { branch: CURRENT }
+          : colon > 0
+            ? { branch: head.slice(colon + 1), owner: head.slice(0, colon) }
+            : { branch: head };
+      add(createdPull(response, printed, creates === 1) ?? ask(dir, target), top);
     } else {
-      for (const branch of action.branches) add(find(dir, branch), dir);
+      for (const branch of action.branches) add(ask(dir, { branch, remote: action.remote }), top);
     }
   }
   return pulls;
@@ -953,14 +1242,19 @@ function firstPullIn(text) {
 }
 
 /**
- * The pull request `gh pr create` opened: from what Claude Code read of it, else the last link it
- * printed.
+ * The pull request `gh pr create` opened: from what Claude Code read of it, else the link it
+ * printed, when the command opened one and printed only one: another command's link, such as
+ * `gh pr view`'s after it, could be another pull request's.
  *
  * @param {unknown} response
  * @param {string} printed
+ * @param {boolean} alone
  */
-function createdPull(response, printed) {
-  return pullOf(field(field(field(response, 'gitOperation'), 'pr'), 'url')) ?? lastPullIn(printed);
+function createdPull(response, printed, alone) {
+  const read = pullOf(field(field(field(response, 'gitOperation'), 'pr'), 'url'));
+  if (read || !alone) return read;
+  const links = new Set([...printed.matchAll(PULL_LINK)].map((match) => match[0].toLowerCase()));
+  return links.size === 1 ? lastPullIn(printed) : undefined;
 }
 
 /**
@@ -1022,7 +1316,7 @@ export function answerFor(each, host) {
  * `undefined` to say nothing.
  *
  * @param {unknown} input
- * @param {{ env?: NodeJS.ProcessEnv, find?: (dir: string, branch: string | typeof CURRENT) => Pull | undefined, now?: number }} [options]
+ * @param {{ env?: NodeJS.ProcessEnv, find?: (dir: string, target: Target) => Pull | undefined, now?: number }} [options]
  * @returns {string | undefined}
  */
 export function hook(input, { env = process.env, find, now = Date.now() } = {}) {

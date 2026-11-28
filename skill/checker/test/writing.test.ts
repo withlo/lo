@@ -32,7 +32,7 @@ function freshTemp(): string {
 
 /** Runs the checker with `args`, with `tmp` as the temporary folder. */
 function run(args: readonly string[], tmp: string): Ran {
-  return runChecker(args, tmp, { PATH: process.env.PATH, HOME: tmp, TMPDIR: tmp });
+  return runChecker(args, tmp, { PATH: process.env.PATH, HOME: tmp, LO_OVERVIEW_TMP: tmp });
 }
 
 describe('start and done', () => {
@@ -46,27 +46,27 @@ describe('start and done', () => {
       stderr: '',
     });
     // The hook, for a push meanwhile, and another.
-    expect(takeLock(pull, { env: { TMPDIR: tmp } })).toBe('held');
-    expect(takeLock(pull, { env: { TMPDIR: tmp } })).toBe('held');
+    expect(takeLock(pull, { env: { LO_OVERVIEW_TMP: tmp } })).toBe('held');
+    expect(takeLock(pull, { env: { LO_OVERVIEW_TMP: tmp } })).toBe('held');
     expect(run(['done', LINK], tmp)).toEqual({
       status: 0,
       stdout: `A push came in while you wrote: write the overview of ${LINK} again, for the pull request as it is now, starting from the overview you pushed. Then run done again.\n`,
       stderr: '',
     });
     // Still the writer's, as it writes again.
-    expect(takeLock(pull, { env: { TMPDIR: tmp } })).toBe('held');
+    expect(takeLock(pull, { env: { LO_OVERVIEW_TMP: tmp } })).toBe('held');
     expect(JSON.parse(run(['done', LINK, '--json'], tmp).stdout)).toEqual({ again: true });
     expect(run(['done', LINK], tmp).stdout).toBe(
       `Nothing came in while you wrote the overview of ${LINK}.\n`,
     );
-    expect(takeLock(pull, { env: { TMPDIR: tmp } })).toBe('taken');
+    expect(takeLock(pull, { env: { LO_OVERVIEW_TMP: tmp } })).toBe('taken');
   });
 
   test('keep a lock the hook took, as the writer it started', () => {
     const tmp = freshTemp();
     const pull = pullOf(LINK);
     if (pull === undefined) throw new Error('Not a link.');
-    expect(takeLock(pull, { env: { TMPDIR: tmp } })).toBe('taken');
+    expect(takeLock(pull, { env: { LO_OVERVIEW_TMP: tmp } })).toBe('taken');
     expect(JSON.parse(run(['start', LINK, '--json'], tmp).stdout)).toEqual({ locked: true });
     expect(JSON.parse(run(['done', LINK, '--json'], tmp).stdout)).toEqual({ again: false });
   });

@@ -176,6 +176,10 @@ describe('SKILL.md', () => {
       "git init --quiet '<work>/clone'",
       'git config -z --get user.name',
       'git config -z --get user.email',
+      'git config -z --get author.name',
+      'git config -z --get author.email',
+      'git config -z --get committer.name',
+      'git config -z --get committer.email',
       'git remote -v',
     ]);
     expect(commands.filter((line) => line.includes('FETCH_HEAD'))).toEqual([]);
@@ -231,23 +235,39 @@ describe('SKILL.md', () => {
       "'<work>'": work,
       "'<n>'": '4797',
       "'<stack>'": '4790',
+      "'<link>'": 'https://github.com/acme/demo/pull/4797',
     };
     const said = npx.map((line) => {
       const [, spec, rest] = shape.exec(line) ?? [];
       const args = (rest ?? '').split(' ').map((arg) => values[arg] ?? arg);
       return { spec, args };
     });
+    const link = 'https://github.com/acme/demo/pull/4797';
     expect(said.map(({ spec, args }) => `${spec} ${args.join(' ')}`)).toEqual([
+      `${manifest.name}@{version} start ${link}`,
       `${manifest.name}@{version} transcript --out ${work}`,
       `${manifest.name}@{version} check ${dir} --pr 4797 --repo ${repo}`,
       `${manifest.name}@{version} commit ${dir} --pr 4797 --repo ${repo}`,
       `${manifest.name}@{version} check ${stack} --stack 4790 --repo ${repo}`,
       `${manifest.name}@{version} commit ${stack} --stack 4790 --repo ${repo}`,
+      `${manifest.name}@{version} done ${link}`,
     ]);
+
+    // Marked as being written, and done, with the hook's lock between.
+    const locks = { PATH: process.env.PATH, LO_OVERVIEW_TMP: work };
+    const [start, , , , , , done] = said;
+    expect(runChecker(start!.args, join(work, 'tools'), locks)).toMatchObject({
+      status: 0,
+      stdout: expect.stringContaining(`Lo marked the overview of ${link} as being written`),
+    });
+    expect(runChecker(done!.args, join(work, 'tools'), locks)).toMatchObject({
+      status: 0,
+      stdout: `Nothing came in while you wrote the overview of ${link}.\n`,
+    });
 
     // The transcript copy needs an agent's session, so only the checks and commits run here.
     const [checkPull, commitPull, checkStack, commitStack] = said
-      .slice(1)
+      .slice(2, 6)
       .map(({ args }) => runChecker(args, join(work, 'tools')));
     for (const check of [checkPull, checkStack]) {
       expect(check).toEqual({ status: 0, stdout: 'No errors or warnings.\n', stderr: '' });
@@ -263,7 +283,7 @@ describe('SKILL.md', () => {
   test('runs the checker it was installed with, by its exact version', () => {
     // In the source, only the checker's commands name a version, and by the placeholder.
     const runs = commands.filter((line) => /\bnpx\b/.test(line)).length;
-    expect(runs).toBe(5);
+    expect(runs).toBe(7);
     expect(text.match(/\{version\}/g)).toHaveLength(runs);
     expect(text.split(`${manifest.name}@{version} `)).toHaveLength(runs + 1);
 
@@ -502,6 +522,37 @@ describe('its git commands, run as written', () => {
     expect(run(command('--get user.email'), values, work, env)).toMatchObject({ stdout: '' });
     expect(run(command('user.useConfigOnly'), values, work, env).status).toBe(0);
     expect(run(command('var GIT_AUTHOR_IDENT'), values, work, env).status).not.toBe(0);
+  });
+
+  test('commit with the author and committer the clone it started in sets apart', () => {
+    const work = mkdtempSync(join(root.dir, 'work-'));
+    const values = { work };
+    const env = asThePerson();
+    const apart = join(root.dir, 'apart');
+    git(root.dir, 'init', '-q', apart);
+    for (const [key, value] of [
+      ['user.name', "Ann O'Hara"],
+      ['user.email', 'ann@lo.invalid'],
+      ['author.name', 'Bo Lee'],
+      ['committer.email', 'ci@lo.invalid'],
+    ] as const) {
+      git(apart, 'config', key, value);
+    }
+    expect(run(command('git init'), values, work, env).status).toBe(0);
+    for (const key of ['user', 'author', 'committer']) {
+      for (const field of ['name', 'email']) {
+        expect(run(command(`--get ${key}.${field}`), values, apart, env).status).toBe(0);
+      }
+    }
+    expect(run(command('user.useConfigOnly'), values, work, env).status).toBe(0);
+    expect(run(command('var GIT_AUTHOR_IDENT'), values, work, env).stdout).toMatch(
+      /^Bo Lee <ann@lo\.invalid> \d+ /,
+    );
+    const committer = spawnSync('git', ['-C', join(work, 'clone'), 'var', 'GIT_COMMITTER_IDENT'], {
+      env,
+      encoding: 'utf8',
+    });
+    expect(committer.stdout).toMatch(/^Ann O'Hara <ci@lo\.invalid> \d+ /);
   });
 
   test('delete the handoff file, and its folder only when nothing else is in it', () => {

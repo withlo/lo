@@ -80,13 +80,18 @@ export const SKILL_FOLDER = '.claude/skills/lo-overview';
 export const CLAUDE_COMMAND = `node "$CLAUDE_PROJECT_DIR/${SKILL_FOLDER}/hook.mjs"`;
 
 /**
- * The command Codex runs the hook with. Codex asks each person to trust a hook once, and asks again
- * when its command changes, so it stays the same in every version.
+ * The command Codex runs the hook with, from the folder its session started in, which may be one in
+ * the clone. Codex asks each person to trust a hook once, and asks again when its command changes,
+ * so it stays the same in every version.
  */
-export const CODEX_COMMAND = 'node .agents/skills/lo-overview/hook.mjs';
+export const CODEX_COMMAND =
+  'node "$(git rev-parse --show-toplevel)/.agents/skills/lo-overview/hook.mjs"';
 
-/** How long Claude Code gives the hook, in seconds: it asks `gh` for a pushed branch's pull request. */
-const TIMEOUT = 30;
+/**
+ * How long Claude Code and Codex give the hook, in seconds: it asks `gh` for a pushed branch's pull
+ * request, three at most, 15 s each.
+ */
+const TIMEOUT = 60;
 
 /**
  * What lets Claude Code start the skill without asking, which an automatic run needs: with no
@@ -119,7 +124,7 @@ export const CLAUDE_GROUPS = [
 export const CODEX_GROUPS = [
   {
     matcher: 'Bash|mcp__.*__create_pull_request',
-    hooks: [{ type: 'command', command: CODEX_COMMAND }],
+    hooks: [{ type: 'command', command: CODEX_COMMAND, timeout: TIMEOUT }],
   },
 ];
 

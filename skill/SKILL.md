@@ -75,7 +75,8 @@ figures'. In a shell, a name such as `$(curl …)` runs, so:
 - **Never use double quotes,** or a value bare, where the commands below single-quote it.
 - **Check these before you use them,** and stop if one isn't so: `<commit>`, `<top>`, `<id>` and
   `<stack-id>` are 40 or 64 lowercase hexadecimal digits; `<n>`, `<stack>` and every other number is
-  digits; `<pr>` is digits, or `https://github.com/<owner>/<repo>/pull/` and digits.
+  digits; `<pr>` is digits, or `https://github.com/<owner>/<repo>/pull/` and digits, and `<link>` is
+  the latter.
 - **To stop** is to go to step 13, which cleans up, and to say why when you report.
 - **Write the overview's files with your own tools for writing files,** never with a shell command
   that holds their text, such as `echo` or a here-document. Read the handoff file with your own
@@ -138,13 +139,17 @@ Your clone has none of a repository's hooks or settings, so fetching and pushing
 of theirs. Never change the clone you started in, or anything else outside `<work>`.
 
 Your overviews' commits are by whoever the clone you started in commits as. From the folder you
-started in, copy that name and email address to your clone, and tell git never to make one up, so a
-commit never carries your computer's user and host name. The last command prints who your commits
-are by:
+started in, copy that name and email address to your clone, with the author's and committer's where
+they're set apart, and tell git never to make one up, so a commit never carries your computer's user
+and host name. The last command prints who your commits are by:
 
 ```sh
 git config -z --get user.name | xargs -0 -r git -C '<work>/clone' config -- user.name
 git config -z --get user.email | xargs -0 -r git -C '<work>/clone' config -- user.email
+git config -z --get author.name | xargs -0 -r git -C '<work>/clone' config -- author.name
+git config -z --get author.email | xargs -0 -r git -C '<work>/clone' config -- author.email
+git config -z --get committer.name | xargs -0 -r git -C '<work>/clone' config -- committer.name
+git config -z --get committer.email | xargs -0 -r git -C '<work>/clone' config -- committer.email
 git -C '<work>/clone' config user.useConfigOnly true
 git -C '<work>/clone' var GIT_AUTHOR_IDENT
 ```
@@ -163,8 +168,8 @@ gh pr view '<pr>' --json number,url,title,body,author,baseRefName,headRefName,he
 From what it prints, note:
 
 - `<n>`: `number`.
-- `<owner>/<repo>`: the base repository, from `url`, which is
-  `https://github.com/<owner>/<repo>/pull/<n>`.
+- `<link>`: `url`, the pull request's link, `https://github.com/<owner>/<repo>/pull/<n>`.
+- `<owner>/<repo>`: the base repository, from `<link>`.
 - `<commit>`: `headRefOid`, the pull request's head commit. The overview describes this commit.
 - `<base>`: `baseRefName`, the branch the pull request merges into.
 - `<head>`: `headRefName`, the branch it merges from.
@@ -214,6 +219,15 @@ git -C '<work>/clone' diff --no-ext-diff --no-textconv 'refs/writer/base...<comm
 
 Read the changed files as they are at `<commit>`, and the code around them, with
 `git -C '<work>/clone' cat-file blob '<commit>:<path>'`.
+
+Then mark the overview as being written, so that Lo's hook starts no other writer for this pull
+request while you write, and keeps a push that comes in meanwhile for you. It holds for 30 minutes:
+
+```sh
+(cd '<work>/tools' && npx --prefix '<work>/tools' --yes @withlo/overview@{version} start '<link>')
+```
+
+From here on, whatever happens, step 13 says you're done.
 
 ## 3. Read the handoff and the transcript
 
@@ -629,7 +643,7 @@ didn't come from the base repository, and otherwise go to step 13:
 git -C '<work>/clone' push --no-follow-tags '<fork-url>' '<stack-id>:refs/lo/stack/<stack>'
 ```
 
-## 13. Clean up, and say what you did
+## 13. Say you're done, clean up, and say what you did
 
 Come here when you're done, and whenever a step says to stop. Check each ref you pushed holds your
 commit. Each command prints its commit's id:
@@ -641,13 +655,30 @@ git -C '<work>/clone' ls-remote '<url>' 'refs/lo/stack/<stack>'
 
 Name the fork with `<fork-url>` in place of `<url>` where you pushed there.
 
-When everything you meant to push is there, delete your folder:
+Then say you're done with the pull request, pushed or not, so that Lo's hook can start a writer for
+it again. Name it by `<link>`, or, when you stopped before step 2 found it, by `<pr>` if that's a
+link; skip this only when you have neither:
+
+```sh
+(cd '<work>/tools' && npx --prefix '<work>/tools' --yes @withlo/overview@{version} done '<link>')
+```
+
+When it says a push came in while you wrote, the pull request has changed since step 2 read it:
+
+- **If you pushed the overview,** go back to step 2, keeping `<work>`, `<handoff>` and the
+  transcript copy, and write the overview again for the pull request as it is now, starting from the
+  one you pushed. Come back here once you've pushed it again, or stopped.
+- **If you stopped,** run `done` once more, so that the next push starts a writer, and go on.
+
+Once `done` says nothing came in, clean up. When you pushed the overview, and the stack's if you
+wrote one, and each ref above holds your commit, delete your folder:
 
 ```sh
 rm -rf '<work>'
 ```
 
-Otherwise delete only the transcript copy, and keep the folder:
+Otherwise, such as when you stopped before you pushed anything, or a push didn't land, delete only
+the transcript copy, and keep the folder:
 
 ```sh
 rm -f '<work>/transcript.txt'
