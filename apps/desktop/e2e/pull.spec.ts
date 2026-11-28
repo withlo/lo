@@ -513,6 +513,14 @@ onStaged.describe('refreshed by key', () => {
           new TextDecoder().decode(body).includes('"operationName":"PullRequestCheck"'),
         ).length;
       await expect.poll(checks).toBeGreaterThan(0);
+      // The push history's reads of the head's and the base's activity, the second time with the
+      // ETags of the first, as every read the tab keeps is read again.
+      const pushes = (again: boolean) =>
+        github.replay.seen.filter(
+          ({ url, headers }) =>
+            url.includes('/activity?') && headers.has('if-none-match') === again,
+        ).length;
+      await expect.poll(() => pushes(false)).toBe(2);
       // A page reloaded would lose this.
       await page.evaluate(() => Reflect.set(window, 'loStill', true));
       const key = process.platform === 'darwin' ? 'Meta+KeyR' : 'F5';
@@ -521,6 +529,7 @@ onStaged.describe('refreshed by key', () => {
       const before = checks();
       await page.keyboard.press(key);
       await expect.poll(checks).toBeGreaterThan(before);
+      await expect.poll(() => pushes(true)).toBe(2);
       await expect(tab).not.toHaveAttribute('aria-busy');
 
       // While GitHub takes the requests and doesn't answer, the tab's mark turns, in its state's
