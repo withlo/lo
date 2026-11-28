@@ -19,7 +19,13 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { openDatabase } from '../../../main/database.ts';
 import { migrate } from '../../../main/migrations.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { ActsView, DraftsView, EditPlaceRow } from '../contract.ts';
+import {
+  type ActOutcome,
+  type ActsView,
+  type DraftsView,
+  type EditPlaceRow,
+  refusedAtOnce,
+} from '../contract.ts';
 import { asAsked, changeRefused } from './acting.ts';
 import { DraftStore } from './drafts.ts';
 import { Writer, type WriterPoller } from './writer.ts';
@@ -244,7 +250,7 @@ function writer(fake: ReturnType<typeof poller>, view = info()) {
   made.follow(view.id);
   const last = () => published.at(-1)?.drafts ?? [];
   const stands = () => acts.at(-1)?.acts ?? [];
-  return { made, drafts, last, stands, database };
+  return { made, drafts, last, stands, database, acts, published };
 }
 
 /** An error whose answer was lost: the write may have gone. */
@@ -603,4 +609,120 @@ test('Lo changes only your own comments, and checks a delete against what the qu
   expect(asAsked({ body: 'Text', pending: true, onlyComment: true }, now)).toBe(true);
   expect(asAsked({ body: 'Text', pending: false, onlyComment: true }, now)).toBe(false);
   expect(asAsked({ body: 'Text', pending: true, onlyComment: false }, now)).toBe(false);
+});
+
+/** Whether each of `acts` says thread `THREAD`'s change is on its way. */
+function actsOnWay(acts: readonly ActsView[]): boolean[] {
+  return acts.map((each) =>
+    each.acts.some((row) => row.thread === THREAD && ['waiting', 'sending'].includes(row.stands)),
+  );
+}
+
+/** Whether each of `published` says an edit is on its way. */
+function editOnWay(published: readonly DraftsView[]): boolean[] {
+  return published.map((each) =>
+    each.drafts.some(
+      (row) =>
+        row.place.kind === 'edit' &&
+        (row.sent !== null || row.sending === 'waiting' || row.sending === 'sending'),
+    ),
+  );
+}
+
+test('acts says a change is on its way, then that it isn’t, before every answer but a refusal given at once', async () => {
+  const asked = { body: 'Start higher?', pending: false, onlyComment: true };
+  /** The answer `ask` gets, and what `acts` said of it from the moment it was asked. */
+  async function said(
+    ask: (made: Writer) => Promise<ActOutcome>,
+    answers: Answer[] = [undefined],
+    view = info(),
+    resolvable = true,
+  ) {
+    const fake = poller(answers);
+    fake.threads.held = {
+      nodes: [
+        thread([{ id: MINE, author: 'rozed-bot', body: 'Start higher?' }], {
+          viewerCanResolve: resolvable,
+        }),
+      ],
+      missing: 0,
+    };
+    fake.comments.set(MINE, { body: 'Start higher?' });
+    const { made, acts } = writer(fake, view);
+    const from = acts.length;
+    const outcome = await ask(made);
+    return { outcome, shown: actsOnWay(acts.slice(from)) };
+  }
+  const answered = [
+    await said((made) => made.resolve('t1', THREAD, true)),
+    await said((made) => made.resolve('t1', THREAD, true), [], info(), false),
+    await said((made) => made.resolve('t1', THREAD, true), [{ refusal: 'paused', until: 1 }]),
+    await said((made) => made.resolve('t1', THREAD, true), [new Error('No network.')]),
+    await said((made) => made.remove('t1', THREAD, MINE, asked)),
+    await said((made) => made.remove('t1', THREAD, MINE, { ...asked, body: 'Older.' })),
+  ];
+  expect(answered.map(({ outcome }) => outcome.kind)).toEqual([
+    'done',
+    'refused',
+    'refused',
+    'refused',
+    'done',
+    'refused',
+  ]);
+  for (const { outcome, shown } of answered) {
+    expect(outcome.kind === 'refused' && refusedAtOnce(outcome.refusal)).toBe(false);
+    expect(shown[0]).toBe(true);
+    expect(shown.at(-1)).toBe(false);
+  }
+  const atOnce = [
+    await said(
+      (made) => made.resolve('t1', THREAD, true),
+      [],
+      info({ acting: { kind: 'anonymous' } }),
+    ),
+    await said((made) => made.resolve('t1', THREAD, true), [], info({ run: [82, 83] })),
+  ];
+  // Another change to the thread on its way.
+  const fake = poller([new Promise<undefined>(() => {})]);
+  const busy = writer(fake);
+  void busy.made.resolve('t1', THREAD, true);
+  const before = busy.acts.length;
+  const again = busy.made.resolve('t1', THREAD, false);
+  expect(busy.acts.length).toBe(before);
+  atOnce.push({ outcome: await again, shown: [] });
+  for (const { outcome, shown } of atOnce) {
+    expect(outcome.kind === 'refused' && refusedAtOnce(outcome.refusal)).toBe(true);
+    expect(shown).toEqual([]);
+  }
+});
+
+/**
+ * The answer to an edit, GitHub's text being `now`, and what the drafts said of it from the moment
+ * it was sent: with no `base`, as for a draft that lost what it started from.
+ */
+async function editSaid(now: string | undefined, base = true) {
+  const fake = poller([undefined]);
+  const { made, published } = writer(fake);
+  if (base) await made.editing('t1', EDIT, 'Start higher?');
+  made.save('t1', EDIT, 'Mine.');
+  if (now !== undefined) fake.comments.set(MINE, { body: now });
+  const from = published.length;
+  const outcome = await made.edit('t1', EDIT, 'Mine.');
+  return { outcome, shown: editOnWay(published.slice(from)) };
+}
+
+test('the drafts say an edit is on its way, then that it isn’t, before every answer but a refusal given at once', async () => {
+  for (const { outcome, shown } of [
+    await editSaid('Start higher?'),
+    await editSaid('Edited elsewhere.'),
+    await editSaid(undefined),
+  ]) {
+    expect(outcome.kind === 'refused' && refusedAtOnce(outcome.refusal)).toBe(false);
+    expect(shown[0]).toBe(true);
+    expect(shown.at(-1)).toBe(false);
+  }
+  const { outcome, shown } = await editSaid('Start higher?', false);
+  expect(outcome).toEqual({ kind: 'refused', refusal: { kind: 'noBase' } });
+  expect(refusedAtOnce({ kind: 'noBase' })).toBe(true);
+  expect(shown).toEqual([]);
 });

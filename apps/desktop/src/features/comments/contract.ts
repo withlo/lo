@@ -471,6 +471,39 @@ export type ActRefusal =
   | { kind: 'github'; message: string };
 
 /**
+ * Whether main gave `refusal` at once, before it said anything of what was asked on `drafts` or
+ * `acts`: as nothing it can send (`signIn`, `run`), one on its way already (`busy`), one nobody
+ * knows went (`unconfirmed`), or an edit with nothing it started from (`noBase`). Main answers any
+ * other send, edit, resolve or delete only after it said there that it was on its way, then that it
+ * no longer was.
+ */
+export function refusedAtOnce(refusal: SendRefusal | ActRefusal): boolean {
+  switch (refusal.kind) {
+    case 'signIn':
+    case 'run':
+    case 'busy':
+    case 'unconfirmed':
+    case 'noBase':
+      return true;
+    case 'notLatest':
+    case 'headMoved':
+    case 'notInDiff':
+    case 'paused':
+    case 'pendingUnknown':
+    case 'theirs':
+    case 'notAllowed':
+    case 'cantResolve':
+    case 'changed':
+    case 'gone':
+    case 'github':
+      return false;
+    default:
+      refusal satisfies never;
+      throw new Error(`A refusal Lo doesn’t know: ${JSON.stringify(refusal)}.`);
+  }
+}
+
+/**
  * What came of an edit, a resolve or a delete: `done`, with, for an edit GitHub answered, when it
  * did, by GitHub's clock, in milliseconds since the Unix epoch (`editedAt`); `refused`; or `lost`,
  * when GitHub's answer was lost, and Lo looks whether it went.

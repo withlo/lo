@@ -16,12 +16,15 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { openDatabase } from '../../../main/database.ts';
 import { migrate } from '../../../main/migrations.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type {
-  DraftHomeRow,
-  DraftPlaceRow,
-  DraftsView,
-  JoinedView,
-  ThreadPlaceRow,
+import {
+  type DraftHomeRow,
+  type DraftPlaceRow,
+  type DraftRow,
+  type DraftsView,
+  type JoinedView,
+  refusedAtOnce,
+  type SendOutcome,
+  type ThreadPlaceRow,
 } from '../contract.ts';
 import { holdsPullComment } from './conversation.ts';
 import { DraftStore } from './drafts.ts';
@@ -479,6 +482,75 @@ describe('sending', () => {
     });
     expect(fake.sent).toEqual([]);
   });
+});
+
+/** Whether a draft says its comment is on its way, as the window reads it. */
+function onWay(row: DraftRow | undefined): boolean {
+  return (
+    row !== undefined &&
+    (row.sent !== null || row.sending === 'waiting' || row.sending === 'sending')
+  );
+}
+
+test('the drafts say a comment is on its way, then that it isn’t, before every answer but a refusal given at once', async () => {
+  const pending = {
+    kind: 'read',
+    review: { id: 'PRR_1', commit: { oid: HEAD }, comments: { totalCount: 1 } },
+  } as PendingReviewRead;
+  const onPull: DraftPlaceRow = { kind: 'conversation' };
+  /** The answer to sending `place`, and what the drafts said of it from the moment it was sent. */
+  async function said(answers: Answer[], place: DraftPlaceRow, view = info(), read = pending) {
+    const { made, published } = writer(poller(answers, read), view);
+    const from = published.length;
+    const outcome = await made.send('t1', place, 'Kept.', 'review');
+    const shown = published
+      .slice(from)
+      .map((each) =>
+        onWay(each.drafts.find((row) => JSON.stringify(row.place) === JSON.stringify(place))),
+      );
+    return { outcome, shown };
+  }
+  const answered: { outcome: SendOutcome; shown: boolean[] }[] = [
+    await said([{ review: 'PRR_1', comment: 'C_1' }], onLine(), info(), {
+      kind: 'read',
+      review: undefined,
+    }),
+    await said([{ refusal: 'notInDiff' }], onLine()),
+    await said([{ refusal: 'paused', until: 1234 }], onLine()),
+    await said([], onLine(OLDER)),
+    await said([new Error('No network.')], onLine()),
+    await said(['IC_1'], onPull),
+    await said([{ refusal: 'paused', until: 1234 }], onPull),
+  ];
+  expect(answered.map(({ outcome }) => outcome.kind)).toEqual([
+    'sent',
+    'refused',
+    'refused',
+    'refused',
+    'refused',
+    'sent',
+    'refused',
+  ]);
+  for (const { outcome, shown } of answered) {
+    expect(outcome.kind === 'refused' && refusedAtOnce(outcome.refusal)).toBe(false);
+    expect(shown[0]).toBe(true);
+    expect(shown.at(-1)).toBe(false);
+  }
+  const atOnce = [
+    await said([], onLine(), info({ acting: { kind: 'anonymous' } })),
+    await said([], onLine(), info({ run: [82, 83] })),
+  ];
+  // The same draft on its way already.
+  const busy = writer(poller([new Promise<never>(() => {})], pending));
+  void busy.made.send('t1', onLine(), 'Kept.', 'review');
+  const before = busy.published.length;
+  const again = busy.made.send('t1', onLine(), 'Kept.', 'now');
+  expect(busy.published.length).toBe(before);
+  atOnce.push({ outcome: await again, shown: [] });
+  for (const { outcome, shown } of atOnce) {
+    expect(outcome.kind === 'refused' && refusedAtOnce(outcome.refusal)).toBe(true);
+    expect(shown).toEqual([]);
+  }
 });
 
 /** A code block of the overview at `OLDER`, on `src/backoff.ts`'s lines 3 to 9, written from its line 5. */

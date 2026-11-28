@@ -268,17 +268,46 @@ function Oid({ children }: { children: string }) {
   return <span className="text-fg-muted code-small">{children.slice(0, 7)}</span>;
 }
 
-/** The line of an event: what happened, and when, at the end. */
-function Line({ children, when }: { children: ReactNode; when?: string | undefined }) {
+/**
+ * A row that a right-click opens a menu on, where whoever draws the timeline gives its rows one: the
+ * `⋯` at the end of a post's head, or of an event's line, opens the same menu, of what its buttons
+ * and keys do, among them Edit and Delete on a comment of yours. It shows on the row under the
+ * pointer, the one the keyboard is on and the one with focus in it, and keeps its room meanwhile, so
+ * nothing beside it moves.
+ */
+interface RowMenu {
+  menu?: boolean | undefined;
+}
+
+/** What makes a row the scope its `⋯` shows in (`shy`). */
+function shyScope(shown: boolean): { 'data-shy-scope'?: '' } {
+  return shown ? { 'data-shy-scope': '' } : {};
+}
+
+/** An event's line: what happened, then when, and the row's `⋯` where it has a menu. */
+function Line({
+  children,
+  when,
+  menu = false,
+}: {
+  children: ReactNode;
+  when?: string | undefined;
+  menu?: boolean | undefined;
+}) {
   return (
     <div className="flex min-h-32 flex-wrap items-center gap-x-6 gap-y-4 text-fg-muted text-ui">
       {children}
-      {when !== undefined && <time className="ms-auto flex-none text-small">{when}</time>}
+      {(when !== undefined || menu) && (
+        <span className="ms-auto flex flex-none items-center gap-x-8">
+          {when !== undefined && <time className="text-small">{when}</time>}
+          {menu && <MoreButton shy />}
+        </span>
+      )}
     </div>
   );
 }
 
-export interface TimelineEventProps extends TimelineRowAttributes {
+export interface TimelineEventProps extends TimelineRowAttributes, RowMenu {
   glyph: TimelineGlyph;
   tone?: TimelineTone | undefined;
   /** How long ago, as the row says it: "3 d ago". */
@@ -294,10 +323,19 @@ export interface TimelineEventProps extends TimelineRowAttributes {
  * changed, a review dismissed, auto-merge, a stack. The sentence is the caller's; the glyph and
  * its tone say the kind.
  */
-export function TimelineEvent({ glyph, tone, when, children, ...row }: TimelineEventProps) {
+export function TimelineEvent({
+  glyph,
+  tone,
+  when,
+  menu = false,
+  children,
+  ...row
+}: TimelineEventProps) {
   return (
-    <TimelineRow marker={{ glyph, tone }} {...row}>
-      <Line when={when}>{children}</Line>
+    <TimelineRow marker={{ glyph, tone }} {...row} {...shyScope(menu)}>
+      <Line when={when} menu={menu}>
+        {children}
+      </Line>
     </TimelineRow>
   );
 }
@@ -309,7 +347,7 @@ const CHECKS = {
   running: { words: 'Checks running', glyph: 'ring', tone: 'warn' },
 } as const satisfies Record<string, { words: string; glyph: TimelineGlyph; tone: TimelineTone }>;
 
-export interface TimelineChecksProps extends TimelineRowAttributes {
+export interface TimelineChecksProps extends TimelineRowAttributes, RowMenu {
   /** Where a commit's checks stand. */
   state: keyof typeof CHECKS;
   /** The revision they ran on: "r2". */
@@ -331,7 +369,7 @@ export function TimelineChecks({ state, revision, when, focused, ...row }: Timel
   );
 }
 
-export interface TimelinePushProps extends TimelineRowAttributes {
+export interface TimelinePushProps extends TimelineRowAttributes, RowMenu {
   actor: string;
   when: string;
   /** The revision the push made: "r2". */
@@ -348,11 +386,12 @@ export function TimelinePush({
   revision,
   commits,
   focused,
+  menu = false,
   ...row
 }: TimelinePushProps) {
   return (
-    <TimelineRow marker={{ glyph: 'commits' }} focused={focused} {...row}>
-      <Line when={when}>
+    <TimelineRow marker={{ glyph: 'commits' }} focused={focused} {...row} {...shyScope(menu)}>
+      <Line when={when} menu={menu}>
         <TimelineName>{actor}</TimelineName>{' '}
         <span>
           pushed {commits.length} {commits.length === 1 ? 'commit' : 'commits'}
@@ -371,7 +410,7 @@ export function TimelinePush({
   );
 }
 
-export interface TimelineForcePushProps extends TimelineRowAttributes {
+export interface TimelineForcePushProps extends TimelineRowAttributes, RowMenu {
   actor: string;
   when: string;
   /** The head branch, or the base branch. */
@@ -399,11 +438,17 @@ export function TimelineForcePush({
   revision,
   compare,
   focused,
+  menu = false,
   ...row
 }: TimelineForcePushProps) {
   return (
-    <TimelineRow marker={{ glyph: 'force', tone: 'warn' }} focused={focused} {...row}>
-      <Line when={when}>
+    <TimelineRow
+      marker={{ glyph: 'force', tone: 'warn' }}
+      focused={focused}
+      {...row}
+      {...shyScope(menu)}
+    >
+      <Line when={when} menu={menu}>
         <TimelineName>{actor}</TimelineName>{' '}
         <span>force-pushed{branch === 'base' && ' the base branch'}</span>{' '}
         {before !== undefined && after !== undefined && (
@@ -441,21 +486,6 @@ const cardHead = cva(
   },
 );
 
-/**
- * A post's card that a right-click opens a menu on, where whoever draws the timeline gives its rows
- * one: the `⋯` at the end of its head opens the same menu, of what its buttons and keys do, among
- * them Edit and Delete on a comment of yours. It shows on the row under the pointer, the one the
- * keyboard is on and the one with focus in it, and keeps its room meanwhile, so the head never moves.
- */
-interface PostMenu {
-  menu?: boolean | undefined;
-}
-
-/** What makes a row the scope its card's `⋯` shows in (`shy`). */
-function shyScope(shown: boolean): { 'data-shy-scope'?: '' } {
-  return shown ? { 'data-shy-scope': '' } : {};
-}
-
 /** What a card shows in place of a hidden comment's text. Its images load only once it's shown. */
 export interface TimelineHidden {
   /** Why GitHub hid it, in a word: `outdated`, `resolved`, `spam`. */
@@ -484,7 +514,7 @@ function Text({ children }: { children: ReactNode }) {
   return <div className="lo-selectable px-12 py-12 text-fg read-comment">{children}</div>;
 }
 
-export interface TimelineCommentProps extends TimelineRowAttributes, PostMenu {
+export interface TimelineCommentProps extends TimelineRowAttributes, RowMenu {
   author: string;
   image?: string | undefined;
   when: string;
@@ -583,7 +613,7 @@ const VERDICTS: Readonly<Record<TimelineVerdict, { words: string; marker: Timeli
   dismissed: { words: 'left a review', marker: { glyph: 'comment' } },
 };
 
-export interface TimelineReviewProps extends TimelineRowAttributes, PostMenu {
+export interface TimelineReviewProps extends TimelineRowAttributes, RowMenu {
   author: string;
   image?: string | undefined;
   when: string;
@@ -700,7 +730,7 @@ function Reviewer({ reviewer }: { reviewer: TimelineReviewer }) {
   );
 }
 
-export interface TimelineDescriptionProps extends TimelineRowAttributes, PostMenu {
+export interface TimelineDescriptionProps extends TimelineRowAttributes, RowMenu {
   author: string;
   image?: string | undefined;
   /** How long ago it was opened: "3 d ago". */
@@ -771,7 +801,7 @@ export function TimelineDescription({
   );
 }
 
-export interface TimelineOlderProps extends TimelineRowAttributes {
+export interface TimelineOlderProps extends TimelineRowAttributes, RowMenu {
   /** How many events are left out, or still to read. */
   count: number;
   /**
@@ -789,9 +819,16 @@ export interface TimelineOlderProps extends TimelineRowAttributes {
  * older events are still being read, "Reading older events…", with a spinner. It's a row on the
  * rail like the others, so the line runs through it.
  */
-export function TimelineOlder({ count, reading, onSee, focused, ...row }: TimelineOlderProps) {
+export function TimelineOlder({
+  count,
+  reading,
+  onSee,
+  focused,
+  menu = false,
+  ...row
+}: TimelineOlderProps) {
   return (
-    <TimelineRow marker={{ glyph: 'more' }} focused={focused} {...row}>
+    <TimelineRow marker={{ glyph: 'more' }} focused={focused} {...row} {...shyScope(menu)}>
       <div className="flex min-h-32 flex-wrap items-center gap-x-6 gap-y-2 text-fg-muted text-small">
         {reading ? (
           <span className="inline-flex items-center gap-6" aria-busy="true">
@@ -805,6 +842,11 @@ export function TimelineOlder({ count, reading, onSee, focused, ...row }: Timeli
             </span>
             <LinkButton onClick={onSee}>Open on GitHub</LinkButton>
           </>
+        )}
+        {menu && (
+          <span className="ms-auto flex flex-none">
+            <MoreButton shy />
+          </span>
         )}
       </div>
     </TimelineRow>

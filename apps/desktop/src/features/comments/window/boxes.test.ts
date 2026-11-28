@@ -1587,6 +1587,17 @@ async function onItsWay(box: Box, how: Send): Promise<{ done: Promise<void> }> {
   return { done };
 }
 
+/** Sends `box`'s comment, which main answers when the test says. */
+async function sendLater(box: Box) {
+  let answer!: (outcome: SendOutcome) => void;
+  answers['comments.send'] = () =>
+    new Promise<SendOutcome>((resolve) => {
+      answer = resolve;
+    });
+  const { done } = await onItsWay(box, 'review');
+  return { answer, done };
+}
+
 describe('sending', () => {
   test('a box is held while its comment’s tree is made, its typing saved as it goes', async () => {
     vi.useFakeTimers();
@@ -1836,6 +1847,9 @@ describe('sending', () => {
       });
     const sending = (await onItsWay(box, 'review')).done;
     expect(drawn[0]!.composer.held).toBe(true);
+    // Main's drafts say it's on its way, then, as main answers, that it isn't.
+    takeDrafts({ id: VIEW, drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'sending' })] });
+    takeDrafts({ id: VIEW, drafts: [row(onLines(null, 5), 'Ship it?')] });
     answer({ kind: 'refused', refusal: { kind: 'paused', until: 1 } });
     await sending;
     expect(drawn[0]!.composer.held).toBe(false);
@@ -1889,6 +1903,68 @@ describe('sending', () => {
     });
     await send(box, 'review');
     expect(asked('comments.send')).toHaveLength(1);
+  });
+
+  describe('refused once main’s drafts said it was on its way, its answer coming first', () => {
+    const REFUSAL = { kind: 'refused', refusal: { kind: 'paused', until: 1 } } as const;
+    const ON_ITS_WAY = [
+      [row(onLines(null, 5), 'Ship it?', { sending: 'waiting' })],
+      [row(onLines(null, 5), 'Ship it?', { sending: 'sending' })],
+      [row(onLines(null, 5), 'Ship it?', { sending: 'sending', sent: 'Ship it?', sentAt: 1 })],
+    ];
+
+    test('before any of them, the box says why once, and what they said changes nothing', async () => {
+      const { drawn, box } = await opened();
+      const { answer, done } = await sendLater(box);
+      heard.length = 0;
+      answer(REFUSAL);
+      await done;
+      expect(drawn[0]!.composer.held).toBe(false);
+      expect(heard).toHaveLength(1);
+      for (const drafts of ON_ITS_WAY) {
+        takeDrafts({ id: VIEW, drafts });
+        expect(drawn[0]!.composer.held).toBe(false);
+        expect(box.state.refusal).toEqual(REFUSAL.refusal);
+      }
+      expect(box.sentMark).toBe(false);
+      // What main said with its answer, and after it, is taken as ever.
+      takeDrafts({ id: VIEW, drafts: [row(onLines(null, 5), 'Ship it?')] });
+      expect(heard).toHaveLength(1);
+      takeDrafts({
+        id: VIEW,
+        drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'checking', sent: 'Ship it?' })],
+      });
+      expect(drawn[0]!.composer.held).toBe(true);
+    });
+
+    test('while they said it was on its way, the box says why at once, and once', async () => {
+      const { drawn, box } = await opened();
+      const { answer, done } = await sendLater(box);
+      takeDrafts({ id: VIEW, drafts: ON_ITS_WAY[1]! });
+      heard.length = 0;
+      answer(REFUSAL);
+      await done;
+      expect(drawn[0]!.composer.held).toBe(false);
+      expect(box.state.sending).toBeNull();
+      expect(heard).toHaveLength(1);
+      takeDrafts({ id: VIEW, drafts: ON_ITS_WAY[2]! });
+      takeDrafts({ id: VIEW, drafts: [row(onLines(null, 5), 'Ship it?')] });
+      expect(drawn[0]!.composer.held).toBe(false);
+      expect(heard).toHaveLength(1);
+    });
+
+    test('refused at once, what main’s drafts say is taken as ever', async () => {
+      const { drawn, box } = await opened();
+      const { answer, done } = await sendLater(box);
+      // Sent before, as from another window, and Lo still looks whether it went.
+      answer({ kind: 'refused', refusal: { kind: 'busy' } });
+      await done;
+      takeDrafts({
+        id: VIEW,
+        drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'checking', sent: 'Ship it?' })],
+      });
+      expect(drawn[0]!.composer.held).toBe(true);
+    });
   });
 
   test('“Comment on the file” moves the text to a box on the file', async () => {

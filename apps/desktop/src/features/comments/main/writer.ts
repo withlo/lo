@@ -481,6 +481,8 @@ export class Writer {
     if (stands === 'unknown') {
       return Promise.resolve({ kind: 'refused', refusal: { kind: 'unconfirmed' } });
     }
+    // From here the drafts say it's on its way, then that it isn't, before any answer: the
+    // window holds what comes after the answer. The refusals above come first (`refusedAtOnce`).
     this.#options.drafts.save(target.login, target.pull, place, text);
     const pull = target.pull.key;
     this.#sending.set(key, this.#lastWrite.has(pull) ? 'waiting' : 'sending');
@@ -556,6 +558,7 @@ export class Writer {
     if (stands === 'waiting' || stands === 'sending' || stands === 'checking') {
       return Promise.resolve({ kind: 'refused', refusal: { kind: 'busy' } });
     }
+    // As for a comment, the refusals above come before the drafts say anything.
     this.#options.drafts.save(login, pull, place, text);
     this.#sending.set(key, this.#lastWrite.has(pull.key) ? 'waiting' : 'sending');
     this.#changed(target);
@@ -964,6 +967,8 @@ export class Writer {
     if (stands === 'waiting' || stands === 'sending' || stands === 'checking') {
       return Promise.resolve({ kind: 'refused', refusal: { kind: 'busy' } });
     }
+    // From here `acts` says it's on its way, then that it isn't, before any answer; the refusals
+    // above come first (`refusedAtOnce`).
     this.#setAct(target, key, {
       ...asked,
       stands: this.#lastWrite.has(pull.key) ? 'waiting' : 'sending',
