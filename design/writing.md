@@ -476,7 +476,9 @@ One label per command, the same everywhere. Only a control on the thing may fill
 - **A key that steps through three or more options** is named the same way: “Next merge method”,
   “Next thread filter”. It stands in place of a command per option, not beside one. The control
   lists the options by name.
-- **A menu on the thing itself** may drop the object: “Reply”, “Resolve”.
+- **A menu on the thing itself** may drop the object: “Reply”, “Resolve”. A command on a part of the
+  thing keeps its own: a thread’s menu says “Edit comment” and “Delete comment…”, since the thread
+  isn’t what they change.
 - **A label can be filled in.** The palette, the menus and the keyboard shortcuts show it plain:
   “Show latest”, “Merge…”, “Compare”. A control on the thing names what it acts on: “Show r5”,
   “Merge #264”, “Compare r2 → r5”. `…` follows its own rule on each: the merge panel’s button opens

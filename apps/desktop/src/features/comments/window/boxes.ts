@@ -54,6 +54,7 @@ import {
   type Target,
 } from '@lo/ui/commands';
 
+import { Answers } from '../../../window/answers.ts';
 import { announce, notice, notify, refuse, withdraw } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { offlineLabel } from '../../../window/explain.ts';
@@ -102,7 +103,6 @@ import {
   type Sending,
   type ThreadRow,
 } from '../contract.ts';
-import { Answers } from './answers.ts';
 import { threadsOnBlock } from './blocks.ts';
 import { main, tabs } from './main.ts';
 import { threadsMode } from './mode.ts';

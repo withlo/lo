@@ -470,15 +470,16 @@ export class Submitter {
    * Looks again whether the review sent from view `id`'s pull request, whose answer was lost, was
    * submitted, as the dialog's "Check again" asks, once Lo couldn't tell: nothing is sent, and
    * submitting is `checking` until a fresh read of your reviews says. Nothing happens while it
-   * stands otherwise.
+   * stands otherwise. Says whether it looks, which it has said is `checking` by then.
    */
-  check(id: string): void {
-    if (this.#stopped) return;
+  check(id: string): boolean {
+    if (this.#stopped) return false;
     const target = this.#targetOf(id);
-    if (!target) return;
+    if (!target) return false;
     const kept = this.#options.drafts.summary(target.login, target.pull);
-    if (kept?.sent == null || this.#submitting.get(keyOf(target)) !== 'unknown') return;
+    if (kept?.sent == null || this.#submitting.get(keyOf(target)) !== 'unknown') return false;
     this.#lost(target, kept.sent, kept.sentAt ?? kept.savedAt);
+    return true;
   }
 
   /** What would go with an approval from view `id` as its summary, as {@link Submitter.approve} sends it. */

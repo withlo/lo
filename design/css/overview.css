@@ -73,9 +73,9 @@
   max-width: var(--lo-read-measure);
 }
 .lo-ov-stale > .lo-i { grid-row: span 2; color: var(--lo-warning); }
-.lo-ov-stale__title { font: 600 13.5px/19px var(--lo-font-ui); color: var(--lo-fg); }
+.lo-ov-stale__head { font: 600 13.5px/19px var(--lo-font-ui); color: var(--lo-fg); }
 .lo-ov-stale__sub { grid-column: 2; font: var(--lo-text-small); color: var(--lo-fg-muted); }
-.lo-ov-stale__actions { grid-column: 3; grid-row: 1 / span 2; display: flex; gap: 6px; }
+.lo-ov-stale__actions { grid-column: 3; grid-row: 1 / span 2; display: grid; }
 
 /* Prose */
 .lo-prose { font: var(--lo-read-body); color: var(--lo-fg); }

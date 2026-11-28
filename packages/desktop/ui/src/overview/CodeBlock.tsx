@@ -76,18 +76,56 @@ const FLAG_STEPS = ['beside'] as const;
  * `children`, and the way to the comparison, `action`, at the line's end while the text shows whole
  * beside it. Where it doesn't, measured as `OutOfDate` measures, it's one column: the icon centred
  * on the first line, the text wrapping, and the button under its last line, on the text's left edge.
+ * Given `widest`, its text and action at their widest, it's laid out for those whatever it says, as
+ * `OutOfDate` is: its layout and its height depend on its width alone.
  */
-export function CodeFlag({ children, action }: { children: ReactNode; action?: ReactNode }) {
+export function CodeFlag({
+  children,
+  action,
+  widest,
+}: {
+  children: ReactNode;
+  action?: ReactNode;
+  /**
+   * What its text and action say at their widest, as they say the commits by their short ids
+   * before the revisions are named: drawn out of sight under them, holding their room.
+   */
+  widest?: { readonly text: ReactNode; readonly action?: ReactNode } | undefined;
+}) {
   const row = useRef<HTMLDivElement>(null);
   useGiveUp(row, FLAG_STEPS);
   return (
     <div ref={row} className="lo-codeblock__flag" role="note" data-lo-code-flag="">
       <Icon name="triangle-exclamation-point" size={12} />
-      {/* Beside the button only while it shows whole. */}
-      <span className="lo-codeblock__flagtext" data-fit="">
-        {children}
+      {/* Beside the button only while it shows whole, and its widest would. */}
+      <span className="lo-codeblock__flagwords">
+        <span className="lo-codeblock__flagtext" data-fit="">
+          {children}
+        </span>
+        {widest !== undefined && (
+          <span
+            aria-hidden="true"
+            className="lo-codeblock__flagtext lo-codeblock__widest"
+            data-fit=""
+          >
+            {widest.text}
+          </span>
+        )}
       </span>
-      {action !== undefined && <span className="lo-codeblock__flagaction">{action}</span>}
+      {action !== undefined && (
+        <span className="lo-codeblock__flagaction">
+          <span className="lo-codeblock__flagbutton">{action}</span>
+          {widest?.action !== undefined && (
+            <span
+              aria-hidden="true"
+              inert
+              className="lo-codeblock__flagbutton lo-codeblock__widest"
+            >
+              {widest.action}
+            </span>
+          )}
+        </span>
+      )}
     </div>
   );
 }

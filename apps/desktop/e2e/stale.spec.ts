@@ -14,7 +14,16 @@ import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { ElectronApplication, Page } from '@playwright/test';
 
-import { appFolder, expect, KEYCHAIN, keysToDiff, sizeWindow, test as base } from './app.ts';
+import {
+  appFolder,
+  expect,
+  frontOf,
+  KEYCHAIN,
+  keysToDiff,
+  sizeWindow,
+  test as base,
+  type Held,
+} from './app.ts';
 
 declare global {
   interface Window {
@@ -36,13 +45,50 @@ const test = base.extend<{
   cassette: string;
   /** Whether the remote is written only once the test says, so the local copy comes late. */
   lateRemote: boolean;
+  /**
+   * Whether GitHub holds back the pull request's revisions until the test lets go of them, so
+   * until then Lo names each commit by its short id.
+   */
+  holdRevisions: boolean;
+  /** Lets go of what GitHub holds back. */
+  held: Held;
+  /** Where Lo finds GitHub: the replay server, or one in front of it that holds requests back. */
+  githubOrigin: string;
 }>({
   cassette: ['app_e2e', { option: true }],
   lateRemote: [false, { option: true }],
+  holdRevisions: [false, { option: true }],
   github: async ({ cassette }, use) => {
     const server = await serveReplay(cassette);
     await use(server);
     await server.close();
+  },
+  // oxlint-disable-next-line no-empty-pattern
+  held: async ({}, use) => {
+    const waiting: (() => void)[] = [];
+    let released = false;
+    await use({
+      released: () =>
+        released ? Promise.resolve() : new Promise<void>((resolve) => waiting.push(resolve)),
+      release() {
+        released = true;
+        for (const resolve of waiting.splice(0)) resolve();
+      },
+    });
+    released = true;
+    for (const resolve of waiting.splice(0)) resolve();
+  },
+  githubOrigin: async ({ github, holdRevisions, held }, use) => {
+    const origin = new URL(github.urls.api).origin;
+    if (!holdRevisions) {
+      await use(origin);
+      return;
+    }
+    const front = await frontOf(origin, (_url, body) =>
+      body.includes('"operationName":"PullRequestRevisions"') ? held.released() : undefined,
+    );
+    await use(front.origin);
+    await front.close();
   },
   remote: async ({ lateRemote }, use) => {
     const folder = test.info().outputPath('remote');
@@ -55,11 +101,11 @@ const test = base.extend<{
     writeFileSync(file, `${TOKEN}\n`);
     await use(file);
   },
-  launch: async ({ github, remote, tokenFile }, use) => {
+  launch: async ({ githubOrigin, remote, tokenFile }, use) => {
     await use({
       args: [appFolder, ...KEYCHAIN],
       env: {
-        LO_GITHUB: new URL(github.urls.api).origin,
+        LO_GITHUB: githubOrigin,
         LO_TEST_TOKEN_FILE: tokenFile,
         LO_GIT_REMOTE: remote,
       },
@@ -343,14 +389,16 @@ test('says it was written for r1 from its first frame, and flags the block on li
   expect(refused).toEqual([]);
 });
 
-test.describe('while the local copy comes late', () => {
-  test.use({ cassette: 'app_e2e_late', lateRemote: true });
+test.describe('while the local copy and the revisions come late', () => {
+  test.use({ cassette: 'app_e2e_late', lateRemote: true, holdRevisions: true });
 
   // What changed since has its line held from the first frame, beside the button or, where the
-  // button doesn't fit beside the text, over it.
-  test('nothing on screen moves from the first frame as what changed since fills in, at 760 wide', async ({
+  // button doesn't fit beside the text, over it; and the banner and a block's flag are laid out for
+  // the commits' short ids, the widest their labels say, whatever they say now.
+  test('nothing on screen moves from the first frame as what changed since and the revisions’ names fill in, at 760 wide', async ({
     app,
     page,
+    held,
   }) => {
     test.setTimeout(90_000);
     await sizeWindow(app, 760, 900);
@@ -362,9 +410,12 @@ test.describe('while the local copy comes late', () => {
     await expect
       .poll(() => current(page, id), { timeout: 20_000 })
       .toMatchObject({ code: 'failed' });
-    // Without the local copy, it says what it was written for, and where the pull request is.
-    await expect(banner(page).locator('.lo-ov-stale__title')).toHaveText('Written for r1 · now r2');
+    // Without the local copy or the revisions, it says what it was written for, and where the pull
+    // request is, by the commits' short ids.
+    const title = banner(page).locator('.lo-ov-stale__title').first();
+    await expect(title).toHaveText(/^Written for [0-9a-f]{7} · now [0-9a-f]{7}$/);
     await expect(banner(page).locator('.lo-ov-stale__sub')).toHaveText('');
+    const tall = await banner(page).evaluate((element) => element.getBoundingClientRect().height);
 
     // The local copy comes, and with it how much changed and the flag.
     writeAppRemote(test.info().outputPath('remote'));
@@ -375,11 +426,19 @@ test.describe('while the local copy comes late', () => {
     await expect(banner(page).locator('.lo-ov-stale__sub')).toHaveText('1 file changed', {
       timeout: 20_000,
     });
-    await expect(
-      codeBlock(page, 'src/parser.ts', ':7–10').locator('.lo-codeblock__flag'),
-    ).toBeVisible({ timeout: 20_000 });
+    const flag = codeBlock(page, 'src/parser.ts', ':7–10').locator('.lo-codeblock__flag');
+    await expect(flag).toBeVisible({ timeout: 20_000 });
+    await expect(flag).toContainText(/showing [0-9a-f]{7}/);
+
+    // The revisions come, and with them their names.
+    held.release();
+    await expect(title).toHaveText('Written for r1 · now r2', { timeout: 20_000 });
+    await expect(flag).toContainText('showing r1');
     await page.waitForTimeout(1500);
     expect(await stillMoved(page)).toEqual([]);
+    expect(await banner(page).evaluate((element) => element.getBoundingClientRect().height)).toBe(
+      tall,
+    );
   });
 });
 

@@ -18,6 +18,7 @@ import { deleteFacts, newestYours, changeRefusal, type ThreadComment } from '@lo
 import type { ThreadView } from '@lo/ui/code';
 import type { HeaderTarget, LineTarget, ThreadTarget } from '@lo/ui/commands';
 
+import { Answers, type Asked } from '../../../window/answers.ts';
 import { notify, refuse } from '../../../window/commands/notices.tsx';
 import { diffOnScreen, goToThread, writingDiff } from '../../diff/window/shared.ts';
 import { writingBlockAsked } from '../../overview/window/shared.ts';
@@ -31,7 +32,6 @@ import {
   refusedAtOnce,
   type ThreadRow,
 } from '../contract.ts';
-import { Answers, type Asked } from './answers.ts';
 import {
   canWrite,
   claimBriefly,

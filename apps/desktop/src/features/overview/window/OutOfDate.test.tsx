@@ -358,6 +358,11 @@ describe('a code block of an overview written for an older push', () => {
     await until(() => page.querySelector('[data-lo-code-flag]') !== null);
     const flag = () => page.querySelector('.lo-codeblock__flagtext')?.textContent;
     expect(flag()).toContain('in r2');
+    // Laid out for the commits' short ids, as the banner is.
+    expect(widest(page)).toEqual([
+      `Line 7 changed in ${R2.slice(0, 7)} · lines added after line 8 · showing ${R1.slice(0, 7)}`,
+      `Compare ${R1.slice(0, 7)} → ${R2.slice(0, 7)}`,
+    ]);
 
     // The newer push is on screen, its local copy still coming.
     notReady.add(R3);
@@ -450,9 +455,19 @@ describe('a code block of an overview written for an older push', () => {
 const title = (page: HTMLElement) => page.querySelector('.lo-ov-stale__title')?.textContent;
 const detail = (page: HTMLElement) => page.querySelector('.lo-ov-stale__sub')?.textContent;
 
+/** The buttons on `page` a reader can reach: not those that only hold their widest room. */
+const buttons = (page: HTMLElement) =>
+  [...page.querySelectorAll('button')].filter((each) => !each.closest('[aria-hidden="true"]'));
+
 /** The button on `page` whose text holds `text`. */
 const button = (page: HTMLElement, text: string) =>
-  [...page.querySelectorAll('button')].find((each) => each.textContent?.includes(text));
+  buttons(page).find((each) => each.textContent?.includes(text));
+
+/** What `page` holds the room of, out of sight: its widest words and buttons. */
+const widest = (page: HTMLElement) =>
+  [...page.querySelectorAll('.lo-ov-stale__widest, .lo-codeblock__widest')].map(
+    (each) => each.textContent,
+  );
 
 describe('the banner', () => {
   const pull: PullTab = {
@@ -496,9 +511,7 @@ describe('the banner', () => {
     tabState.pull = { ...pullAt(R2), newer: R3 };
     const page = draw(<OutOfDateBanner tab={{ ...pull, id: tab }} commit={R1} head={R2} />);
     expect(title(page)).toBe('Written for r1 · now r2');
-    expect([...page.querySelectorAll('button')].map((each) => each.textContent)).toEqual([
-      'Compare r1 → r2',
-    ]);
+    expect(buttons(page).map((each) => each.textContent)).toEqual(['Compare r1 → r2']);
 
     await act(async () => {
       button(page, 'Compare r1 → r2')?.click();
@@ -508,6 +521,14 @@ describe('the banner', () => {
     expect(bridge.calls.filter(([channel]) => channel === 'revisions.compare')).toEqual([
       ['revisions.compare', { id: tab, from: R1, to: R2 }],
     ]);
+  });
+
+  it('is laid out for the commits’ short ids, the widest it says, whatever it says', () => {
+    revisions.set(tab, viewOf([revisionOf(R1, 1), revisionOf(R2, 2)]));
+    const page = draw(<OutOfDateBanner tab={{ ...pull, id: tab }} commit={R1} head={R2} />);
+    expect(title(page)).toBe('Written for r1 · now r2');
+    const [from, to] = [R1, R2].map((commit) => commit.slice(0, 7));
+    expect(widest(page)).toEqual([`Written for ${from} · now ${to}`, `Compare ${from} → ${to}`]);
   });
 
   it('names a commit that isn’t a revision by its short id, and says why it can’t compare it', async () => {

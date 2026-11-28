@@ -378,8 +378,9 @@ function leadIn(overview: DrawnOverview): (HTMLElement | SVGElement)[] {
       (first === undefined || after(element, first)) &&
       element.tabIndex >= 0 &&
       !(element instanceof HTMLButtonElement && element.disabled) &&
-      // Not a section's chevron or `⋯`: `z a` and the menu key work there.
-      element.closest('[hidden], [data-lo-hints], [data-lo-section]') === null &&
+      // Not a section's chevron or `⋯`: `z a` and the menu key work there. Nor what's out of
+      // reach, as the room the banner holds for its widest button is.
+      element.closest('[hidden], [inert], [data-lo-hints], [data-lo-section]') === null &&
       drawnOnPage(element),
   );
 }

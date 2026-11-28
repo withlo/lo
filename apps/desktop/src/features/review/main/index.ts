@@ -46,9 +46,7 @@ export default defineFeature(contract, {
       started().draft(id, text);
     },
     submit: ({ id, event, body }) => started().submit(id, event, body),
-    check({ id }) {
-      started().check(id);
-    },
+    check: ({ id }) => started().check(id),
   },
   start({ use, publish }) {
     const service = use(tabs);

@@ -283,6 +283,15 @@ export type Acted =
   | ({ readonly kind: 'partly' } & ActWhy)
   | ({ readonly kind: 'unknown' } & ActWhy);
 
+/**
+ * What a look found, once the queue and those waiting to join it were read again: what the merge
+ * queue's tab has read then (`read`), and why a read failed, if one did (`failed`).
+ */
+export interface Looked {
+  readonly read: QueueRead | undefined;
+  readonly failed: string | undefined;
+}
+
 export const contract = defineContract('queue', {
   requests: {
     /**
@@ -318,10 +327,11 @@ export const contract = defineContract('queue', {
     cancel: { input: z.strictObject({ key: planKey }), reply: reply<void>() },
     /**
      * Reads merge queue tab `id`'s queue and those waiting to join it again, both begun now, and
-     * replies once they answer, with why one failed, if one did. What they read comes as `queue`
-     * first: what "Check again" looks at, after a change whose answer was lost.
+     * replies once they answer, with what the tab has read then, and why one failed, if one did:
+     * what "Check again" looks at, after a change whose answer was lost. What they read comes as
+     * `queue` too, sent before the reply, which it can come after.
      */
-    look: { input: z.strictObject({ id: tabId }), reply: reply<string | undefined>() },
+    look: { input: z.strictObject({ id: tabId }), reply: reply<Looked>() },
     /**
      * Turns off auto-merge for pull request `number`, waiting to join merge queue tab `id`'s queue,
      * at once, asking nothing, since that merges nothing.

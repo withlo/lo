@@ -488,7 +488,19 @@ function Flag({
   const known = useTabState(revisions, tab);
   const words = flagWords(change, { written: labelOf(known, commit), now: labelOf(known, head) });
   if (words === undefined) return null;
-  return <CodeFlag action={<CompareButton tab={tab} from={commit} to={head} />}>{words}</CodeFlag>;
+  // Laid out for the commits' short ids, the widest its labels say, as the banner is.
+  const widest = flagWords(change, {
+    written: labelOf(undefined, commit),
+    now: labelOf(undefined, head),
+  });
+  return (
+    <CodeFlag
+      action={<CompareButton tab={tab} from={commit} to={head} />}
+      widest={{ text: widest, action: <CompareButton tab={tab} from={commit} to={head} widest /> }}
+    >
+      {words}
+    </CodeFlag>
+  );
 }
 
 /** A `:::walkthrough` block: its steps beside the current one's file, its lines marked. */

@@ -261,7 +261,7 @@ export default defineCommands(
       targets: ['line', 'header', 'thread'],
       overVim: true,
       when: onThread,
-      menu: { on: 'thread', order: 40, label: 'Edit' },
+      menu: { on: 'thread', order: 40 },
     },
     /**
      * Deletes your newest comment in the thread, once you say so: in a popover, the ringed one, and
@@ -274,7 +274,7 @@ export default defineCommands(
       targets: ['line', 'header', 'thread'],
       overVim: true,
       when: onThread,
-      menu: { on: 'thread', order: 50, label: 'Delete…' },
+      menu: { on: 'thread', order: 50 },
     },
     /** Drops the box's draft, and the box, as its "Discard draft" does. */
     discard: {
