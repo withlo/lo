@@ -19,7 +19,7 @@ import { viewIds } from '../../tab/contract.ts';
 import { activeTab, middle, runOf, showingMiddle, status } from '../../tab/window/shared.ts';
 import { overviewRows, setup } from '../../welcome/window/shared.ts';
 import keys from '../keys.ts';
-import { on } from '../settings.ts';
+import { auto, on } from '../settings.ts';
 import { copyPrompt, promptNow } from './copy.ts';
 import { blockCode } from './copying.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
@@ -322,6 +322,7 @@ export default {
     // Settings › Integrations, after the `lo` command (10).
     SkillRow,
     InstallCommandRow,
+    settingRow(auto, { order: 40 }),
   ],
   start() {
     followSkill();

@@ -1,6 +1,7 @@
 /**
- * The skill's `SKILL.md`: the front matter Claude Code and Codex read, links only to what the skill
- * carries, and the checker's commands, which run as it says they do.
+ * The skill's `SKILL.md`: the front matter Claude Code and Codex read, for a repository's copy and,
+ * from `explain.md`, a person's; links only to what the skill carries; and the checker's commands,
+ * which run as it says they do.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -16,9 +17,37 @@ import {
   scratch,
   SKILL,
   skillFiles,
+  splitMatter,
 } from './support.ts';
 
 const text = readFileSync(join(SKILL, 'SKILL.md'), 'utf8');
+const explain = readFileSync(join(SKILL, 'explain.md'), 'utf8');
+
+/**
+ * The keys of the front matter `matter` names, each with its value, in order: a value may go on over
+ * indented lines, as YAML allows, joined by spaces. Throws on a line that's neither.
+ */
+function keysOf(matter: string): [string, string][] {
+  const lines = matter.split('\n').slice(1, -2);
+  const keys: [string, string][] = [];
+  for (const line of lines) {
+    const key = /^([a-z][a-z-]*):(.*)$/.exec(line);
+    if (key) keys.push([key[1]!, key[2]!.trim()]);
+    else if (line.startsWith('  ') && keys.length > 0) {
+      const last = keys.at(-1)!;
+      last[1] = `${last[1]} ${line.trim()}`.trim();
+    } else throw new Error(`A line front matter doesn't take: ${JSON.stringify(line)}`);
+  }
+  return keys;
+}
+
+/** What a description must be for every reader of skills: long enough, short enough, no tags. */
+function expectDescription(description: string): void {
+  expect(description.length).toBeGreaterThan(100);
+  expect(description.length).toBeLessThanOrEqual(1024);
+  // Nothing like a tag, which some readers of skills refuse.
+  expect(description).not.toMatch(/[<>]/);
+}
 
 let root: ReturnType<typeof scratch>;
 
@@ -29,23 +58,34 @@ beforeAll(() => {
 afterAll(() => root.remove());
 
 describe('SKILL.md', () => {
-  test('starts with front matter giving the skill’s name, and when to use it', () => {
-    const lines = text.split('\n');
-    expect(lines[0]).toBe('---');
-    const matter = lines.slice(1, lines.indexOf('---', 1));
-    expect(matter[0]).toBe('name: lo-overview');
-    expect(matter[1]).toMatch(/^description:/);
-    // The description may go on over indented lines, as YAML allows. Nothing else is there.
-    const rest = matter.slice(2);
-    expect(rest.every((line) => line.startsWith('  '))).toBe(true);
-    const description = [matter[1]!.slice('description:'.length), ...rest]
-      .map((line) => line.trim())
-      .join(' ')
-      .trim();
-    expect(description.length).toBeGreaterThan(100);
-    expect(description.length).toBeLessThanOrEqual(1024);
-    // Nothing like a tag, which some readers of skills refuse.
-    expect(description).not.toMatch(/[<>]/);
+  test('starts with a repository’s front matter: its name, when to start it, and how it runs', () => {
+    const keys = keysOf(splitMatter(text).matter);
+    expect(keys.map(([key]) => key)).toEqual(['name', 'description', 'argument-hint', 'context']);
+    const matter = Object.fromEntries(keys);
+    expect(matter.name).toBe('lo-overview');
+    expectDescription(matter.description!);
+    // An agent starts it by itself after it opens or pushes to a pull request, unless it's off.
+    expect(matter.description).toMatch(
+      /\bafter you open a pull request or push commits to an open one\b/,
+    );
+    expect(matter.description).toContain('overview.auto');
+    expect(matter.description).toContain('spawn_agent');
+    // In a subagent of its own, in the background, on Claude Code.
+    expect(matter.context).toBe('fork');
+    // Allowed nothing without asking: no rule could take in what it runs and nothing more.
+    expect(matter['allowed-tools']).toBeUndefined();
+  });
+
+  test('has a person’s front matter in explain.md, which never starts by itself', () => {
+    const { matter, body } = splitMatter(explain);
+    expect(body).toBe('');
+    const keys = keysOf(matter);
+    expect(keys.map(([key]) => key)).toEqual(['name', 'description']);
+    const { name, description = '' } = Object.fromEntries(keys);
+    expect(name).toBe('lo-explain');
+    expectDescription(description);
+    expect(description).toMatch(/\bonly when asked\b/);
+    expect(description).toMatch(/\bNever start it by yourself\b/);
   });
 
   test('links only to the references the skill carries', () => {
@@ -76,7 +116,9 @@ describe('SKILL.md', () => {
     mkdirSync(tools);
 
     // Every npx runs from <tools>, with it as npm's prefix, so nothing in the clone counts.
-    const npx = text.split('\n').filter((line) => /\bnpx\b/.test(line) && line.includes('--'));
+    const npx = splitMatter(text)
+      .body.split('\n')
+      .filter((line) => /\bnpx\b/.test(line) && line.includes('--'));
     const shape = /^\(cd '<tools>' && npx --prefix '<tools>' --yes (\S+) (.+)\)$/;
     expect(npx.length).toBe(2);
     expect(npx.filter((line) => !shape.test(line))).toEqual([]);
@@ -99,15 +141,25 @@ describe('SKILL.md', () => {
   });
 
   test('runs the checker it was installed with, by its exact version', () => {
-    // In the source, only the checker's two commands name a version, and by the placeholder.
-    expect(text.match(/\{version\}/g)).toHaveLength(2);
-    expect(text.split(`${manifest.name}@{version} `)).toHaveLength(3);
+    // In the source, the checker is named only with the placeholder for its version.
+    const named = text.match(new RegExp(`${manifest.name}@\\S*`, 'g')) ?? [];
+    expect(named.length).toBeGreaterThan(2);
+    expect(named.every((each) => each === `${manifest.name}@{version}`)).toBe(true);
+    expect(text.match(/\{version\}/g)).toHaveLength(named.length);
 
     const skills = join(root.dir, 'pinned');
     expect(runChecker(['install', '--dir', skills], root.dir).status).toBe(0);
-    const shipped = readFileSync(join(skills, 'lo-overview', 'SKILL.md'), 'utf8');
-    expect(shipped).not.toContain('{version}');
-    expect(shipped).not.toContain('@latest');
-    expect(shipped.split(`${manifest.name}@${manifest.version} `)).toHaveLength(3);
+    const repo = join(root.dir, 'pinned-repo');
+    mkdirSync(repo);
+    repositoryOf(repo, { 'a.txt': 'a\n' });
+    expect(runChecker(['install', '--repo', repo], root.dir).status).toBe(0);
+    for (const path of [join(skills, 'lo-explain'), join(repo, '.claude/skills/lo-overview')]) {
+      const shipped = readFileSync(join(path, 'SKILL.md'), 'utf8');
+      expect(shipped).not.toContain('{version}');
+      expect(shipped).not.toContain('@latest');
+      const pinned = shipped.match(new RegExp(`${manifest.name}@\\S*`, 'g')) ?? [];
+      expect(pinned.length).toBe(named.length);
+      expect(pinned.every((each) => each === `${manifest.name}@${manifest.version}`)).toBe(true);
+    }
   });
 });

@@ -1,9 +1,18 @@
 ---
 name: lo-overview
 description:
-  Writes a Lo overview of a GitHub pull request, the explanation Lo shows its reviewers beside the
-  diff, then checks it and pushes it to the pull request's refs/lo/pr ref. Use when asked to write,
-  update or replace a Lo overview, or to explain a pull request for Lo.
+  Writes or updates the Lo overview of a GitHub pull request, the explanation Lo shows its reviewers
+  beside the diff, then checks it and pushes it to the pull request's refs/lo/pr ref. Use it after
+  you open a pull request or push commits to an open one, drafts too, unless overview.auto is false
+  in the repository's .lo/settings.json or in ~/.config/lo/settings.json. First write handoff.md in
+  a new folder from mktemp -d, with the change's goal, the decisions you made and the alternatives
+  you rejected, the commands you ran and what came of them, and open questions, and no secrets or
+  personal details. Then start the skill with two arguments, the pull request's URL and the handoff
+  file's path. On Codex, start it in a subagent with spawn_agent, or run it yourself where you
+  can't. When Lo's hook answers a push, do as it says instead. Also use it when asked to write,
+  update or explain a Lo overview.
+argument-hint: '[pull-request] [handoff-file]'
+context: fork
 ---
 
 # Writing a Lo overview

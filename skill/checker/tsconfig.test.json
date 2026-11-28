@@ -1,7 +1,8 @@
 {
   "extends": "../../tsconfig.node.json",
   "compilerOptions": {
-    "outDir": ".tsbuild/test"
+    "outDir": ".tsbuild/test",
+    "allowJs": true
   },
   "include": ["src/**/*.test.ts", "test/**/*.ts", "build/**/*.ts", "*.config.ts"],
   "references": [{ "path": "./tsconfig.lib.json" }]

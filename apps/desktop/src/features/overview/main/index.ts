@@ -15,7 +15,7 @@ import type { Acting } from '../../tab/contract.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { overviews } from '../service.ts';
-import { on as overviewsOn } from '../settings.ts';
+import { auto, on as overviewsOn } from '../settings.ts';
 import { Blobs } from './blobs.ts';
 import { codeReply, readKey } from './code.ts';
 import { SavedRefs } from './saved.ts';
@@ -163,6 +163,8 @@ export default defineFeature(contract, {
   start(context) {
     const service = context.use(tabs);
     const { blobs, saved } = keptIn(context);
+    // Only the overview skill's hook reads it, from the file; declared so that its row writes it.
+    context.use(settings).declare(auto);
     stops.push(
       watchPresence((presence) => setForeground(isOnScreen(presence))),
       service.onPull((id) => follow(context, id)),

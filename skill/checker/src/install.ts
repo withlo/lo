@@ -1,13 +1,19 @@
 /**
- * `install`: copies the overview skill into a skills folder, in a folder of its own named for the
- * skill, `lo-overview`, where Claude Code, Codex or another coding agent finds it.
+ * `install`: copies a person's own copy of the overview skill, `lo-explain`, into a skills folder,
+ * in a folder of its own named for the skill, where Claude Code, Codex or another coding agent finds
+ * it. `install --repo` (`repo.ts`) writes a repository's copy, `lo-overview`, the same way.
  *
- * Only the skill's own files are written there, each replaced whole, and nothing is deleted, so a
- * file someone added to the skill's folder stays. A folder named for the skill that holds another
- * skill, or files that aren't the skill's, is left alone. Nothing is written through a link: a link
- * where the skill's folder, a folder in it or one of its files goes is refused, since it could lead
- * anywhere, such as into a checkout of the skill's source. The folders above the skill's own may be
- * links, as a skills folder kept with someone's other settings often is.
+ * Only the skill's own files are written there, each replaced whole, and nothing else is deleted,
+ * so a file someone added to the skill's folder stays. A folder named for the skill that holds
+ * another skill, or files that aren't the skill's, is left alone. Nothing is written through a
+ * link: a link where the skill's folder, a folder in it or one of its files goes is refused, since it
+ * could lead anywhere, such as into a checkout of the skill's source. The folders above the skill's
+ * own may be links, as a skills folder kept with someone's other settings often is.
+ *
+ * The one thing removed is a person's older copy, from before it was renamed: a `lo-overview` folder
+ * beside it holding the files that copy had and nothing else. A person's `lo-overview` runs in place
+ * of a repository's on Claude Code, and stops either from being picked by name on Codex. An older
+ * copy holding anything else is left, and said to be there.
  *
  * Every folder is checked before anything is written, so a refusal leaves them all as they were.
  */
@@ -23,6 +29,7 @@ import {
   readdirSync,
   readSync,
   renameSync,
+  rmdirSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -31,7 +38,7 @@ import {
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
-import { SKILL_FILES, SKILL_NAME } from './skill.ts';
+import { OLD_PERSONAL, PERSONAL_SKILL, type Skill } from './skill.ts';
 
 /**
  * Why the skill couldn't be installed, for a caller that words it for itself, since the messages
@@ -95,9 +102,14 @@ export interface Target {
   skills: string;
 }
 
-/** Where the skill was installed: the target, and the skill's own folder in it. */
+/**
+ * Where the skill was installed: the target, and the skill's own folder in it; and the person's
+ * older copy in the same skills folder, if there was one, removed or, when it holds anything else,
+ * kept.
+ */
 export interface Installed extends Target {
   folder: string;
+  old: { kind: 'removed' | 'kept'; path: string } | undefined;
 }
 
 /**
@@ -181,19 +193,73 @@ function isFolder(path: string): boolean {
 const NOTHING = 'Nothing was installed.';
 
 /**
- * Installs the skill in each of `targets`, once each has been checked, and returns where. Throws
- * with why when one can't take it, before writing anything.
+ * Installs a person's copy of the skill in each of `targets`, once each has been checked, and
+ * returns where, removing an older copy beside it. Throws with why when one can't take it, before
+ * writing anything.
  */
 export function install(targets: readonly Target[]): Installed[] {
+  const skill = PERSONAL_SKILL;
   const checked = targets.map((target) => ({
     ...target,
-    folder: attempt(target.skills, NOTHING, () => check(join(target.skills, SKILL_NAME))),
+    folder: attempt(target.skills, NOTHING, () => check(join(target.skills, skill.name), skill)),
   }));
   // Past the checks, only the file system can fail, or something changing the folders meanwhile.
-  for (const target of checked) {
-    attempt(target.skills, "Install the skill again once that's fixed.", () => write(target));
+  return checked.map((target) => {
+    attempt(target.skills, "Install the skill again once that's fixed.", () =>
+      writeSkill(target.skills, target.folder, skill),
+    );
+    return { ...target, old: replaceOld(target.skills) };
+  });
+}
+
+/**
+ * Removes the person's older copy of the skill from the skills folder `skills`, when it's there and
+ * holds what that copy had and nothing else, and says what became of it.
+ */
+function replaceOld(skills: string): Installed['old'] {
+  const folder = join(skills, OLD_PERSONAL.name);
+  const found = entryAt(folder);
+  if (found === undefined) return undefined;
+  if (!found.isDirectory() || !isOldCopy(folder)) {
+    return installedIn(skills, OLD_PERSONAL.name) ? { kind: 'kept', path: folder } : undefined;
   }
-  return checked;
+  try {
+    for (const path of OLD_PERSONAL.files) rmSync(join(folder, path), { force: true });
+    for (const inner of ['references', '']) {
+      for (const name of readdirSync(join(folder, inner))) {
+        if (temporary(OLD_PERSONAL.name).test(name)) rmSync(join(folder, inner, name));
+      }
+    }
+    rmdirSync(join(folder, 'references'));
+    rmdirSync(folder);
+    return { kind: 'removed', path: folder };
+  } catch {
+    return { kind: 'kept', path: folder };
+  }
+}
+
+/**
+ * Whether the folder `folder` is a person's older copy of the skill: its `SKILL.md` names it, and it
+ * holds only the files that copy had, and files an install cut short left. Nothing in it is a link.
+ */
+function isOldCopy(folder: string): boolean {
+  if (entryAt(join(folder, 'SKILL.md'))?.isFile() !== true) return false;
+  try {
+    if (skillName(head(join(folder, 'SKILL.md'))) !== OLD_PERSONAL.name) return false;
+  } catch {
+    return false;
+  }
+  const own = new Set<string>(OLD_PERSONAL.files);
+  const leftover = temporary(OLD_PERSONAL.name);
+  const onlyOld = (inner: string): boolean =>
+    readdirSync(join(folder, inner)).every((name) => {
+      const path = inner === '' ? name : `${inner}/${name}`;
+      const stats = entryAt(join(folder, path));
+      if (stats === undefined) return true;
+      if (path === 'references') return stats.isDirectory() && onlyOld(path);
+      return stats.isFile() && (own.has(path) || leftover.test(name));
+    });
+  return entryAt(join(folder, 'references'))?.isDirectory() === true && onlyOld('');
 }
 
 /**
@@ -259,12 +325,12 @@ function fileAbove(path: string): string | undefined {
 }
 
 /**
- * Why the skill can't be installed in the skills folder `skills` now, or `undefined` when it can.
- * Checks as `install` does, and writes nothing.
+ * Why a person's copy of the skill can't be installed in the skills folder `skills` now, or
+ * `undefined` when it can. Checks as `install` does, and writes nothing.
  */
 export function blockedBy(skills: string): InstallReason | undefined {
   try {
-    check(join(skills, SKILL_NAME));
+    check(join(skills, PERSONAL_SKILL.name), PERSONAL_SKILL);
     return undefined;
   } catch (error) {
     return refused(error, skills, '').reason;
@@ -272,7 +338,7 @@ export function blockedBy(skills: string): InstallReason | undefined {
 }
 
 /** What's at `path`, never following a link there, or `undefined` when nothing is. */
-function entryAt(path: string): Stats | undefined {
+export function entryAt(path: string): Stats | undefined {
   try {
     return lstatSync(path);
   } catch (error) {
@@ -287,10 +353,10 @@ function isMissing(error: unknown): boolean {
 }
 
 /** The ending of each refusal: what to do about it. */
-const INSTEAD = 'Remove it, or install the skill somewhere else with --dir.';
+export const INSTEAD = 'Remove it, or install the skill somewhere else with --dir.';
 
 /** Throws unless `stats`, what's at `path`, is a folder or a file, as `kind` says. */
-function refuseOther(path: string, stats: Stats, kind: 'folder' | 'file'): void {
+export function refuseOther(path: string, stats: Stats, kind: 'folder' | 'file'): void {
   if (stats.isSymbolicLink()) {
     throw new InstallError(
       `${path} is a link, and Lo doesn't install the skill through links, since one could lead anywhere. ${INSTEAD}`,
@@ -305,41 +371,41 @@ function refuseOther(path: string, stats: Stats, kind: 'folder' | 'file'): void 
   }
 }
 
-/** Each folder inside the skill's own, by its path there, parents first. */
-const OWN_FOLDERS = [
-  ...new Set(
-    SKILL_FILES.flatMap(({ path }) =>
-      path
-        .split('/')
-        .slice(0, -1)
-        .map((_, at, parts) => parts.slice(0, at + 1).join('/')),
+/** Each folder inside `skill`'s own, by its path there, parents first. */
+function ownFolders(skill: Skill): string[] {
+  return [
+    ...new Set(
+      skill.files.flatMap(({ path }) =>
+        path
+          .split('/')
+          .slice(0, -1)
+          .map((_, at, parts) => parts.slice(0, at + 1).join('/')),
+      ),
     ),
-  ),
-];
-
-/** Each of the skill's own files and folders, by its path in the skill's folder. */
-const OWN = new Set([...OWN_FOLDERS, ...SKILL_FILES.map(({ path }) => path)]);
+  ];
+}
 
 /**
- * Checks the skill can go in its folder, `folder`: that nothing there is a link, and that the
- * folder holds the skill, or nothing yet. Returns the folder, and throws with why not.
+ * Checks `skill` can go in its folder, `folder`: that nothing there is a link, and that the folder
+ * holds the skill, or nothing yet. Returns the folder, and throws with why not.
  */
-function check(folder: string): string {
+export function check(folder: string, skill: Skill): string {
   const found = entryAt(folder);
   if (found === undefined) return folder;
   refuseOther(folder, found, 'folder');
-  for (const path of OWN_FOLDERS) {
+  const folders = ownFolders(skill);
+  for (const path of folders) {
     const stats = entryAt(join(folder, path));
     if (stats) refuseOther(join(folder, path), stats, 'folder');
   }
-  for (const { path } of SKILL_FILES) {
+  for (const { path } of skill.files) {
     const stats = entryAt(join(folder, path));
     if (stats) refuseOther(join(folder, path), stats, 'file');
   }
-  const skill = join(folder, 'SKILL.md');
-  if (entryAt(skill)) {
-    const name = skillName(head(skill));
-    if (name !== SKILL_NAME) {
+  const own = join(folder, 'SKILL.md');
+  if (entryAt(own)) {
+    const name = skillName(head(own));
+    if (name !== skill.name) {
       const which = name === undefined ? 'another skill' : `another skill, ${JSON.stringify(name)}`;
       throw new InstallError(`${folder} holds ${which}, so Lo left it alone. ${INSTEAD}`, {
         kind: 'otherSkill',
@@ -347,30 +413,34 @@ function check(folder: string): string {
         name,
       });
     }
-  } else if (!onlyOwn(folder, '')) {
+  } else if (!onlyOwn(folder, '', skill, folders)) {
     throw new InstallError(
-      `${folder} holds files that aren't the ${SKILL_NAME} skill's, and no SKILL.md, so Lo left it alone. ${INSTEAD}`,
+      `${folder} holds files that aren't the ${skill.name} skill's, and no SKILL.md, so Lo left it alone. ${INSTEAD}`,
       { kind: 'otherFiles', path: folder },
     );
   }
   return folder;
 }
 
-/** The name of the file `replace` writes before it renames it over a file of the skill's. */
-const TEMPORARY = new RegExp(`^\\.${SKILL_NAME}-[0-9a-f]{16}\\.tmp$`);
+/** The name of the file `replace` writes before it renames it over a file of the skill `name`'s. */
+function temporary(name: string): RegExp {
+  return new RegExp(`^\\.${name}-[0-9a-f]{16}\\.tmp$`);
+}
 
 /**
- * Whether the folder `inner`, inside the skill's folder `folder`, holds nothing but the skill's own
- * files and folders, as an install cut short leaves it, and files it was writing when it was. Its
- * folders have been checked aren't links.
+ * Whether the folder `inner`, inside `skill`'s folder `folder`, holds nothing but the skill's own
+ * files and folders, `folders`, as an install cut short leaves it, and files it was writing when it
+ * was. Its folders have been checked aren't links.
  */
-function onlyOwn(folder: string, inner: string): boolean {
+function onlyOwn(folder: string, inner: string, skill: Skill, folders: readonly string[]): boolean {
+  const own = new Set([...folders, ...skill.files.map(({ path }) => path)]);
+  const leftover = temporary(skill.name);
   for (const name of readdirSync(join(folder, inner))) {
     const path = inner === '' ? name : `${inner}/${name}`;
     // What an install cut short leaves is only ever ignored: nothing is deleted.
-    if (TEMPORARY.test(name) && entryAt(join(folder, path))?.isFile()) continue;
-    if (!OWN.has(path)) return false;
-    if (OWN_FOLDERS.includes(path) && !onlyOwn(folder, path)) return false;
+    if (leftover.test(name) && entryAt(join(folder, path))?.isFile()) continue;
+    if (!own.has(path)) return false;
+    if (folders.includes(path) && !onlyOwn(folder, path, skill, folders)) return false;
   }
   return true;
 }
@@ -382,7 +452,7 @@ const HEAD = 64 * 1024;
  * The start of the file at `path`, as text. It opens without waiting, so that a pipe there, or a
  * link to one, is no wait for a writer that never comes, and reads only a file.
  */
-function head(path: string): string {
+export function head(path: string): string {
   const bytes = Buffer.alloc(HEAD);
   const file = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
@@ -406,23 +476,24 @@ export function skillName(text: string): string | undefined {
 }
 
 /**
- * Whether the skill is installed in the skills folder `skills`: its folder holds a `SKILL.md` that
- * names it. A link there counts, as it does for the agent that reads the skill through it.
+ * Whether the skill `name`, a person's copy unless said, is installed in the skills folder
+ * `skills`: its folder holds a `SKILL.md` that names it. A link there counts, as it does for the
+ * agent that reads the skill through it.
  */
-export function installedIn(skills: string): boolean {
+export function installedIn(skills: string, name: string = PERSONAL_SKILL.name): boolean {
   try {
-    return skillName(head(join(skills, SKILL_NAME, 'SKILL.md'))) === SKILL_NAME;
+    return skillName(head(join(skills, name, 'SKILL.md'))) === name;
   } catch {
     return false;
   }
 }
 
-/** Writes the skill's files in its folder, `folder`, in `skills`, replacing each whole. */
-function write({ skills, folder }: Installed): void {
+/** Writes `skill`'s files in its folder, `folder`, in `skills`, replacing each whole. */
+export function writeSkill(skills: string, folder: string, skill: Skill): void {
   mkdirSync(skills, { recursive: true });
   makeFolder(folder);
-  for (const path of OWN_FOLDERS) makeFolder(join(folder, path));
-  for (const { path, text } of SKILL_FILES) replace(join(folder, path), text);
+  for (const path of ownFolders(skill)) makeFolder(join(folder, path));
+  for (const { path, text } of skill.files) replace(join(folder, path), text, skill.name);
 }
 
 /** Makes the folder `path`, unless one's there, refusing a link or anything else there. */
@@ -436,22 +507,23 @@ function makeFolder(path: string): void {
 }
 
 /**
- * Replaces the file at `path` with `text`: written beside it under a name nothing has, then renamed
- * over it, so that nothing is ever written through a link, and no agent reads it half written.
+ * Replaces the file at `path` with `text`: written beside it under a name nothing has, `.<name>-…`,
+ * then renamed over it, so that nothing is ever written through a link, and no agent reads it half
+ * written.
  */
-function replace(path: string, text: string): void {
-  const temporary = join(dirname(path), `.${SKILL_NAME}-${randomBytes(8).toString('hex')}.tmp`);
+export function replace(path: string, text: string, name: string): void {
+  const beside = join(dirname(path), `.${name}-${randomBytes(8).toString('hex')}.tmp`);
   // Made new, or not at all, so that it's only ever removed when it's the skill's own.
-  const file = openSync(temporary, 'wx', 0o644);
+  const file = openSync(beside, 'wx', 0o644);
   try {
     try {
       writeFileSync(file, text);
     } finally {
       closeSync(file);
     }
-    renameSync(temporary, path);
+    renameSync(beside, path);
   } catch (error) {
-    rmSync(temporary, { force: true });
+    rmSync(beside, { force: true });
     throw error;
   }
 }
