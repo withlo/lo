@@ -34,7 +34,7 @@ import { closePanel } from './actions.ts';
 import feature from './index.ts';
 import { LeftBanner } from './LeftBanner.tsx';
 import { MergeHeader } from './MergeHeader.tsx';
-import { mergeFromPanel } from './merging.ts';
+import { autoMergeFromPanel, mergeFromPanel } from './merging.ts';
 import { merging, panels } from './store.ts';
 import { placedWhy } from './words.ts';
 
@@ -494,6 +494,80 @@ it('turns auto-merge off from its button, busy until main answers, and says in t
   await until(() => panel()?.textContent?.includes('Couldn’t turn off auto-merge') === true);
   expect(panel()?.querySelector('[role="alert"]')?.textContent).toContain('GitHub didn’t answer.');
   expect(off()?.getAttribute('aria-busy')).toBeNull();
+});
+
+/** Lo's write turning auto-merge off for #172, standing as `said`. */
+function offJob(said: JobView['state']): JobView {
+  return {
+    key: '00000000-0000-4000-8000-000000000172',
+    owner: 'rozed-dev',
+    repo: 'e2e',
+    number: 172,
+    login: 'rozed-bot',
+    kind: 'autoMergeOff',
+    method: null,
+    base: 'main',
+    head: 'a'.repeat(40),
+    already: false,
+    state: said,
+    together: null,
+  };
+}
+
+/** How many times the window asked main to turn auto-merge off. */
+function turnOffsSent(): number {
+  return bridge.calls.filter(([channel]) => channel === 'merge.autoMergeOff').length;
+}
+
+it('stays turning auto-merge off once main says it’s off, until the status, read after, says so too', async () => {
+  const waiting = {
+    verdict: 'waiting',
+    blockers: [{ kind: 'check', check: { name: 'ci', state: 'running', url: RUN } }],
+    action: { kind: 'notPossible', reason: 'blocked' },
+    picked: 'MERGE',
+  } satisfies Partial<MergeState>;
+  views.set('t24', {
+    kind: 'known',
+    state: state({
+      ...waiting,
+      autoMerge: { method: 'SQUASH', by: 'rozed-bot' },
+      auto: { kind: 'off' },
+    }),
+  });
+  onScreen(tabOf('t24', 172));
+  const page = draw(<MergeHeader tab={tabOf('t24', 172)} />);
+  await until(
+    () => page.querySelector('button')?.textContent?.includes('Auto-merge is on') === true,
+  );
+  act(() => page.querySelector('button')?.click());
+  await until(() => panel() !== null);
+  const off = () => buttonSaying('Turn off auto-merge', panel() ?? undefined);
+  act(() => bridge.push('merge.jobs', offJob({ kind: 'sending' })));
+  expect(off()?.getAttribute('aria-busy')).toBe('true');
+  // GitHub said it's off; the status that says so is read after, and comes later.
+  act(() => bridge.push('merge.jobs', offJob({ kind: 'autoMergeOff' })));
+  expect(off()?.getAttribute('aria-busy')).toBe('true');
+  expect(showing(off())).toBe('Turning off…');
+  // `a` doesn't send it again meanwhile.
+  const before = turnOffsSent();
+  await act(async () => {
+    autoMergeFromPanel();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  });
+  expect(turnOffsSent()).toBe(before);
+  act(() =>
+    bridge.push('merge.status', {
+      id: 't24',
+      view: {
+        kind: 'known',
+        state: state({ ...waiting, auto: { kind: 'on' } }),
+      },
+    }),
+  );
+  expect(off()).toBeUndefined();
+  expect(
+    buttonSaying('Turn on auto-merge…', panel() ?? undefined)?.getAttribute('aria-busy'),
+  ).toBeNull();
 });
 
 it('says what the main button merges, by where the pull request sits', async () => {
