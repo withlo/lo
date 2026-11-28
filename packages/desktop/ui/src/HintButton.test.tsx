@@ -11,7 +11,7 @@ import { Registry } from './commands/registry.ts';
 import type { LineTarget } from './commands/targets.ts';
 import { HintButton } from './HintButton.tsx';
 import { HintRow } from './HintRow.tsx';
-import { MoreButton } from './MoreButton.tsx';
+import { menuOpener, MoreButton } from './MoreButton.tsx';
 import { TOOLTIP_DELAY, TooltipGroup } from './Tooltip.tsx';
 import { useControl } from './useControl.ts';
 
@@ -193,4 +193,27 @@ test('the more button opens its surface’s right-click menu under itself', () =
   button.getBoundingClientRect = () => new DOMRect(40, 10, 22, 22);
   act(() => button.click());
   expect(heard).toEqual([[40, 32]]);
+});
+
+test('the more button is the menu’s opener while its surface hears it, and no longer', () => {
+  const openers: (Element | undefined)[] = [];
+  const host = draw(
+    <div onContextMenu={() => openers.push(menuOpener())}>
+      <MoreButton />
+    </div>,
+  );
+  const button = host.querySelector('button')!;
+  act(() => button.click());
+  expect(openers).toEqual([button]);
+  expect(menuOpener()).toBeUndefined();
+});
+
+test('a shy more button keeps its room and its place in `Tab`’s order', () => {
+  const host = draw(<MoreButton shy />);
+  const button = host.querySelector('button')!;
+  // Hidden by the stylesheet's `shy`, which a scope's hover, keyboard or focus shows: never taken
+  // out of the page or out of reach.
+  expect(button.parentElement?.classList.contains('shy')).toBe(true);
+  expect(button.tabIndex).toBe(0);
+  expect(button.closest('[hidden], [inert], [aria-hidden="true"]')).toBeNull();
 });
